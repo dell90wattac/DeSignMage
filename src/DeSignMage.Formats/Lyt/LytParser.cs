@@ -380,14 +380,31 @@ public static class LytParser
         int w = r.U16();
         if (w != 0xFA6 && !(w >= 0x1770 && w <= 0x1786)) throw new LytFormatException($"unknown fill version {w}");
         uint type = r.U32();
-        r.Skip(8);
-        r.Skip(w < 6000 ? 16 : 4 * 57);
-        r.Skip(32 + 32 + 1);
-        if (w > 0x1771) { r.Skip(8); if (w > 0x1777) r.Skip(4); }
-        if (w > 0x1772) { r.Skip(4); r.Skip(16 * (16 + 57 + (w > 0x1776 ? 2 : 0))); r.Skip(80); }
+        // The blend part of the block (gradient and transparency): kept for the importer; the rest is skipped as before.
+        var blend = new LytBlend { GradType = type, TransType = r.U32() };
+        r.Skip(4);
+        if (w < 6000) r.Skip(16);
+        else for (int i = 0; i < 4; i++) blend.Colors[i] = ReadColor(r);
+        for (int i = 0; i < 8; i++) blend.Points[i] = r.F32();
+        for (int i = 0; i < 8; i++) blend.TransPoints[i] = r.F32();
+        r.Skip(1);
+        if (w > 0x1771) { blend.TransMin = r.F32(); r.Skip(4); if (w > 0x1777) r.Skip(4); }
+        if (w > 0x1772)
+        {
+            blend.NodeCount = (int)r.U32();
+            for (int i = 0; i < 16; i++)
+            {
+                float x = r.F32(), y = r.F32();
+                r.Skip(8);
+                var color = ReadColor(r);
+                ushort flag = w > 0x1776 ? r.U16() : (ushort)0;
+                blend.ExtraNodes.Add(new LytBlendNode(x, y, color, flag));
+            }
+            r.Skip(80);
+        }
         if (w > 0x1773) r.Skip(8);
-        if (w > 0x1774) r.Skip(4);
-        if (w > 0x1775) r.Skip(4);
+        if (w > 0x1774) blend.TransSwap = r.U32() != 0;
+        if (w > 0x1775) blend.TransMax = r.F32();
         if (w > 0x1785) r.Skip(4);
         int embeddedFlagAt = -1;
         if (w > 0x1778)
@@ -398,14 +415,14 @@ public static class LytParser
             if (w > 0x1779 && r.U16() != 0) embeddedFlagAt = r.Position;
         }
 
-        if (embeddedFlagAt < 0) return ReadFillTail(r, w, type);
+        if (embeddedFlagAt < 0) return ReadFillTail(r, w, type, blend);
 
         // The flag says "the picture's source file is embedded", but the writer only stores it (u32 length + bytes) if that file
         // still existed when the layout was saved; otherwise nothing follows. Try "nothing", and if no image can be found,
         // try "length + bytes".
         try
         {
-            var first = ReadFillTail(r, w, type);
+            var first = ReadFillTail(r, w, type, blend);
             if (type != 4 || first.Image is not null) return first;
         }
         catch (LytFormatException) { }
@@ -414,11 +431,11 @@ public static class LytParser
         uint length = r.U32();
         if (length > r.Remaining) throw new LytFormatException("the embedded source file is larger than the object");
         r.Skip((int)length);
-        return ReadFillTail(r, w, type);
+        return ReadFillTail(r, w, type, blend);
     }
 
     /// <summary>The effect parameters and, for bitmap fills, the picture.</summary>
-    private static LytFill ReadFillTail(ByteReader r, int w, uint type)
+    private static LytFill ReadFillTail(ByteReader r, int w, uint type, LytBlend blend)
     {
         if (w > 0x177D)
         {
@@ -452,7 +469,7 @@ public static class LytParser
         {
             throw new NotDecodedException("multi-bitmap fills are not imported yet");
         }
-        return new LytFill { Version = w, Type = type, Image = image, ImageMediaType = mediaType, LinkedImagePath = link };
+        return new LytFill { Version = w, Type = type, Image = image, ImageMediaType = mediaType, LinkedImagePath = link, Blend = blend };
     }
 
     private static string? MediaType(byte[] d)

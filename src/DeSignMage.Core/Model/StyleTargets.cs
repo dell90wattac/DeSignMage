@@ -22,7 +22,11 @@ public static class StyleTargets
         {
             case GroupObject g:
                 foreach (var child in g.Children)
+                {
+                    // a Soft Shadow or Glow object in the group keeps its own color: recoloring the group recolors what it draws, not its halo
+                    if (child.Style.Blur is not null) continue;
                     foreach (var t in ExpandOne(child)) yield return t;
+                }
                 break;
             case CombinedObject c:
                 foreach (var part in c.Parts) yield return part;

@@ -53,6 +53,10 @@ public sealed partial class EditorSession
         RegisterTool(new OutlineTool());
         RegisterTool(new CookieCutterTool());
         RegisterTool(new KnifeTool());
+        RegisterTool(new GradientTool());
+        RegisterTool(new ShadowTool());
+        RegisterTool(new SoftEffectTool());
+        RegisterTool(new FeatherTool());
         RegisterTool(new PlaceTool());
         _activeTool = _tools[0];
     }

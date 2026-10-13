@@ -426,6 +426,8 @@ public sealed class ColorMixer : IRefreshable
     {
         var style = _session.CurrentStyle;
         var paint = ColorUi.PaintOf(style, _state.Target);
+        // With the Gradient Blend tool open on a gradient, the Fill side edits the picked color of the gradient.
+        if (_state.Target == ColorTarget.Fill && _session.ActiveTool is GradientTool { CurrentNodeColor: { } node }) paint = new SolidPaint(node);
         _refreshing = true;
 
         _fill.IsChecked = _state.Target == ColorTarget.Fill;

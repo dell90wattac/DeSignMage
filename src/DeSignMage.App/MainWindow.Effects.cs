@@ -32,6 +32,24 @@ public partial class MainWindow
         Add("effects.weld", "_Weld", () => RunEffect(_session.WeldAsync()), () => _session.CanWeld);
         Add("effects.commonWeld", "Co_mmon Weld", () => RunEffect(_session.CommonWeldAsync()), () => _session.CanCommonWeld);
         Add("effects.cookieCutter", "Cookie _Cutter...", () => _session.BeginCookieCutter(), () => _session.CanCookieCut, () => _session.ActiveTool is CookieCutterTool);
+
+        // Shadow: one tool, the form is also a field of its Context Bar. Each item opens it in that form.
+        bool InShadow(ShadowForm form) => _session.ActiveTool is ShadowTool t && t.Settings.Form == form;
+        Add("effects.shadow", "_Shadow...", () => _session.BeginShadow(ShadowForm.Flat), () => _session.CanShadow, () => InShadow(ShadowForm.Flat));
+        Add("effects.shadowExtruded", "E_xtruded Shadow...", () => _session.BeginShadow(ShadowForm.Extruded), () => _session.CanShadow, () => InShadow(ShadowForm.Extruded));
+        Add("effects.shadowPerspective", "_Perspective Shadow...", () => _session.BeginShadow(ShadowForm.Perspective), () => _session.CanShadow, () => InShadow(ShadowForm.Perspective));
+        Add("effects.shadowCast", "Cas_t Shadow...", () => _session.BeginShadow(ShadowForm.Cast), () => _session.CanShadow, () => InShadow(ShadowForm.Cast));
+
+        // Soft Shadow, Glow, Feather: tools that show the effect at once (no shortcuts yet). The check mark shows when the selection already has the effect.
+        Add("effects.softShadow", "Soft S_hadow...", () => _session.BeginSoftEffect(DeSignMage.Core.Model.SoftKind.SoftShadow), () => _session.CanSoftEffect,
+            () => _session.ActiveTool is SoftEffectTool { Kind: DeSignMage.Core.Model.SoftKind.SoftShadow } || (_session.ActiveTool is not SoftEffectTool && _session.HasSoftEffect(DeSignMage.Core.Model.SoftKind.SoftShadow)));
+        Add("effects.glow", "_Glow...", () => _session.BeginSoftEffect(DeSignMage.Core.Model.SoftKind.Glow), () => _session.CanSoftEffect,
+            () => _session.ActiveTool is SoftEffectTool { Kind: DeSignMage.Core.Model.SoftKind.Glow } || (_session.ActiveTool is not SoftEffectTool && _session.HasSoftEffect(DeSignMage.Core.Model.SoftKind.Glow)));
+        Add("effects.feather", "_Feather...", () => _session.BeginFeather(), () => _session.CanFeather,
+            () => _session.ActiveTool is FeatherTool || (_session.ActiveTool is not FeatherTool && _session.HasFeather));
+
+        // Gradient Blend: the control-point tool on the selected shape or text (no shortcut yet).
+        Add("effects.gradientBlend", "_Gradient Blend...", () => _session.BeginGradient(), () => _session.CanGradient, () => _session.ActiveTool is GradientTool);
     }
 
     /// <summary>Starts an effect that was kicked off with an async method; a crash inside is logged and shown, never thrown at the UI loop.</summary>

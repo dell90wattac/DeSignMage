@@ -236,3 +236,125 @@ public sealed class KnifeContextBar : ContextBarBase, IRefreshable
         _refreshing = false;
     }
 }
+
+/// <summary>
+/// Shadow Context Bar: the shadow's form (Flat, Extruded, Perspective, Cast) and type (Drop or Relief), its shift (Hs, Vs), outline (inches or % of
+/// the selection's height), 3D % (Perspective only), corners, color and Apply (the OAT angle and the Preview switch are kept in the tool, not on the bar, to keep it narrow). For a Cast shadow Hs is how far the top edge is pushed
+/// sideways and Vs is the change of the shadow's height (a negative Vs larger than the height flips it under the object: a floor shadow).
+/// </summary>
+public sealed class ShadowContextBar : ContextBarBase, IRefreshable
+{
+    private static readonly (string Name, DocColor? Color)[] Colors =
+    [
+        ("Same as object", null), ("Black", DocColor.Black), ("Dark gray", DocColor.FromHex("#404040")),
+        ("Gray", DocColor.FromHex("#808080")), ("Light gray", DocColor.FromHex("#C0C0C0")), ("White", DocColor.White),
+    ];
+
+    private readonly EditorSession _session;
+    private readonly ShadowTool _tool;
+    private readonly EffectBarParts.Field _hs, _vs, _outline, _outlinePct, _depth;
+    private readonly ComboBox _type, _form, _corners, _color;
+    private readonly Button _apply;
+    private readonly Control _outlinePctGroup, _depthGroup;
+    private bool _refreshing;
+
+    public ShadowContextBar(EditorSession session, ShadowTool tool)
+    {
+        _session = session;
+        _tool = tool;
+        _hs = new EffectBarParts.Field(v => tool.Update(s => s with { ShiftX = Units.FromInches(v) }));
+        _vs = new EffectBarParts.Field(v => tool.Update(s => s with { ShiftY = -Units.FromInches(v) }));   // the bar counts up, the document counts down
+        _outline = new EffectBarParts.Field(v => tool.Update(s => s with { Outline = Units.FromInches(v) }));
+        _outlinePct = new EffectBarParts.Field(v => { if (tool.HasPercent) tool.Update(s => s with { Outline = v / 100 * tool.Height }); });
+        _depth = new EffectBarParts.Field(v => tool.Update(s => s with { DepthPercent = Math.Clamp(v, 1, 1000) }));
+
+        _type = new ComboBox { ItemsSource = new[] { "Drop", "Relief" }, VerticalAlignment = VerticalAlignment.Center };
+        ToolTip.SetTip(_type, "Drop: the shadow includes the object (a bold, merged silhouette). Relief: the object is cut out of the shadow.");
+        _type.SelectionChanged += (_, _) =>
+        {
+            if (_refreshing || _type.SelectedIndex < 0) return;
+            tool.Update(s => s with { Type = _type.SelectedIndex == 1 ? ShadowType.Relief : ShadowType.Drop });
+            ContextBars.FocusCanvas?.Invoke();
+        };
+        _form = new ComboBox { ItemsSource = new[] { "Flat", "Extruded", "Perspective", "Cast" }, VerticalAlignment = VerticalAlignment.Center };
+        ToolTip.SetTip(_form, "Flat: the shadow is moved. Extruded: a solid sweep from the object to the moved copy. Perspective: extruded with the far end smaller (3D %). Cast: a copy changed in height and slanted.");
+        _form.SelectionChanged += (_, _) =>
+        {
+            if (_refreshing || _form.SelectedIndex < 0) return;
+            tool.SetForm((ShadowForm)_form.SelectedIndex);
+            ContextBars.FocusCanvas?.Invoke();
+        };
+        _corners = new ComboBox { ItemsSource = new[] { "Auto (OAT)", "Miter", "Round" }, VerticalAlignment = VerticalAlignment.Center };
+        ToolTip.SetTip(_corners, "Corner type of the shadow's outline. Auto rounds corners sharper than the OAT angle and keeps the others sharp; Miter keeps every corner sharp; Round rounds every corner.");
+        _corners.SelectionChanged += (_, _) =>
+        {
+            if (_refreshing || _corners.SelectedIndex < 0) return;
+            var style = _corners.SelectedIndex switch { 1 => CornerStyle.Miter, 2 => CornerStyle.Round, _ => CornerStyle.Auto };
+            tool.Update(s => s with { Corners = style });
+            ContextBars.FocusCanvas?.Invoke();
+        };
+        _color = new ComboBox { ItemsSource = Colors.Select(c => c.Name).Append("Custom").ToArray(), VerticalAlignment = VerticalAlignment.Center };
+        ToolTip.SetTip(_color, "The shadow's color. \"Same as object\" makes the shadow a copy of the object's fill and stroke.");
+        _color.SelectionChanged += (_, _) =>
+        {
+            if (_refreshing || _color.SelectedIndex < 0 || _color.SelectedIndex >= Colors.Length) return;   // "Custom" only shows a color that is not in the list
+            var color = Colors[_color.SelectedIndex].Color;
+            tool.Update(s => s with { Color = color });
+            ContextBars.FocusCanvas?.Invoke();
+        };
+        _apply = PathBarParts.Action("✓ Apply", "Make the shadow (Enter)", () => { _ = tool.Apply(); ContextBars.FocusCanvas?.Invoke(); });
+        var cancel = PathBarParts.Action("✕ Cancel", "Leave without making a shadow (Esc)", () => { session.SetTool("select"); ContextBars.FocusCanvas?.Invoke(); });
+
+        _outlinePctGroup = ContextBars.Field("%", _outlinePct.Box);
+        _depthGroup = ContextBars.Field("3D %", _depth.Box);
+        ToolTip.SetTip(_hs.Box, "Hs: how far the shadow moves to the right (Cast: how far the top edge is pushed sideways)");
+        ToolTip.SetTip(_vs.Box, "Vs: how far the shadow moves up (negative: down). Cast: the change of the shadow's height; a negative value larger than the height flips it under the object");
+        // The first row is what you do (Apply, the shift, the outline); the second what kind of shadow. The two lists carry no captions to stay narrow.
+        foreach (var c in new Control[]
+                 {
+                     _apply, cancel, PathBarParts.Gap(),
+                     ContextBars.Field("Hs", _hs.Box, "in"), ContextBars.Field("Vs", _vs.Box, "in"),
+                     PathBarParts.Gap(),
+                     ContextBars.Field("Outline", _outline.Box, "in"), _outlinePctGroup,
+                 })
+            Row1.Children.Add(c);
+        foreach (var c in new Control[] { _form, _type, _color, ContextBars.Group(ContextBars.Label("Corners"), _corners), _depthGroup })
+            Row2.Children.Add(c);
+        EffectBarParts.Bind(this, session, Refresh, h => tool.Changed += h, h => tool.Changed -= h);
+        Refresh();
+    }
+
+    public void Refresh()
+    {
+        _refreshing = true;
+        var s = _tool.Settings;
+        _hs.Show(ContextBars.Fmt(Units.ToInches(s.ShiftX)));
+        _vs.Show(ContextBars.Fmt(Units.ToInches(s.Vs)));
+        _outline.Show(ContextBars.Fmt(Units.ToInches(s.Outline)));
+        _outlinePct.Show(_tool.HasPercent ? ContextBars.Fmt(_tool.OutlinePercent) : "");
+        // a field that does not apply is not shown (R26): the percentage needs a selection to take a height from, 3D % belongs to Perspective
+        _outlinePct.Box.IsEnabled = _outlinePctGroup.IsVisible = _tool.HasPercent;
+        _depth.Show(ContextBars.Fmt(s.DepthPercent));
+        _depth.Box.IsEnabled = _depthGroup.IsVisible = s.Form == ShadowForm.Perspective;
+        _form.SelectedIndex = (int)s.Form;
+        _type.SelectedIndex = (int)s.Type;
+        _corners.SelectedIndex = s.Corners switch { CornerStyle.Miter => 1, CornerStyle.Round => 2, _ => 0 };
+        int colorAt = Array.FindIndex(Colors, c => c.Color == s.Color);
+        _color.SelectedIndex = colorAt >= 0 ? colorAt : Colors.Length;
+        ContextBars.Valid(_apply, _tool.CanApply && !_session.EffectBusy);
+        _refreshing = false;
+    }
+
+    // ---- For tests ----
+
+    internal Button Apply => _apply;
+    internal ComboBox Form => _form;
+    internal ComboBox Type => _type;
+    internal ComboBox Color => _color;
+    internal Control DepthGroup => _depthGroup;
+    internal Control OutlinePercentGroup => _outlinePctGroup;
+    internal TextBox Hs => _hs.Box;
+    internal TextBox Vs => _vs.Box;
+    internal TextBox Outline => _outline.Box;
+    internal TextBox Depth => _depth.Box;
+}

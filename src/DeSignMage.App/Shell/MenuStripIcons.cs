@@ -41,6 +41,9 @@ internal static class MenuStripIcons
         ["image.invert"] = "Invert", ["image.zoom11"] = "1:1",
         ["effects.outline"] = "Outline", ["effects.inline"] = "Inline", ["effects.knife"] = "Knife", ["effects.weld"] = "Weld",
         ["effects.commonWeld"] = "C. Weld", ["effects.cookieCutter"] = "Cookie",
+        ["effects.gradientBlend"] = "Gradient",
+        ["effects.softShadow"] = "Soft Sh.", ["effects.glow"] = "Glow", ["effects.feather"] = "Feather",
+        ["effects.shadow"] = "Shadow",["effects.shadowExtruded"] = "Extruded", ["effects.shadowPerspective"] = "Persp.", ["effects.shadowCast"] = "Cast",
         ["tool.select"] = "Layout", ["tool.vector"] = "Vector", ["tool.vectorDraw"] = "Draw", ["tool.loop"] = "Loops", ["tools.options"] = "Options",
     };
 
@@ -123,6 +126,18 @@ internal static class MenuStripIcons
         ["effects.commonWeld"] = () => Box(Stroke(Circle5At7, Ink, 1.2), Stroke(Circle5At13, Ink, 1.2), Fill("M10,6 A5,5 0 0 1 10,14 A5,5 0 0 1 10,6 Z", Accent)),
         // a block with a round piece cut out of it
         ["effects.cookieCutter"] = () => Box(Fill("M2,3 H18 V17 H2 Z"), Fill("M5,10 A5,5 0 1 1 15,10 A5,5 0 1 1 5,10 Z", Paper), Stroke("M5,10 A5,5 0 1 1 15,10 A5,5 0 1 1 5,10 Z", Accent, 1.2, dashed: true)),
+
+        // a solid shape with its offset shadow behind it / the shadow swept out to a moved copy / swept to a smaller one / a slanted flipped copy under it
+        // a block that is solid at one end and fades to nothing at the other, and the control line over it
+        ["effects.gradientBlend"] = () => Box(Fill("M2,3 H18 V17 H2 Z", Ink), Fill("M10,3 H18 V17 H10 Z", Paper), Stroke("M4,10 H16", Accent, 1.4), Fill("M3,8.5 H6 V11.5 H3 Z M14,8.5 H17 V11.5 H14 Z", Accent)),
+        ["effects.shadow"] = () =>Box(Fill("M8,8 H18 V18 H8 Z", Accent), Fill("M2,2 H12 V12 H2 Z")),
+        ["effects.shadowExtruded"] = () => Box(Fill("M2,8 L8,2 H18 V12 L12,18 H2 Z", Accent), Stroke("M2,8 H12 V18 M12,8 L18,2", Ink, 1.2), Fill("M2,8 H12 V18 H2 Z")),
+        ["effects.shadowPerspective"] = () => Box(Fill("M8,4 L18,7 V13 L8,16 Z", Accent), Fill("M2,4 H8 V16 H2 Z")),
+        ["effects.shadowCast"] = () => Box(Fill("M2,2 H10 V10 H2 Z"), Fill("M2,10 H10 L18,18 H10 Z", Accent)),
+        // a solid shape with a blurry (stroked wide, dotted) shadow behind it / a shape with a halo around it / a shape whose edge fades (dotted rim)
+        ["effects.softShadow"] = () => Box(Fill("M8,8 H18 V18 H8 Z", Accent), Stroke("M7,7 H19 V19 H7 Z", Accent, 1.2, dashed: true), Fill("M2,2 H12 V12 H2 Z")),
+        ["effects.glow"] = () => Box(Stroke("M4,4 H16 V16 H4 Z", Accent, 3.2), Stroke("M2,2 H18 V18 H2 Z", Accent, 1.0, dashed: true), Fill("M6,6 H14 V14 H6 Z")),
+        ["effects.feather"] = () => Box(Fill("M4,4 H16 V16 H4 Z"), Stroke("M2.5,2.5 H17.5 V17.5 H2.5 Z", Ink, 1.0, dashed: true), Stroke("M5,5 H15 V15 H5 Z", Paper, 1.2, dashed: true)),
 
         // ---- Tools (select, vector and vector draw come from the Toolbox) ----
         // a closed loop with its start point marked

@@ -503,6 +503,9 @@ public sealed class OverlayRenderer : IDisposable
                 case LetterDotsOverlay dots:
                     DrawLetterDots(c, dots, view);
                     break;
+                case GradientOverlay gradient:
+                    DrawGradientControls(c, gradient, view);
+                    break;
                 case TrackingHandleOverlay th:
                 {
                     // Larger than the 7px scale handles so it reads as its own tool.
@@ -694,6 +697,67 @@ public sealed class OverlayRenderer : IDisposable
         var b = view.ToScreen(t.CaretBottom);
         using var caret = new SKPaint { IsAntialias = true, Style = SKPaintStyle.Stroke, StrokeWidth = 1.5f, Color = _theme.Caret };
         c.DrawLine(a.ToSK(), b.ToSK(), caret);
+    }
+
+    /// <summary>
+    /// Gradient Blend: the control line (and the circle or ellipse outline) in white over black so it shows on any art, with a square handle
+    /// per color filled with that color; the picked color's handle is larger, a highlight's is a diamond. The second axis of an ellipse is a hollow handle.
+    /// </summary>
+    private void DrawGradientControls(SKCanvas c, GradientOverlay g, Viewport view)
+    {
+        var start = view.ToScreen(g.Start).ToSK();
+        var end = view.ToScreen(g.End).ToSK();
+        using var casing = new SKPaint { IsAntialias = true, Style = SKPaintStyle.Stroke, StrokeWidth = 3, Color = SKColors.Black.WithAlpha(0xB0) };
+        using var inner = new SKPaint { IsAntialias = true, Style = SKPaintStyle.Stroke, StrokeWidth = 1, Color = SKColors.White };
+        using var dashed = new SKPaint { IsAntialias = true, Style = SKPaintStyle.Stroke, StrokeWidth = 1, Color = SKColors.White, PathEffect = SKPathEffect.CreateDash([4, 3], 0) };
+
+        if (g.Shape is { } shape)
+        {
+            using var outline = shape.Transform(view.DocToScreen).ToSKPath();
+            c.DrawPath(outline, casing);
+            c.DrawPath(outline, dashed);
+        }
+        c.DrawLine(start, end, casing);
+        c.DrawLine(start, end, inner);
+        if (g.Axis2End is { } a2)
+        {
+            var p2 = view.ToScreen(a2).ToSK();
+            c.DrawLine(start, p2, casing);
+            c.DrawLine(start, p2, dashed);
+        }
+
+        using var edge = new SKPaint { IsAntialias = false, Style = SKPaintStyle.Stroke, StrokeWidth = 1, Color = SKColors.Black };
+        using var edgeWhite = new SKPaint { IsAntialias = false, Style = SKPaintStyle.Stroke, StrokeWidth = 1, Color = SKColors.White };
+        using var fill = new SKPaint { Style = SKPaintStyle.Fill };
+        foreach (var mark in g.Marks)
+        {
+            var p = view.ToScreen(mark.Position);
+            float half = mark.Current ? 7 : 5;
+            var box = Snap(SKRect.Create((float)p.X - half, (float)p.Y - half, half * 2, half * 2));
+            if (mark.Color is null)
+            {
+                fill.Color = SKColors.White;
+                c.DrawRect(box, fill);
+                c.DrawRect(box, edge);
+                continue;
+            }
+            fill.Color = new SKColor(mark.Color.Value.R, mark.Color.Value.G, mark.Color.Value.B);
+            if (mark.Highlight)
+            {
+                using var diamond = new SKPath();
+                diamond.MoveTo(box.MidX, box.Top - 1); diamond.LineTo(box.Right + 1, box.MidY);
+                diamond.LineTo(box.MidX, box.Bottom + 1); diamond.LineTo(box.Left - 1, box.MidY); diamond.Close();
+                c.DrawPath(diamond, fill);
+                c.DrawPath(diamond, edgeWhite);
+                c.DrawPath(diamond, edge);
+            }
+            else
+            {
+                c.DrawRect(box, fill);
+                c.DrawRect(SKRect.Inflate(box, 1, 1), edgeWhite);
+                c.DrawRect(box, edge);
+            }
+        }
     }
 
     /// <summary>Live-text marks: a small dot (half its former size, <see cref="LetterDotsOverlay.RadiusPx"/>) in every gap between letters; the one being dragged is filled.</summary>

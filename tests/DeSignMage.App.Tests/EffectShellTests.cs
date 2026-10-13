@@ -72,11 +72,11 @@ public class EffectShellTests
     }
 
     [AvaloniaFact]
-    public void The_effects_menu_lists_the_six_commands_and_enables_them_by_selection()
+    public void The_effects_menu_lists_the_commands_and_enables_them_by_selection()
     {
         var w = Open();
         var empty = EffectsState(w);
-        Assert.Equal(["Outline...", "Inline...", "Knife...", "Weld", "Common Weld", "Cookie Cutter..."], empty.Keys);
+        Assert.Equal(["Outline...", "Inline...", "Knife...", "Weld", "Common Weld", "Cookie Cutter...", "Shadow...", "Extruded Shadow...", "Perspective Shadow...", "Cast Shadow..."], empty.Keys.Take(10));   // other effects (Gradient Blend...) follow
         Assert.All(empty.Values, enabled => Assert.False(enabled));          // an empty drawing: nothing to do
 
         var a = AddRect(w, 200, 200, 100);
@@ -86,12 +86,14 @@ public class EffectShellTests
         Assert.True(none["Knife..."]);                                         // something to cut
         Assert.False(none["Outline..."]);                                      // nothing selected
         Assert.False(none["Weld"]);
+        Assert.False(none["Shadow..."]);                                       // a shadow needs something selected
 
         w.Session.Selection.Set(a);
         var one = EffectsState(w);
         Assert.True(one["Outline..."] && one["Inline..."] && one["Cookie Cutter..."] && one["Knife..."]);
         Assert.False(one["Weld"]);                                             // Weld needs two closed shapes
         Assert.False(one["Common Weld"]);
+        Assert.True(one["Shadow..."] && one["Extruded Shadow..."] && one["Perspective Shadow..."] && one["Cast Shadow..."]);
 
         w.Session.Selection.Set([a, b]);
         var two = EffectsState(w);
@@ -104,6 +106,7 @@ public class EffectShellTests
         Assert.True(open["Outline..."]);                                       // an open path can be outlined (a parallel copy)
         Assert.False(open["Cookie Cutter..."]);                                // but it is no cutter: no area
         Assert.False(open["Weld"]);
+        Assert.False(open["Shadow..."]);                                       // a line has no area to cast a shadow from
         w.Close();
     }
 

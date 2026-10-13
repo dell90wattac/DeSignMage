@@ -17,6 +17,9 @@ public static class JobColors
         void Add(Paint? paint)
         {
             if (paint is SolidPaint sp && seen.Add(sp.Color)) list.Add(sp.Color);
+            else if (paint is GradientPaint gp)   // a gradient uses all of its colors
+                foreach (var stop in gp.Stops)
+                    if (seen.Add(stop.Color)) list.Add(stop.Color);
         }
 
         foreach (var o in doc.AllObjects())

@@ -74,6 +74,7 @@ public sealed class DsmCodecRegistry
     {
         var r = new DsmCodecRegistry();
         r.Register(new SolidPaintCodec());
+        r.Register(new GradientPaintCodec());
         r.Register(new RectangleCodec());
         r.Register(new EllipseCodec());
         r.Register(new PathCodec());

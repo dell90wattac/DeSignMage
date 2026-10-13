@@ -71,7 +71,13 @@ public sealed partial class EditorSession
     // ---- Edits ----
 
     /// <summary>Sets the fill of the selection, or of new objects when nothing is selected. Null = no fill.</summary>
-    public void ApplyFill(Paint? fill) => ApplyStyleChange("Fill Color", s => s.WithFill(fill));
+    public void ApplyFill(Paint? fill)
+    {
+        // While the Gradient Blend tool has a gradient in hand, a color sets the picked color of that gradient (Color Mixer, Palette Strip,
+        // Project Color Bar all come through here), not the whole fill.
+        if (fill is SolidPaint solid && ActiveTool is GradientTool gradient && gradient.SetNodeColor(solid.Color)) return;
+        ApplyStyleChange("Fill Color", s => s.WithFill(fill));
+    }
 
     /// <summary>"No Fill" button (R11): removes the fill of the selection (groups and combined objects included), one undo step.</summary>
     public void ApplyNoFill() => ApplyStyleChange("No Fill", s => s.WithFill(null));

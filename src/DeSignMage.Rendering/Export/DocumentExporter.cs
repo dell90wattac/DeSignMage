@@ -1,4 +1,4 @@
-﻿using System.Buffers.Binary;
+using System.Buffers.Binary;
 using DeSignMage.Core.Geometry;
 using DeSignMage.Core.Model;
 using SkiaSharp;
@@ -57,7 +57,7 @@ public static class DocumentExporter
             using (var canvas = pdf.BeginPage((float)plan.Area.Width, (float)plan.Area.Height))
             {
                 canvas.Translate((float)-plan.Area.Left, (float)-plan.Area.Top);
-                Draw(canvas, doc, plan);
+                Draw(canvas, doc, plan, featherDpi: 300);   // a PDF cannot multiply by a mask: a feathered object goes in as a 300 dpi picture
             }
             pdf.Close();
         }
@@ -102,9 +102,9 @@ public static class DocumentExporter
 
     // ---------------------------------------------------------------- shared
 
-    private static void Draw(SKCanvas canvas, Document doc, ExportPlan plan)
+    private static void Draw(SKCanvas canvas, Document doc, ExportPlan plan, double featherDpi = 0)
     {
-        using var renderer = new SceneRenderer(doc);
+        using var renderer = new SceneRenderer(doc) { FeatherPixelDpi = featherDpi };
         canvas.ClipRect(plan.Area.ToSK());
         foreach (var layer in plan.Layers)
             foreach (var o in layer.Objects)

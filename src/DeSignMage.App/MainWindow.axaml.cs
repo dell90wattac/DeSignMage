@@ -41,7 +41,10 @@ public partial class MainWindow : Window
             MenuNode.Menu("Color Depth"), "image.extractAlpha", "-",
             "image.saveAs", "-",
             "image.fillLibManage", "image.fillLibUpdate", "image.fillLibAdd"),
-        MenuNode.Menu("Effe_cts", "effects.outline", "effects.inline", "effects.knife", "effects.weld", "effects.commonWeld", "effects.cookieCutter"),
+        MenuNode.Menu("Effe_cts", "effects.outline", "effects.inline", "effects.knife", "effects.weld", "effects.commonWeld", "effects.cookieCutter", "-",
+            "effects.shadow", "effects.shadowExtruded", "effects.shadowPerspective", "effects.shadowCast", "-",
+            "effects.softShadow", "effects.glow", "effects.feather", "-",
+            "effects.gradientBlend"),
         MenuNode.Menu("_Tools", "tool.select", "tool.vector", "tool.vectorDraw", "tool.loop", "-", "tools.options", "-", "debug.stress"),
         MenuNode.Menu("_Help", "help.feedback", "-", "help.about"),
     ];
@@ -160,6 +163,7 @@ public partial class MainWindow : Window
         _refreshables.Add(_projectColorBar);
         _refreshables.Add(_colorMixer);
         session.DefaultStyleChanged += (_, _) => QueueRefresh();
+        session.GetTool<Core.Editing.Tools.GradientTool>().Changed += (_, _) => QueueRefresh();   // the Color Mixer follows the picked gradient color
         _historyLogger = new HistoryLogger(session.History);
 
         session.Document.Changed += (_, _) => QueueRefresh();
@@ -436,6 +440,7 @@ public partial class MainWindow : Window
             Key.Right => EditorKey.Right,
             Key.Up => EditorKey.Up,
             Key.Down => EditorKey.Down,
+            Key.Tab => EditorKey.Tab,   // the Gradient Blend tool cycles its colors with it; elsewhere nothing takes it and focus moves on
             _ => EditorKey.Other,
         };
         // Tool keys first (Escape cancels a drag, arrows nudge), then global shortcuts.

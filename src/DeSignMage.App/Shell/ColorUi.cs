@@ -23,7 +23,12 @@ internal static class ColorUi
         var grid = new Grid { Tag = paint }.ScaledWidth(size, icon: true).ScaledHeight(size, icon: true);
         grid.Children.Add(new Border
         {
-            Background = paint is SolidPaint sp ? new SolidColorBrush(ToAvalonia(sp.Color)) : Brushes.White,
+            Background = paint switch
+            {
+                SolidPaint sp => new SolidColorBrush(ToAvalonia(sp.Color)),
+                GradientPaint gp => PreviewBrush(gp),
+                _ => Brushes.White,
+            },
             BorderBrush = AppTheme.Brush("Ui.SwatchBorder"),
             BorderThickness = new Thickness(1),
         });
@@ -33,6 +38,19 @@ internal static class ColorUi
             grid.Children.Add(new SPath { Data = Avalonia.Media.Geometry.Parse("M0,0 L1,1 M1,0 L0,1"), Stretch = Stretch.Fill, Margin = new Thickness(2), Stroke = Brushes.Red, StrokeThickness = 1.5 });
         }
         return grid;
+    }
+
+    /// <summary>
+    /// A small picture of a gradient for swatches and the preset list: the real color ramp laid out left to right (a circle or ellipse
+    /// as a radial brush); a fade to transparent shows the swatch's own background through it.
+    /// </summary>
+    public static IBrush PreviewBrush(GradientPaint g)
+    {
+        var stops = new GradientStops();
+        foreach (var e in GradientRamp.Build(g)) stops.Add(new GradientStop(Color.FromArgb(e.A, e.R, e.G, e.B), e.T));
+        if (g.IsLinear)
+            return new LinearGradientBrush { StartPoint = new RelativePoint(0, 0.5, RelativeUnit.Relative), EndPoint = new RelativePoint(1, 0.5, RelativeUnit.Relative), GradientStops = stops };
+        return new RadialGradientBrush { Center = new RelativePoint(0.5, 0.5, RelativeUnit.Relative), GradientOrigin = new RelativePoint(0.5, 0.5, RelativeUnit.Relative), RadiusX = RelativeScalar.Parse("50%"), RadiusY = RelativeScalar.Parse("50%"), GradientStops = stops };
     }
 
     /// <summary>The paint of the object's fill or stroke, whichever the target names.</summary>

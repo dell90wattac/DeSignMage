@@ -33,6 +33,22 @@ public sealed class SceneRenderer : IDisposable
     private readonly SKPaint _imagePaint = new() { IsAntialias = true };
     private int _generation;
 
+    // Soft paint (Soft Shadow, Glow, Feather): blurred masks made from the objects' own shapes, kept per object (SoftLayers.cs).
+    private readonly SoftLayers _soft = new();
+    private DocObject? _feathering;   // the object whose feathered layer is being drawn (so drawing it inside does not feather it again)
+
+    /// <summary>How many soft masks (blurred shapes for shadows, glows and feathers) were made so far (tests, profiling).</summary>
+    public int SoftMasksMade => _soft.MasksMade;
+
+    /// <summary>How many soft masks are kept right now.</summary>
+    public int SoftMasksKept => _soft.Cached;
+
+    /// <summary>
+    /// 0 (the default): a feathered object is drawn into a layer that is multiplied by its mask, which a bitmap canvas does exactly. Above 0: it is drawn into a
+    /// bitmap of this many dots per inch that is placed as one picture, for a PDF canvas (a PDF cannot multiply by a mask).
+    /// </summary>
+    public double FeatherPixelDpi { get; set; }
+
     private SharedPicture? _docPicture;
     private long _docRevision = -1;
     private IReadOnlyList<DocObject>? _docExcluded;
@@ -156,6 +172,24 @@ public sealed class SceneRenderer : IDisposable
         {
             DrawOutlines(canvas, o, worldDelta, cache);
             return;
+        }
+        // Feather (R8): the object is drawn as usual into a layer, then its edge is faded with the mask from its own shape.
+        if (o.Style.Feather is { Amount: > 0 } feather && o is not GroupObject && _paintMode == PaintMode.All && !ReferenceEquals(_feathering, o))
+        {
+            var previous = _feathering;
+            _feathering = o;
+            bool done;
+            try
+            {
+                done = _soft.DrawFeathered(canvas, o, o.GetWorldTransform() * worldDelta, feather, ViewScale, _generation, FeatherPixelDpi,
+                    layer => DrawObject(layer, o, worldDelta, null, cache));
+            }
+            finally { _feathering = previous; }
+            if (done)
+            {
+                _docHasImages = true;   // the mask depends on the zoom bucket: record again when it changes
+                return;
+            }
         }
         switch (o)
         {
@@ -306,6 +340,16 @@ public sealed class SceneRenderer : IDisposable
     private void DrawShape(SKCanvas canvas, DocObject o, Affine2 worldDelta, bool cache)
     {
         var style = o.Style;
+        if (style.Blur is { } blur && style.Fill is SolidPaint blurFill)
+        {
+            // A Soft Shadow or Glow object (R8): its shape, blurred. The soft layer makes and keeps the mask; there is no stroke.
+            if (_paintMode != PaintMode.StrokeOnly)
+            {
+                _soft.DrawBlurred(canvas, o, o.GetWorldTransform() * worldDelta, blur, blurFill.Color.ToSK(), ViewScale, _generation, out bool usedMask);
+                if (usedMask) _docHasImages = true;
+            }
+            return;
+        }
         if (style.Fill is null && style.Stroke is null)
         {
             // Uncolored objects (e.g. a Weld result, or after "remove all color") show on screen as their plain vector outline,
@@ -337,7 +381,7 @@ public sealed class SceneRenderer : IDisposable
             else dispose = true;
         }
 
-        Paint(canvas, path, style);
+        Paint(canvas, path, style, o, world);
         if (dispose) path.Dispose();
     }
 
@@ -346,12 +390,24 @@ public sealed class SceneRenderer : IDisposable
     /// <summary>Lets combined objects paint all fills (clipped) first, then all strokes.</summary>
     private PaintMode _paintMode = PaintMode.All;
 
-    private void Paint(SKCanvas canvas, SKPath path, ObjectStyle style)
+    private void Paint(SKCanvas canvas, SKPath path, ObjectStyle style, DocObject o, Affine2 world)
     {
         if (style.Fill is SolidPaint sf && _paintMode != PaintMode.StrokeOnly)
         {
             _fill.Color = sf.Color.ToSK();
             canvas.DrawPath(path, _fill);
+        }
+        else if (style.Fill is GradientPaint gradient && _paintMode != PaintMode.StrokeOnly)
+        {
+            // The gradient is built in the object's own space (its control points are relative to the object's bounds) and carried
+            // to the page by the object's world transform, so it follows every move, scale, rotation and skew.
+            var bounds = o.GetLocalGeometry()?.GetBounds() ?? Rect2.Empty;
+            using var shader = bounds.IsEmpty ? null : GradientShaders.Create(gradient, bounds, world);
+            if (shader is null) _fill.Color = GradientShaders.FallbackColor(gradient);
+            else { _fill.Color = SKColors.Black; _fill.Shader = shader; _fill.IsDither = true; }
+            canvas.DrawPath(path, _fill);
+            _fill.Shader = null;
+            _fill.IsDither = false;
         }
         if (style.Stroke is { Paint: SolidPaint sp } stroke && stroke.Width > 0 && _paintMode != PaintMode.FillOnly)
         {
@@ -408,6 +464,8 @@ public sealed class SceneRenderer : IDisposable
                 _images.Remove(id);
             }
 
+        _soft.Sweep(_generation);
+
         List<ObjectId>? staleOutlines = null;
         foreach (var (id, oe) in _outlines)
             if (oe.LastUsed != _generation) (staleOutlines ??= []).Add(id);
@@ -444,6 +502,7 @@ public sealed class SceneRenderer : IDisposable
         foreach (var cp in _paths.Values) cp.Path.Dispose();
         foreach (var oe in _outlines.Values) oe.Dispose();
         foreach (var img in _images.Values) img.Dispose();
+        _soft.Dispose();
         _fill.Dispose();
         _stroke.Dispose();
         _imagePaint.Dispose();

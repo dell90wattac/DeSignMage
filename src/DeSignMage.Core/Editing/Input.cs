@@ -93,3 +93,12 @@ public sealed record CropOverlay(Vec2[] Frame, Vec2[]? Box, IReadOnlyList<Vec2> 
 
 /// <summary>The large square at the far right end of selected text: drag to space all letters evenly (uniform tracking). Document coordinates.</summary>
 public sealed record TrackingHandleOverlay(Vec2 Position, bool Active) : OverlayItem;
+
+/// <summary>One handle of the gradient control line: where it is, the color it stands for (null for the second ellipse axis), and its state.</summary>
+public readonly record struct GradientHandleMark(Vec2 Position, Model.DocColor? Color, bool Current, bool Highlight);
+
+/// <summary>
+/// The Gradient Blend tool's control line in document coordinates: from <see cref="Start"/> to <see cref="End"/> with a handle per color, plus the
+/// circle/ellipse outline (<see cref="Shape"/>) and, for an ellipse, the end of its second axis.
+/// </summary>
+public sealed record GradientOverlay(Vec2 Start, Vec2 End, Vec2? Axis2End, PathGeometry? Shape, IReadOnlyList<GradientHandleMark> Marks) : OverlayItem;

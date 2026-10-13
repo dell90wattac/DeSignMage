@@ -66,3 +66,17 @@ public sealed class SwapObjectCommand(DocObject original, IReadOnlyList<DocObjec
         doc.Restore(_removal!);
     }
 }
+
+/// <summary>
+/// Puts a new object at a <see cref="Slot"/>: a place in the drawing order and, when the slot names a group, a place among its members (so
+/// the object is born a member). Shadow uses it to put the shadow just below its source. Undo takes it out again.
+/// </summary>
+public sealed class InsertAtSlotCommand(Slot slot, DocObject obj, string description = "Add") : IDocumentCommand, IUndoMemory
+{
+    public string Description { get; } = description;
+    public long ApproximateBytes => UndoMemory.BytesOf(obj);
+    public IEnumerable<string> HeldAssetIds => UndoMemory.AssetsOf(obj);
+
+    public void Do(Document doc) => doc.Insert(slot, obj);
+    public void Undo(Document doc) => doc.Remove(obj);
+}

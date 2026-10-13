@@ -12,8 +12,8 @@
     <BuiltInComInteropSupport>true</BuiltInComInteropSupport>
     <AvaloniaUseCompiledBindingsByDefault>true</AvaloniaUseCompiledBindingsByDefault>
     <!-- Shown in bug reports ("version, build date"); bump Version for each beta handed out. -->
-    <Version>0.2.7</Version>
-    <InformationalVersion>0.2.7</InformationalVersion>
+    <Version>0.3.0</Version>
+    <InformationalVersion>0.3.0</InformationalVersion>
   </PropertyGroup>
 
   <!-- Startup: a published build (`dotnet publish -r win-x64 ...`, framework-dependent or self-contained)

@@ -1,4 +1,4 @@
-﻿using System.Text.Json;
+using System.Text.Json;
 using DeSignMage.Core.Model;
 
 namespace DeSignMage.Formats.Native;
@@ -39,7 +39,7 @@ public sealed class DsmWriteContext
         // Membership, not position: the group an object (or a group) belongs to, by its number in the "groups" list. The position in the
         // drawing order is the position in the layer's list (R22).
         if (o.Parent is GroupObject g && GroupIndexes.TryGetValue(g, out int groupIndex)) Json.WriteNumber("group", groupIndex);
-        if (o.Style.Fill is not null || o.Style.Stroke is not null) WriteStyle("style", o.Style);
+        if (o.Style.Fill is not null || o.Style.Stroke is not null || o.Style.HasSoftEffects) WriteStyle("style", o.Style);
         codec.Write(o, this);
         Json.WriteEndObject();
     }
@@ -56,6 +56,28 @@ public sealed class DsmWriteContext
             if (stroke.Join != LineJoin.Miter) Json.WriteEnum("join", stroke.Join);
             if (stroke.Cap != LineCap.Butt) Json.WriteEnum("cap", stroke.Cap);
             if (stroke.MiterLimit != 4) Json.WriteNum("miterLimit", stroke.MiterLimit);
+            Json.WriteEndObject();
+        }
+        // soft paint (R8): parameters only, the renderer makes the softness when it draws
+        if (style.Blur is { } blur)
+        {
+            Json.WriteStartObject("blur");
+            Json.WriteEnum("kind", blur.Kind);
+            Json.WriteNum("opacity", blur.Opacity);
+            Json.WriteNum("softness", blur.Softness);
+            Json.WriteNum("reference", blur.Reference);
+            if (blur.Hs != 0) Json.WriteNum("hs", blur.Hs);
+            if (blur.Vs != 0) Json.WriteNum("vs", blur.Vs);
+            if (blur.Slant != 0) Json.WriteNum("slant", blur.Slant);
+            if (blur.HeightScale != 1) Json.WriteNum("heightScale", blur.HeightScale);
+            if (blur.Inset != 0) Json.WriteNum("inset", blur.Inset);
+            Json.WriteEndObject();
+        }
+        if (style.Feather is { } feather)
+        {
+            Json.WriteStartObject("feather");
+            Json.WriteNum("amount", feather.Amount);
+            Json.WriteNum("inset", feather.Inset);
             Json.WriteEndObject();
         }
         Json.WriteEndObject();
@@ -236,7 +258,13 @@ public sealed class DsmReadContext
             if (paint is not null)
                 stroke = new StrokeStyle(paint, st.Num("width"), st.EnumOf("join", LineJoin.Miter, this), st.EnumOf("cap", LineCap.Butt, this), st.Num("miterLimit", 4));
         }
-        return new ObjectStyle(fill, stroke);
+        BlurStyle? blur = null;
+        if (s.TryGet("blur", out var b))
+            blur = new BlurStyle(b.EnumOf("kind", SoftKind.SoftShadow, this), b.Num("opacity", 0.5), b.Num("softness", 0.5), b.Num("reference"),
+                b.Num("hs"), b.Num("vs"), b.Num("slant"), b.Num("heightScale", 1), b.Num("inset"));
+        FeatherStyle? feather = null;
+        if (s.TryGet("feather", out var fe) && fe.Num("amount") > 0) feather = new FeatherStyle(fe.Num("amount"), fe.Num("inset"));
+        return new ObjectStyle(fill, stroke, blur, feather);
     }
 
     /// <summary>A paint, or null (with a warning) if its type is not known to this version.</summary>

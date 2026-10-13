@@ -150,6 +150,7 @@ public sealed partial class EditorSession
     public bool CanCommonWeld => !EffectBusy && CommonWeldEffect.CanRun(this);
     public bool CanCookieCut => !EffectBusy && CookieCutEffect.CanRun(this);
     public bool CanKnife => !EffectBusy && KnifeEffect.CanRun(this);
+    public bool CanShadow => !EffectBusy && ShadowEffect.CanRun(this);
 
     // ---- Immediate commands ----
 
@@ -192,6 +193,19 @@ public sealed partial class EditorSession
         GetTool<CookieCutterTool>().Begin();
         return true;
     }
+
+    /// <summary>Effects ▸ Shadow / Extruded / Perspective / Cast Shadow: opens the tool on the selection in that form. False if nothing in it has an area.</summary>
+    public bool BeginShadow(ShadowForm form)
+    {
+        if (!CanShadow) return false;
+        SetTool("shadow");
+        GetTool<ShadowTool>().Begin(form);
+        return true;
+    }
+
+    /// <summary>Makes the shadow of the selection with these settings right here (tests); the tool's Apply does the same from the Context Bar.</summary>
+    public EffectOutcome Shadow(ShadowSettings settings) =>
+        ShadowEffect.Plan(this, settings) is { } plan ? RunEffect(plan) : Unavailable("A shadow needs a shape selected and a shift that is not zero.");
 
     /// <summary>Effects ▸ Knife.</summary>
     public bool BeginKnife()

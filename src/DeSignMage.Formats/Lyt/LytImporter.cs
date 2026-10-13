@@ -251,7 +251,14 @@ public static class LytImporter
 
         string? name = o.Name.Length > 0 ? o.Name : null;
 
-        if (o.IsText && text.Enabled && chosen is not null)
+        // A gradient, or a color fading to nothing: the fill becomes a gradient paint. Such text stays outlines so the fade fits its shape exactly.
+        PathGeometry? outline = null;
+        GradientPaint? gradient = chosen is { } blendColor && style?.Fill?.Blend is { } blend
+            ? LytGradients.TryCreate(blend, blendColor.ToDocColor(), outline = BuildPath(o.Nodes))
+            : null;
+        if (gradient is not null) objectStyle = new ObjectStyle(gradient, null);
+
+        if (o.IsText && text.Enabled && chosen is not null && gradient is null)
         {
             var kept = LytTextImporter.TryCreate(o, pageHeightPoints, objectStyle, out var live);
             if (live is not null)
@@ -275,7 +282,7 @@ public static class LytImporter
         if (style?.Fill is { Type: 4 or 9 })
             warnings.Add($"{label} has an image fill that is not a plain rectangle; it is filled with its color instead.");
 
-        return new PathObject(BuildPath(o.Nodes)) { Name = name, Transform = xf, Style = objectStyle };
+        return new PathObject(outline ?? BuildPath(o.Nodes)) { Name = name, Transform = xf, Style = objectStyle };
     }
 
     /// <summary>

@@ -73,14 +73,52 @@ public sealed record StrokeStyle(Paint Paint, double Width, LineJoin Join = Line
     public static StrokeStyle Solid(DocColor color, double width) => new(new SolidPaint(color), width);
 }
 
-/// <summary>Fill and stroke of an object. Immutable; change by replacing the whole style (one undo step).</summary>
-public sealed record ObjectStyle(Paint? Fill, StrokeStyle? Stroke)
+/// <summary>Which soft effect made a <see cref="BlurStyle"/> object.</summary>
+public enum SoftKind : byte { SoftShadow, Glow }
+
+/// <summary>
+/// "Soft paint" of a Soft Shadow or Glow object (R8): the object's shape, drawn blurred, in its fill color times <see cref="Opacity"/>. Nothing is
+/// rasterized in the document; the renderer blurs the vector shape when it draws (<c>SoftLayers</c>). The blur is
+/// <c>0.068 × Softness × Reference</c> (a Gaussian sigma in the object's own units; <see cref="Reference"/> is the height of the source the
+/// effect was made from, in this object's units, so the blur scales with the object when it is scaled).
+/// <para>The rest of the fields are what the effect was made with (shift, cast shadow slant and height, inset or glow thickness), kept so
+/// the tool can open on the source again and change them. Hs/Vs are in document points with Vs positive UP (the layout's convention; the
+/// default shadow is down and to the right: Hs > 0, Vs &lt; 0). <see cref="Inset"/> is a fraction of the source height, negative = grows
+/// (a glow's thickness is stored as a negative inset, as the layout format does).</para>
+/// </summary>
+public sealed record BlurStyle(SoftKind Kind, double Opacity, double Softness, double Reference,
+    double Hs = 0, double Vs = 0, double Slant = 0, double HeightScale = 1, double Inset = 0)
+{
+    /// <summary>Gaussian sigma per unit of (Softness × Reference): the legacy program's stack blur of radius (H/3 × Softness)/2 is a triangle kernel of sigma about 0.41 × radius.</summary>
+    public const double SigmaPerSoftness = 0.068;
+
+    /// <summary>Sigma of the blur in this object's own units.</summary>
+    public double Sigma => SigmaPerSoftness * Math.Max(Softness, 0) * Math.Max(Reference, 0);
+}
+
+/// <summary>
+/// Feather (R8): the object's own paint fades out at its edge. <see cref="Amount"/> is a fraction of the object's smaller side (the width or the
+/// height of its bounds; for live text the height), <see cref="Inset"/> (0..1) pulls the 50 % contour of the fade inwards so a hard-edged picture loses its
+/// edge. 0 amount = off. Drawn by <c>SoftLayers</c> from the object's own coverage; nothing is rasterized in the document.
+/// </summary>
+public sealed record FeatherStyle(double Amount, double Inset)
+{
+    public const double SigmaPerPixel = 0.164, ErodeWidthPerPixel = 1.5;
+}
+
+/// <summary>Fill and stroke of an object, plus the soft effects that change how it is drawn. Immutable; change by replacing the whole style (one undo step).</summary>
+public sealed record ObjectStyle(Paint? Fill, StrokeStyle? Stroke, BlurStyle? Blur = null, FeatherStyle? Feather = null)
 {
     public static readonly ObjectStyle None = new(null, null);
     public static ObjectStyle FillOnly(DocColor c) => new(new SolidPaint(c), null);
 
     public ObjectStyle WithFill(Paint? fill) => this with { Fill = fill };
     public ObjectStyle WithStroke(StrokeStyle? stroke) => this with { Stroke = stroke };
+    public ObjectStyle WithBlur(BlurStyle? blur) => this with { Blur = blur };
+    public ObjectStyle WithFeather(FeatherStyle? feather) => this with { Feather = feather is { Amount: > 0 } ? feather : null };
+
+    /// <summary>True when something other than fill and stroke is set (the file writer needs to know).</summary>
+    public bool HasSoftEffects => Blur is not null || Feather is not null;
 
     /// <summary>Half the stroke width, i.e. how far paint extends beyond the geometry.</summary>
     public double StrokeOutset => Stroke is null ? 0 : Stroke.Width / 2;

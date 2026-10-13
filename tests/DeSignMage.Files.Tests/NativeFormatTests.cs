@@ -580,7 +580,8 @@ public class NativeFormatTests(ITestOutputHelper output)
         var paintTypes = typeof(Paint).Assembly.GetTypes().Where(t => t.IsClass && !t.IsAbstract && typeof(Paint).IsAssignableFrom(t));
         foreach (var t in paintTypes)
         {
-            var sample = t == typeof(SolidPaint) ? new SolidPaint(DocColor.Black) : null;
+            Paint? sample = t == typeof(SolidPaint) ? new SolidPaint(DocColor.Black)
+                : t == typeof(GradientPaint) ? GradientPaint.Create(GradientKind.Linear, DocColor.Black) : null;
             if (sample is null) Assert.Fail($"Add a sample of {t.Name} to this test and a PaintCodec for it.");
             Assert.NotNull(DsmCodecRegistry.Default.ForPaint(sample));
         }

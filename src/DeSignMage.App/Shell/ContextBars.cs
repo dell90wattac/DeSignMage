@@ -35,6 +35,10 @@ public static class ContextBars
         OutlineTool o => new OutlineContextBar(session, o),
         CookieCutterTool c2 => new CookieCutterContextBar(session, c2),
         KnifeTool k => new KnifeContextBar(session, k),
+        GradientTool gt => new GradientContextBar(session, gt),
+        ShadowTool sh => new ShadowContextBar(session, sh),
+        SoftEffectTool se => new SoftEffectContextBar(session, se),
+        FeatherTool ft => new FeatherContextBar(session, ft),
         _ => new ToolNameContextBar(tool),
     };
 

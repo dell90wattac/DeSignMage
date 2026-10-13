@@ -1,4 +1,4 @@
-﻿using System.Globalization;
+using System.Globalization;
 using System.Text;
 using System.Xml;
 using DeSignMage.Core.Geometry;
@@ -97,6 +97,18 @@ public static class SvgExporter
         private void WriteObject(DocObject o)
         {
             if (!o.Visible) return;
+            // Feather (R8): the object is written as usual inside a group that carries a mask (the blurred, eroded silhouette)
+            if (o is not GroupObject && o.Style.Feather is { Amount: > 0 } feather && BeginFeather(o, feather))
+            {
+                WriteUnfeathered(o);
+                xml.WriteEndElement();
+                return;
+            }
+            WriteUnfeathered(o);
+        }
+
+        private void WriteUnfeathered(DocObject o)
+        {
             switch (o)
             {
                 case GroupObject g:
@@ -174,11 +186,19 @@ public static class SvgExporter
         private void WriteShape(DocObject o, Affine2 world, bool fill, bool stroke)
         {
             var style = o.Style;
+            if (style.Blur is { } blur && style.Fill is SolidPaint blurFill)
+            {
+                if (fill) WriteSoftShape(o, world, blur, blurFill.Color);
+                return;
+            }
             bool drawFill = fill && style.Fill is not null;
             bool drawStroke = stroke && style.Stroke is { Width: > 0 };
             if (!drawFill && !drawStroke) return;
             if (o.GetLocalGeometry() is not { IsEmpty: false } geom) return;
             var world2 = geom.Transform(world);
+
+            // A gradient is defined in the object's own space and carried to the page by the same matrix as the shape (exact under any transform).
+            string? gradientId = drawFill && style.Fill is GradientPaint gp ? WriteGradient(gp, geom.GetBounds(), world) : null;
 
             xml.WriteStartElement("path");
             Name(o);
@@ -186,6 +206,8 @@ public static class SvgExporter
             if (drawFill)
             {
                 if (style.Fill is SolidPaint sf) PaintAttrs("fill", sf.Color);
+                else if (gradientId is not null) xml.WriteAttributeString("fill", $"url(#{gradientId})");
+                else if (style.Fill is GradientPaint flat) PaintAttrs("fill", flat.Stops[^1].Color);   // a gradient with no extent
                 if (world2.FillRule == FillRule.EvenOdd) xml.WriteAttributeString("fill-rule", "evenodd");
             }
             else xml.WriteAttributeString("fill", "none");
@@ -197,6 +219,8 @@ public static class SvgExporter
         {
             var style = t.Style;
             var layout = t.Layout;
+            // The text element's own transform is its world matrix, so its gradient needs none (it is in the text's local space).
+            string? gradientId = style.Fill is GradientPaint gp ? WriteGradient(gp, layout.Outline.GetBounds(), null) : null;
             xml.WriteStartElement("text");
             Name(t);
             xml.WriteAttributeString("transform", Matrix(world));
@@ -206,7 +230,9 @@ public static class SvgExporter
             if (t.FontWeight != 400) xml.WriteAttributeString("font-weight", t.FontWeight.ToString(CultureInfo.InvariantCulture));
             if (t.Italic) xml.WriteAttributeString("font-style", "italic");
             xml.WriteAttributeString("xml", "space", null, "preserve");
-            if (style.Fill is SolidPaint sf) PaintAttrs("fill", sf.Color); else xml.WriteAttributeString("fill", "none");
+            if (style.Fill is SolidPaint sf) PaintAttrs("fill", sf.Color);
+            else if (gradientId is not null) xml.WriteAttributeString("fill", $"url(#{gradientId})");
+            else xml.WriteAttributeString("fill", "none");
             if (style.Stroke is { Width: > 0 } stroke) StrokeAttrs(stroke);
 
             // One positioned tspan per letter keeps tracking and per-gap kerning. Written raw so no indentation whitespace lands inside the text.
@@ -236,6 +262,150 @@ public static class SvgExporter
             if (!world.IsIdentity) xml.WriteAttributeString("transform", Matrix(world));
             xml.WriteAttributeString("xlink", "href", XlinkNs, $"data:{asset.MediaType};base64,{Convert.ToBase64String(asset.Data)}");
             xml.WriteEndElement();
+        }
+
+        // ---- soft paint (Soft Shadow, Glow, Feather) ----
+
+        private int _softCounter;
+
+        /// <summary>A Soft Shadow or Glow object: its outline with a Gaussian blur filter (feGaussianBlur), in its color times the opacity. The page is not rasterized; the viewer blurs.</summary>
+        private void WriteSoftShape(DocObject o, Affine2 world, BlurStyle blur, DocColor color)
+        {
+            if (o.GetLocalGeometry() is not { IsEmpty: false } geom) return;
+            var shape = geom.Transform(world);
+            double sigma = blur.Sigma * Math.Sqrt(Math.Abs(world.Determinant));
+            var faded = color with { A = (byte)Math.Round(Math.Clamp(blur.Opacity, 0, 1) * color.A) };
+            string? filterId = null;
+            if (sigma >= 0.02)
+            {
+                var b = shape.GetBounds();
+                double margin = 3 * sigma + 1;
+                filterId = "soft-" + (++_softCounter);
+                xml.WriteStartElement("defs");
+                xml.WriteStartElement("filter");
+                xml.WriteAttributeString("id", filterId);
+                xml.WriteAttributeString("filterUnits", "userSpaceOnUse");
+                xml.WriteAttributeString("x", Num(b.Left - margin));
+                xml.WriteAttributeString("y", Num(b.Top - margin));
+                xml.WriteAttributeString("width", Num(b.Width + 2 * margin));
+                xml.WriteAttributeString("height", Num(b.Height + 2 * margin));
+                xml.WriteStartElement("feGaussianBlur");
+                xml.WriteAttributeString("stdDeviation", Num(sigma));
+                xml.WriteEndElement();
+                xml.WriteEndElement();
+                xml.WriteEndElement();
+            }
+            xml.WriteStartElement("path");
+            Name(o);
+            xml.WriteAttributeString("d", PathData(shape));
+            PaintAttrs("fill", faded);
+            if (shape.FillRule == FillRule.EvenOdd) xml.WriteAttributeString("fill-rule", "evenodd");
+            if (filterId is not null) xml.WriteAttributeString("filter", $"url(#{filterId})");
+            xml.WriteEndElement();
+        }
+
+        /// <summary>Writes the mask of a feather and opens the group that uses it (the caller closes it). False when the object has no outline to feather.</summary>
+        private bool BeginFeather(DocObject o, FeatherStyle feather)
+        {
+            if (o.GetLocalGeometry() is not { IsEmpty: false } geom) return false;
+            var world = o.GetWorldTransform();
+            var shape = geom.Transform(world);
+            var b = shape.GetBounds();
+            if (b.IsEmpty) return false;
+            var (sigma, erode) = SoftLayers.FeatherSizes(o, b, feather);
+            if (sigma < 1e-6 && erode < 1e-6) return false;
+            double margin = 3 * sigma + erode + 1;
+            string id = "feather-" + (++_softCounter);
+            string x = Num(b.Left - margin), y = Num(b.Top - margin), w = Num(b.Width + 2 * margin), h = Num(b.Height + 2 * margin);
+            xml.WriteStartElement("defs");
+            if (sigma >= 0.02)
+            {
+                xml.WriteStartElement("filter");
+                xml.WriteAttributeString("id", id + "-blur");
+                xml.WriteAttributeString("filterUnits", "userSpaceOnUse");
+                xml.WriteAttributeString("x", x); xml.WriteAttributeString("y", y); xml.WriteAttributeString("width", w); xml.WriteAttributeString("height", h);
+                xml.WriteStartElement("feGaussianBlur");
+                xml.WriteAttributeString("stdDeviation", Num(sigma));
+                xml.WriteEndElement();
+                xml.WriteEndElement();
+            }
+            xml.WriteStartElement("mask");
+            xml.WriteAttributeString("id", id);
+            xml.WriteAttributeString("maskUnits", "userSpaceOnUse");
+            xml.WriteAttributeString("x", x); xml.WriteAttributeString("y", y); xml.WriteAttributeString("width", w); xml.WriteAttributeString("height", h);
+            xml.WriteStartElement("g");
+            if (sigma >= 0.02) xml.WriteAttributeString("filter", $"url(#{id}-blur)");
+            xml.WriteStartElement("path");
+            xml.WriteAttributeString("d", PathData(shape));
+            xml.WriteAttributeString("fill", "#ffffff");
+            if (shape.FillRule == FillRule.EvenOdd) xml.WriteAttributeString("fill-rule", "evenodd");
+            xml.WriteEndElement();
+            if (erode > 1e-9)
+            {
+                // the inset: a stroke centered on the outline, in black, takes the edge away before the blur
+                xml.WriteStartElement("path");
+                xml.WriteAttributeString("d", PathData(shape));
+                xml.WriteAttributeString("fill", "none");
+                xml.WriteAttributeString("stroke", "#000000");
+                xml.WriteAttributeString("stroke-width", Num(erode));
+                xml.WriteAttributeString("stroke-linejoin", "round");
+                xml.WriteEndElement();
+            }
+            xml.WriteEndElement();   // g
+            xml.WriteEndElement();   // mask
+            xml.WriteEndElement();   // defs
+            xml.WriteStartElement("g");
+            xml.WriteAttributeString("mask", $"url(#{id})");
+            return true;
+        }
+
+        // ---- gradients ----
+
+        private int _gradientCounter;
+
+        /// <summary>
+        /// Writes a <c>linearGradient</c> / <c>radialGradient</c> in <c>defs</c> and returns its id. Coordinates are the object's local ones;
+        /// <paramref name="toPage"/> (null when the element already carries the object's transform) is the matrix that places them on the
+        /// page. The stops are the dense HSV ramp, so every viewer shows the same colors. A gradient with no extent becomes its last color.
+        /// </summary>
+        private string? WriteGradient(GradientPaint g, Rect2 bounds, Affine2? toPage)
+        {
+            if (bounds.IsEmpty) return null;
+            var frame = g.Frame(bounds);
+            if (frame.IsDegenerate) return null;
+            string id = "gradient-" + (++_gradientCounter);
+
+            xml.WriteStartElement("defs");
+            if (g.IsLinear)
+            {
+                xml.WriteStartElement("linearGradient");
+                xml.WriteAttributeString("id", id);
+                xml.WriteAttributeString("gradientUnits", "userSpaceOnUse");
+                xml.WriteAttributeString("x1", Num(frame.P0.X)); xml.WriteAttributeString("y1", Num(frame.P0.Y));
+                xml.WriteAttributeString("x2", Num(frame.P1.X)); xml.WriteAttributeString("y2", Num(frame.P1.Y));
+                if (toPage is { } m) xml.WriteAttributeString("gradientTransform", Matrix(m));
+            }
+            else
+            {
+                // A unit circle at the origin, squeezed into the circle/ellipse by the gradient transform.
+                xml.WriteStartElement("radialGradient");
+                xml.WriteAttributeString("id", id);
+                xml.WriteAttributeString("gradientUnits", "userSpaceOnUse");
+                xml.WriteAttributeString("cx", "0"); xml.WriteAttributeString("cy", "0"); xml.WriteAttributeString("r", "1");
+                var placed = toPage is { } p ? frame.UnitToLocal * p : frame.UnitToLocal;
+                xml.WriteAttributeString("gradientTransform", Matrix(placed));
+            }
+            foreach (var e in GradientRamp.Build(g))
+            {
+                xml.WriteStartElement("stop");
+                xml.WriteAttributeString("offset", Num(e.T));
+                xml.WriteAttributeString("stop-color", $"#{e.R:X2}{e.G:X2}{e.B:X2}");
+                if (e.A != 255) xml.WriteAttributeString("stop-opacity", (e.A / 255.0).ToString("0.######", CultureInfo.InvariantCulture));
+                xml.WriteEndElement();
+            }
+            xml.WriteEndElement();   // the gradient
+            xml.WriteEndElement();   // defs
+            return id;
         }
 
         // ---- attributes ----

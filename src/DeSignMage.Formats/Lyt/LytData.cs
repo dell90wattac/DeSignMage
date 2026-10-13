@@ -116,6 +116,31 @@ public sealed class LytFill
 
     /// <summary>Path of a linked (not embedded) image.</summary>
     public string? LinkedImagePath { get; init; }
+
+    /// <summary>The gradient and transparency part of the block (null for the oldest block versions).</summary>
+    public LytBlend? Blend { get; init; }
+}
+
+/// <summary>One of the blend's colors beyond the first four: its control point, color and node flag (1 = highlight).</summary>
+public readonly record struct LytBlendNode(float X, float Y, LytColor Color, ushort Flag);
+
+/// <summary>
+/// The gradient (GradType) and transparency (TransType) fields of a fill block, as stored: control points in the part's node space (y up),
+/// the first four colors and nodes, the remaining ones in <see cref="ExtraNodes"/>. GradType: 0 none, 1 linear, 2 circle, 3 ellipse, 5 horizontal,
+/// 6 vertical, 7 flat. TransType: 0 none, 1 flat, 2 linear, 3 circle, 4 ellipse, 0xC horizontal, 0xD vertical.
+/// </summary>
+public sealed class LytBlend
+{
+    public uint GradType { get; init; }
+    public uint TransType { get; init; }
+    public LytColor[] Colors { get; } = new LytColor[4];
+    public float[] Points { get; } = new float[8];
+    public float[] TransPoints { get; } = new float[8];
+    public float TransMin { get; set; }
+    public float TransMax { get; set; } = 1;
+    public bool TransSwap { get; set; }
+    public int NodeCount { get; set; } = 2;
+    public List<LytBlendNode> ExtraNodes { get; } = [];
 }
 
 /// <summary>Style data of a part (a drawn shape or text).</summary>
