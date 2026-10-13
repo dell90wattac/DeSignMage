@@ -28,9 +28,9 @@ namespace DeSignMage.App.Tests;
 /// </summary>
 public class ButtonAuditTests
 {
-    private static (MainWindow W, DesignCanvas C) Open()
+    private static (MainWindow W, DesignCanvas C) Open(double width = 1400)
     {
-        var w = new MainWindow(new StartupOptions()) { Width = 1400, Height = 860 };
+        var w = new MainWindow(new StartupOptions()) { Width = width, Height = 860 };
         w.Show();
         Flush();
         w.CaptureRenderedFrame();
@@ -275,7 +275,7 @@ public class ButtonAuditTests
     [AvaloniaFact]
     public async Task Select_bar_picture_buttons_rotate_flip_invert_crop_and_one_to_one()
     {
-        var (w, _) = Open();
+        var (w, _) = Open(1800);   // the picture row is long, and the Context Bar's right end holds the menu tabs (R25): the buttons must be on screen to be pressed
         var dir = Directory.CreateTempSubdirectory("dsm-audit-").FullName;
         try
         {

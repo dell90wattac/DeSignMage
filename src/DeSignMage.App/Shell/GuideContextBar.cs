@@ -19,6 +19,7 @@ public sealed class GuideContextBar : ContextBarBase, IRefreshable
     private readonly TextBox _x, _y, _angle;
     private readonly Button _horizontal, _vertical, _diagonal, _lock, _center, _snap, _removeOne, _removeAll;
     private readonly TextBlock _info = new() { VerticalAlignment = VerticalAlignment.Center, Foreground = AppTheme.Brush("Ui.Muted") };
+    private readonly Control _xField, _yField, _angleField, _kinds, _tools;   // groups shown only while they apply to the selected guide
     private bool _refreshing, _edited;
 
     public GuideContextBar(EditorSession session)
@@ -46,15 +47,20 @@ public sealed class GuideContextBar : ContextBarBase, IRefreshable
         ((TextBlock)_removeAll.Content!).Foreground = Brushes.Red;
         foreach (var b in new[] { _removeOne, _removeAll }) ((TextBlock)b.Content!).FontWeight = FontWeight.Bold;
 
+        _xField = ContextBars.Field("X", _x, "in");
+        _yField = ContextBars.Field("Y", _y, "in");
+        _angleField = ContextBars.Field("Angle", _angle, "°");
+        _kinds = ContextBars.Group(_horizontal, _vertical, _diagonal);
+        _tools = ContextBars.Group(_lock, _center, _snap);
         foreach (var c in new Control[]
                  {
-                     ContextBars.Field("X", _x, "in"), ContextBars.Field("Y", _y, "in"), ContextBars.Field("Angle", _angle, "°"),
-                     ContextBars.Separator(), ContextBars.Group(_horizontal, _vertical, _diagonal),
+                     _xField, _yField, _angleField,
+                     ContextBars.Separator(), _kinds,
                  })
             Row1.Children.Add(c);
         foreach (var c in new Control[]
                  {
-                     ContextBars.Group(_lock, _center, _snap), ContextBars.Separator(),
+                     _tools, ContextBars.Separator(),
                      ContextBars.Group(_removeOne, _removeAll), _info,
                  })
             Row2.Children.Add(c);
@@ -104,9 +110,10 @@ public sealed class GuideContextBar : ContextBarBase, IRefreshable
         var kind = g?.Orientation ?? GuideOrientation.Horizontal;
 
         // The coordinate that doesn't apply is greyed out (it still shows where the guide was grabbed).
-        _x.IsEnabled = has && !locked && kind != GuideOrientation.Horizontal;
-        _y.IsEnabled = has && !locked && kind != GuideOrientation.Vertical;
-        _angle.IsEnabled = has && !locked;
+        // What does not apply is not shown (R26): a horizontal guide has no X, a vertical one no Y, a locked one cannot be edited.
+        _x.IsEnabled = _xField.IsVisible = has && !locked && kind != GuideOrientation.Horizontal;
+        _y.IsEnabled = _yField.IsVisible = has && !locked && kind != GuideOrientation.Vertical;
+        _angle.IsEnabled = _angleField.IsVisible = has && !locked;
         if (g is not null)
         {
             var (ux, uy) = Units.ToUser(g.Origin, page);
@@ -119,9 +126,11 @@ public sealed class GuideContextBar : ContextBarBase, IRefreshable
             _x.Text = _y.Text = _angle.Text = "";
         }
 
-        _horizontal.IsEnabled = _vertical.IsEnabled = _diagonal.IsEnabled = _center.IsEnabled = has && !locked;
-        _lock.IsEnabled = _removeOne.IsEnabled = has;
-        _removeAll.IsEnabled = _session.Document.Guides.Count > 0;
+        _horizontal.IsEnabled = _vertical.IsEnabled = _diagonal.IsEnabled = _kinds.IsVisible = has && !locked;
+        ContextBars.Valid(_center, has && !locked);
+        ContextBars.Valid(_lock, has);
+        ContextBars.Valid(_removeOne, has);
+        ContextBars.Valid(_removeAll, _session.Document.Guides.Count > 0);
         Pressed(_horizontal, has && kind == GuideOrientation.Horizontal);
         Pressed(_vertical, has && kind == GuideOrientation.Vertical);
         Pressed(_diagonal, has && kind == GuideOrientation.Angled);

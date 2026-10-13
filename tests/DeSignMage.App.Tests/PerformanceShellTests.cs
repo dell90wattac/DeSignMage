@@ -28,7 +28,7 @@ public class PerformanceShellTests
         }
     }
 
-    [Fact]
+    [AvaloniaFact]   // on the UI thread of the test application: its startup replaces the settings store, and must not do that in the middle of this test
     public void Settings_are_remembered_snapped_to_the_offered_sizes_and_applied_to_new_histories()
     {
         var oldStore = AppSettings.Store;

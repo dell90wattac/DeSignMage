@@ -33,6 +33,7 @@ The parts of the main window have fixed names, used in tooltips, menus, code and
 |---|---|
 | **Main Toolbar** | the icons on the same top row as the menus (New, Open, Save, Undo, Zoom, ...), with Feedback / Bug at the far right |
 | **Context Bar** | the band under it that changes with the active tool and the selection: always two rows tall (fields on the first, buttons and options on the second); a row that is too long for the window scrolls sideways |
+| **Menu Tabs** | Image, Effects and Tools tabs at the right end of the Context Bar; a tab opens a strip of icon buttons for that menu's commands in the right half of the bar (one at a time; the open tab closes it; the normal menus stay) |
 | **Toolbox** | the column of tool buttons on the left |
 | **Info Line** | the line of counts and sizes above the ruler |
 | **Dock** | the full-height column on the right, under the top row; it holds one panel at a time and is only its **Dock Tabs** when every panel is closed |

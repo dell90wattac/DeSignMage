@@ -58,6 +58,7 @@ public sealed class OutlineContextBar : ContextBarBase, IRefreshable
     private readonly ComboBox _corners;
     private readonly CheckBox _contour, _leave, _preview;
     private readonly Button _done;
+    private readonly Control _firstPctGroup, _secondPctGroup, _oatGroup;   // shown only while they apply
     private readonly TextBlock _title = PathBarParts.Value();
     private bool _refreshing;
 
@@ -86,17 +87,20 @@ public sealed class OutlineContextBar : ContextBarBase, IRefreshable
         _done = PathBarParts.Action("✓ Done", "Make the new object (Enter)", () => { _ = tool.Apply(); ContextBars.FocusCanvas?.Invoke(); });
         var cancel = PathBarParts.Action("✕ Cancel", "Leave without changing anything (Esc)", () => { session.SetTool("select"); ContextBars.FocusCanvas?.Invoke(); });
 
+        _firstPctGroup = ContextBars.Field("%", _firstPct.Box);
+        _secondPctGroup = ContextBars.Field("%", _secondPct.Box);
+        _oatGroup = ContextBars.Field("OAT", _oat.Box);
         foreach (var c in new Control[]
                  {
                      _title,
-                     ContextBars.Field("1st", _first.Box, "in"), ContextBars.Field("%", _firstPct.Box),
+                     ContextBars.Field("1st", _first.Box, "in"), _firstPctGroup,
                      PathBarParts.Gap(),
-                     ContextBars.Field("2nd", _second.Box, "in"), ContextBars.Field("%", _secondPct.Box),
+                     ContextBars.Field("2nd", _second.Box, "in"), _secondPctGroup,
                  })
             Row1.Children.Add(c);
         foreach (var c in new Control[]
                  {
-                     ContextBars.Group(ContextBars.Label("Corners"), _corners), ContextBars.Field("OAT", _oat.Box),
+                     ContextBars.Group(ContextBars.Label("Corners"), _corners), _oatGroup,
                      PathBarParts.Gap(), _contour, _leave, _preview,
                      PathBarParts.Gap(), _done, cancel,
                  })
@@ -114,14 +118,15 @@ public sealed class OutlineContextBar : ContextBarBase, IRefreshable
         _second.Show(ContextBars.Fmt(Units.ToInches(s.Second)));
         _firstPct.Show(_tool.HasPercent ? ContextBars.Fmt(_tool.FirstPercent) : "");
         _secondPct.Show(_tool.HasPercent ? ContextBars.Fmt(_tool.SecondPercent) : "");
-        _firstPct.Box.IsEnabled = _secondPct.Box.IsEnabled = _tool.HasPercent;
+        // a field that does not apply is not shown (R26): percentages need a selection to take a height from; OAT belongs to Auto corners
+        _firstPct.Box.IsEnabled = _secondPct.Box.IsEnabled = _firstPctGroup.IsVisible = _secondPctGroup.IsVisible = _tool.HasPercent;
         _oat.Show(ContextBars.Fmt(s.Oat));
-        _oat.Box.IsEnabled = s.Corners == CornerStyle.Auto;
+        _oat.Box.IsEnabled = _oatGroup.IsVisible = s.Corners == CornerStyle.Auto;
         _corners.SelectedIndex = s.Corners switch { CornerStyle.Miter => 1, CornerStyle.Round => 2, _ => 0 };
         _contour.IsChecked = s.ContourOnly;
         _leave.IsChecked = s.LeaveOriginal;
         _preview.IsChecked = _tool.PreviewEnabled;
-        _done.IsEnabled = _tool.CanApply && !_session.EffectBusy;
+        ContextBars.Valid(_done, _tool.CanApply && !_session.EffectBusy);
         _refreshing = false;
     }
 }
@@ -162,7 +167,7 @@ public sealed class CookieCutterContextBar : ContextBarBase, IRefreshable
         _refreshing = true;
         _outline.Show(ContextBars.Fmt(Units.ToInches(_tool.Outline)));
         _remain.IsChecked = _tool.RemainActive;
-        _apply.IsEnabled = _tool.CanApply && !_session.EffectBusy && !_tool.RemainActive;
+        ContextBars.Valid(_apply, _tool.CanApply && !_session.EffectBusy && !_tool.RemainActive);
         _refreshing = false;
     }
 }
@@ -174,6 +179,7 @@ public sealed class KnifeContextBar : ContextBarBase, IRefreshable
     private readonly EffectBarParts.Field _gap, _overlap;
     private readonly RadioButton _gapMode, _overlapMode;
     private readonly CheckBox _selectedOnly, _simple;
+    private readonly Control _gapBox, _gapUnit, _overlapBox, _overlapUnit;   // the amount of the mode that is on; the other one is not shown
     private bool _refreshing;
 
     public KnifeContextBar(EditorSession session, KnifeTool tool)
@@ -196,10 +202,14 @@ public sealed class KnifeContextBar : ContextBarBase, IRefreshable
         _simple = PathBarParts.Check("Simple Cut", "Cut exactly along the line you drag. Off: the line is extended across the whole shape", v => { if (!_refreshing) tool.Update(s => s with { SimpleCut = v }); });
         var done = PathBarParts.Action("✓ Done", "Leave the Knife tool (Esc)", () => { session.SetTool("select"); ContextBars.FocusCanvas?.Invoke(); });
 
+        _gapBox = _gap.Box;
+        _overlapBox = _overlap.Box;
+        _gapUnit = ContextBars.Unit("in");
+        _overlapUnit = ContextBars.Unit("in");
         foreach (var c in new Control[]
                  {
-                     ContextBars.Group(_gapMode, _gap.Box, ContextBars.Unit("in")), PathBarParts.Gap(),
-                     ContextBars.Group(_overlapMode, _overlap.Box, ContextBars.Unit("in")),
+                     ContextBars.Group(_gapMode, _gapBox, _gapUnit), PathBarParts.Gap(),
+                     ContextBars.Group(_overlapMode, _overlapBox, _overlapUnit),
                  })
             Row1.Children.Add(c);
         foreach (var c in new Control[] { _selectedOnly, _simple, PathBarParts.Gap(), done })
@@ -216,12 +226,13 @@ public sealed class KnifeContextBar : ContextBarBase, IRefreshable
         _overlap.Show(ContextBars.Fmt(Units.ToInches(s.Overlap)));
         _gapMode.IsChecked = !s.OverlapMode;
         _overlapMode.IsChecked = s.OverlapMode;
-        _gap.Box.IsEnabled = !s.OverlapMode;
-        _overlap.Box.IsEnabled = s.OverlapMode;
-        _selectedOnly.IsEnabled = _tool.CanSelectedOnly;
+        // only the amount of the mode that is on is shown (R26); the radio buttons stay, they are how the mode is chosen
+        _gapBox.IsEnabled = _gapBox.IsVisible = _gapUnit.IsVisible = !s.OverlapMode;
+        _overlapBox.IsEnabled = _overlapBox.IsVisible = _overlapUnit.IsVisible = s.OverlapMode;
+        ContextBars.Valid(_selectedOnly, _tool.CanSelectedOnly);
         _selectedOnly.IsChecked = s.SelectedOnly && _tool.CanSelectedOnly;
         _simple.IsChecked = s.SimpleCut;
-        _simple.IsEnabled = !s.OverlapMode;   // overlap mode always runs the line across the whole shape
+        ContextBars.Valid(_simple, !s.OverlapMode);   // overlap mode always runs the line across the whole shape
         _refreshing = false;
     }
 }

@@ -96,6 +96,17 @@ public static class ContextBars
     internal static StackPanel Field(string caption, TextBox box, string? unit = null) =>
         unit is null ? Group(Label(caption), box) : Group(Label(caption), box, Unit(unit));
 
+    /// <summary>
+    /// The Context Bar shows only valid choices (R26): a control that would do nothing for the current selection, tool or state is hidden
+    /// completely, never just greyed. Call this wherever a control follows a command's can-execute state. It keeps <c>IsEnabled</c> in step
+    /// as well, so the control is exactly as usable as it was; a hidden one takes no room (rows close the gap and never keep a stray separator).
+    /// </summary>
+    internal static void Valid(Control control, bool valid)
+    {
+        control.IsEnabled = valid;
+        control.IsVisible = valid;
+    }
+
     /// <summary>A thin vertical divider between groups of a bar; the row hides it where a line would start or end with it.</summary>
     internal static BarSeparator Separator() => new();
 
@@ -159,6 +170,7 @@ public sealed class SelectionContextBar : ContextBarBase, IRefreshable
 {
     private readonly EditorSession _session;
     private readonly TextBox _x, _y, _w, _h;
+    private readonly Control[] _fields;   // the X, Y, W and H fields with their captions: shown only while something is selected
     private readonly TextBlock _count = new() { VerticalAlignment = VerticalAlignment.Center, Foreground = AppTheme.Brush("Ui.Muted") };
     private bool _refreshing, _edited;
     private readonly Button _combine, _breakApart, _group, _ungroup;
@@ -186,10 +198,8 @@ public sealed class SelectionContextBar : ContextBarBase, IRefreshable
         _ungroup = ContextBars.Action("Ungroup (U)", () => _session.UngroupSelection());
 
         // Row 1: where the selection is and how big; row 2: what can be done with it (the picture and text controls join it when they apply).
-        Row1.Children.Add(ContextBars.Field("X", _x, "in"));
-        Row1.Children.Add(ContextBars.Field("Y", _y, "in"));
-        Row1.Children.Add(ContextBars.Field("W", _w, "in"));
-        Row1.Children.Add(ContextBars.Field("H", _h, "in"));
+        _fields = [ContextBars.Field("X", _x, "in"), ContextBars.Field("Y", _y, "in"), ContextBars.Field("W", _w, "in"), ContextBars.Field("H", _h, "in")];
+        foreach (var field in _fields) Row1.Children.Add(field);
         Row1.Children.Add(ContextBars.Separator());
         Row1.Children.Add(_count);
         Row2.Children.Add(_combine);
@@ -203,15 +213,21 @@ public sealed class SelectionContextBar : ContextBarBase, IRefreshable
         Refresh();
     }
 
+    /// <summary>True when the selection is one or more text objects selected directly, and nothing else.</summary>
+    internal static bool IsOnlyText(EditorSession session) =>
+        session.Selection.Items.Count > 0 && session.Selection.Items.All(o => o is TextObject);
+
     public void Refresh()
     {
         _refreshing = true;
-        _text.IsVisible = _session.SelectedTexts().Count > 0;
+        // Font controls only for a piece of text selected itself (R26): not a group that holds text, not text mixed with shapes.
+        _text.IsVisible = IsOnlyText(_session);
         if (_text.IsVisible) _text.Refresh();
         _image.Refresh();
         var b = _session.Selection.GetBounds();
         bool has = !b.IsEmpty;
         foreach (var t in new[] { _x, _y, _w, _h }) t.IsEnabled = has;
+        foreach (var field in _fields) field.IsVisible = has;
         if (has)
         {
             var (ux, uy) = Units.ToUser(new Vec2(b.Left, b.Bottom), _session.Document.Page);
@@ -225,10 +241,11 @@ public sealed class SelectionContextBar : ContextBarBase, IRefreshable
             _x.Text = _y.Text = _w.Text = _h.Text = "";
         }
         _edited = false;
-        _combine.IsEnabled = _session.CanCombine;
-        _breakApart.IsEnabled = _session.CanBreakApart;
-        _group.IsEnabled = _session.CanGroup;
-        _ungroup.IsEnabled = _session.CanUngroup;
+        // Each button shows exactly when its command would work (R26); otherwise it is not there at all.
+        ContextBars.Valid(_combine, _session.CanCombine);
+        ContextBars.Valid(_breakApart, _session.CanBreakApart);
+        ContextBars.Valid(_group, _session.CanGroup);
+        ContextBars.Valid(_ungroup, _session.CanUngroup);
         _count.Text = _session.Selection.Count switch
         {
             0 => "Nothing selected",

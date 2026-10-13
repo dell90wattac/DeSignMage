@@ -47,6 +47,8 @@ public sealed class VectorEditContextBar : ContextBarBase, IRefreshable
     private readonly TextBlock _length = PathBarParts.Value(), _radius = PathBarParts.Value(), _angle = PathBarParts.Value(),
         _tangency = PathBarParts.Value(), _node = PathBarParts.Value();
     private readonly Button _insert, _line, _arc, _bezier, _sharp, _corner, _smooth, _symmetric, _break, _setStart, _join, _delete;
+    private readonly Control _position;   // the X / Y fields: only while a node is selected to move
+    private readonly TextBlock _idle;     // the tool's hint, shown while no command applies
     private bool _refreshing;
     private string _shownX = "", _shownY = "";   // what the fields were last set to: anything else was typed by the user
 
@@ -71,9 +73,11 @@ public sealed class VectorEditContextBar : ContextBarBase, IRefreshable
         _delete = PathBarParts.Action("Delete", "Delete the selected nodes or vector (Del)", tool.Delete);
 
         // Row 1: the selected node's position and the readouts; row 2: a button per command.
-        foreach (var c in new Control[] { ContextBars.Field("X", _x, "in"), ContextBars.Field("Y", _y, "in"), PathBarParts.Gap(), _node, _length, _radius, _angle, _tangency })
+        _position = ContextBars.Group(ContextBars.Field("X", _x, "in"), ContextBars.Field("Y", _y, "in"));
+        _idle = ContextBars.Hint(tool.Hint);
+        foreach (var c in new Control[] { _position, PathBarParts.Gap(), _node, _length, _radius, _angle, _tangency })
             Row1.Children.Add(c);
-        foreach (var c in new Control[] { _insert, _line, _arc, _bezier, _sharp, PathBarParts.Gap(), _corner, _smooth, _symmetric, PathBarParts.Gap(), _break, _setStart, _join, _delete })
+        foreach (var c in new Control[] { _insert, _line, _arc, _bezier, _sharp, PathBarParts.Gap(), _corner, _smooth, _symmetric, PathBarParts.Gap(), _break, _setStart, _join, _delete, _idle })
             Row2.Children.Add(c);
         PathBarParts.RefreshWhileVisible(this, session, Refresh);
         Refresh();
@@ -84,6 +88,7 @@ public sealed class VectorEditContextBar : ContextBarBase, IRefreshable
         _refreshing = true;
         var anchor = _tool.AnchorPosition();
         _x.IsEnabled = _y.IsEnabled = anchor is not null;
+        _position.IsVisible = anchor is not null;
         if (anchor is { } a)
         {
             var (ux, uy) = Units.ToUser(a, _session.Document.Page);
@@ -100,18 +105,21 @@ public sealed class VectorEditContextBar : ContextBarBase, IRefreshable
         _tangency.Text = r?.Tangency is { } t ? $"Tangency: {t.ToString("0.##", CultureInfo.InvariantCulture)}°" : "";
         foreach (var readout in new[] { _node, _length, _radius, _angle, _tangency }) readout.IsVisible = !string.IsNullOrEmpty(readout.Text);   // an empty readout would still take a gap
 
-        _insert.IsEnabled = _tool.CanInsert;
-        _line.IsEnabled = _tool.CanToLine;
-        _arc.IsEnabled = _tool.CanToArc;
-        _bezier.IsEnabled = _tool.CanToBezier;
-        _sharp.IsEnabled = _tool.CanMakeSharp;
-        _corner.IsEnabled = _tool.CanMakeCorner;
-        _smooth.IsEnabled = _tool.CanMakeSmooth;
-        _symmetric.IsEnabled = _tool.CanMakeSmooth;
-        _break.IsEnabled = _tool.CanBreakLoop;
-        _setStart.IsEnabled = _tool.CanSetStartEnd;
-        _join.IsEnabled = _tool.CanJoinStartEnd;
-        _delete.IsEnabled = _tool.CanDelete;
+        // Only the commands that would work are shown (R26); with none, the tool's hint says what to do.
+        ContextBars.Valid(_insert, _tool.CanInsert);
+        ContextBars.Valid(_line, _tool.CanToLine);
+        ContextBars.Valid(_arc, _tool.CanToArc);
+        ContextBars.Valid(_bezier, _tool.CanToBezier);
+        ContextBars.Valid(_sharp, _tool.CanMakeSharp);
+        ContextBars.Valid(_corner, _tool.CanMakeCorner);
+        ContextBars.Valid(_smooth, _tool.CanMakeSmooth);
+        ContextBars.Valid(_symmetric, _tool.CanMakeSmooth);
+        ContextBars.Valid(_break, _tool.CanBreakLoop);
+        ContextBars.Valid(_setStart, _tool.CanSetStartEnd);
+        ContextBars.Valid(_join, _tool.CanJoinStartEnd);
+        ContextBars.Valid(_delete, _tool.CanDelete);
+        _idle.Text = _tool.Hint;
+        _idle.IsVisible = !new[] { _insert, _line, _arc, _bezier, _sharp, _corner, _smooth, _symmetric, _break, _setStart, _join, _delete }.Any(b => b.IsVisible);
         _refreshing = false;
     }
 
@@ -179,13 +187,14 @@ public sealed class LoopEditContextBar : ContextBarBase, IRefreshable
         }
         _size.IsVisible = !string.IsNullOrEmpty(_size.Text);
         _length.IsVisible = !string.IsNullOrEmpty(_length.Text);
-        _reverse.IsEnabled = _tool.CanReverse;
-        _open.IsEnabled = _tool.CanOpen;
-        _close.IsEnabled = _tool.CanClose;
-        _circle.IsEnabled = _tool.CanToCircle;
-        _delete.IsEnabled = _tool.CanDelete;
-        _breakOut.IsEnabled = _tool.CanBreakOut;
-        _reorder.IsEnabled = _tool.CanReorder;
+        // Only the commands that would work are shown (R26).
+        ContextBars.Valid(_reverse, _tool.CanReverse);
+        ContextBars.Valid(_open, _tool.CanOpen);
+        ContextBars.Valid(_close, _tool.CanClose);
+        ContextBars.Valid(_circle, _tool.CanToCircle);
+        ContextBars.Valid(_delete, _tool.CanDelete);
+        ContextBars.Valid(_breakOut, _tool.CanBreakOut);
+        ContextBars.Valid(_reorder, _tool.CanReorder);
         _numbers.IsChecked = _tool.ShowNumbers;
         _direction.IsChecked = _tool.ShowDirection;
         _refreshing = false;

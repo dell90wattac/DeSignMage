@@ -28,7 +28,10 @@ public sealed class AppCommand(string id, string header, Action execute)
     public Func<bool>? IsChecked { get; init; }
     public string ToolTip => Gesture is null ? Header.Replace("_", "") : $"{Header.Replace("_", "")} ({Gesture})";
 
-    public static AppCommand NotImplemented(string id, string header) => new(id, header, () => { }) { CanExecute = () => false };
+    /// <summary>True for a menu item that is only a placeholder for something not built yet (always disabled).</summary>
+    public bool IsPlaceholder { get; init; }
+
+    public static AppCommand NotImplemented(string id, string header) => new(id, header, () => { }) { CanExecute = () => false, IsPlaceholder = true };
 }
 
 /// <summary>

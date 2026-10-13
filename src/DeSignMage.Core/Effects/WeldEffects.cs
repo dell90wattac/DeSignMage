@@ -13,30 +13,30 @@ namespace DeSignMage.Core.Effects;
 /// </summary>
 public static class WeldEffect
 {
-    /// <summary>The shapes (leaf, outline in document coordinates) a weld or common weld works on, bottom to top.</summary>
+    /// <summary>
+    /// The shapes (source object, outline in document coordinates) a weld or common weld works on, bottom to top. A combined object
+    /// contributes its parts, not its knocked-out outline (see <see cref="EffectGeometry.Operands"/>). <paramref name="items"/> are the
+    /// top-level objects that took part, which the result replaces.
+    /// </summary>
     internal static List<(DocObject Leaf, PathGeometry World)> Shapes(EditorSession s, out List<DocObject> items)
     {
         var all = Stacking.BottomToTop(s.Document, s.Selection.Items);
-        var shapes = new List<(DocObject, PathGeometry)>();
-        foreach (var leaf in EffectGeometry.Leaves(all))
-            if (EffectGeometry.World(leaf) is { } g && EffectGeometry.HasClosedArea(g)) shapes.Add((leaf, g));
+        var shapes = EffectGeometry.Operands(all).Where(x => EffectGeometry.HasClosedArea(x.World)).ToList();
         // Only objects that took part are replaced: a stray open line in the selection stays where it is.
-        items = Stacking.BottomToTop(s.Document, shapes.Select(x => x.Item1.TopLevel));
-        return shapes;
+        items = Stacking.BottomToTop(s.Document, shapes.Select(x => x.Source.TopLevel));
+        return shapes.Select(x => (x.Source, x.World)).ToList();
     }
 
-    /// <summary>Weld needs two closed loops to merge, anywhere in the selection (two objects, or one script word whose letters overlap), and no pictures.</summary>
+    /// <summary>
+    /// Weld has something to merge when the selection holds two or more closed shapes (a combined object counts as its parts), or one
+    /// single shape whose own loops cross each other (a script word, a path drawn over itself). One plain shape, even one with a hole, has
+    /// nothing to weld. No pictures.
+    /// </summary>
     public static bool CanRun(EditorSession s)
     {
         if (s.BooleanService is null || s.Selection.IsEmpty || EffectGeometry.ContainsImage(s.Selection.Items)) return false;
-        int loops = 0;
-        foreach (var leaf in EffectGeometry.Leaves(s.Selection.Items))
-        {
-            if (EffectGeometry.World(leaf) is not { } g) continue;
-            loops += EffectGeometry.CountLoops(g).Closed;
-            if (loops >= 2) return true;
-        }
-        return false;
+        var shapes = EffectGeometry.Operands(s.Selection.Items).Where(x => EffectGeometry.HasClosedArea(x.World)).Take(2).ToList();
+        return shapes.Count >= 2 || (shapes.Count == 1 && EffectGeometry.LoopsCross(shapes[0].World));
     }
 
     public static EffectPlan? Plan(EditorSession s)
@@ -68,16 +68,11 @@ public static class WeldEffect
 /// </summary>
 public static class CommonWeldEffect
 {
-    /// <summary>At least two separate shapes with an area.</summary>
+    /// <summary>At least two separate shapes with an area (a combined object counts as its parts, so one combined object of two shapes is enough).</summary>
     public static bool CanRun(EditorSession s)
     {
         if (s.BooleanService is null || s.Selection.IsEmpty || EffectGeometry.ContainsImage(s.Selection.Items)) return false;
-        int shapes = 0;
-        foreach (var leaf in EffectGeometry.Leaves(s.Selection.Items))
-        {
-            if (EffectGeometry.World(leaf) is { } g && EffectGeometry.HasClosedArea(g) && ++shapes >= 2) return true;
-        }
-        return false;
+        return EffectGeometry.Operands(s.Selection.Items).Count(x => EffectGeometry.HasClosedArea(x.World)) >= 2;
     }
 
     public static EffectPlan? Plan(EditorSession s)

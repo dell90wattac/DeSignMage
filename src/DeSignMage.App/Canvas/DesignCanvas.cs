@@ -27,6 +27,9 @@ public sealed class DesignCanvas : Control
     private EditorSession? _session;
     private CanvasFrameBuilder? _frames;
     private bool _fittedOnce;
+    private bool _autoFit;        // the view is still the one fitted to the file; a size change refits it until the user moves the view
+    private int _ownViewChange;   // > 0 while this control itself sets the view
+    private EventHandler? _viewChanged;
     private DispatcherTimer? _settleTimer;
 
     public DesignCanvas()
@@ -52,19 +55,28 @@ public sealed class DesignCanvas : Control
         get => _session;
         set
         {
-            if (_session is not null) _session.RedrawRequested -= OnRedrawRequested;
+            if (_session is not null)
+            {
+                _session.RedrawRequested -= OnRedrawRequested;
+                if (_viewChanged is not null) _session.Viewport.Changed -= _viewChanged;
+            }
             _frames?.Dispose();
             _session = value;
             _frames = value is null ? null : new CanvasFrameBuilder(value);
             _fittedOnce = false;
-            if (_session is not null) _session.RedrawRequested += OnRedrawRequested;
+            if (_session is not null)
+            {
+                _session.RedrawRequested += OnRedrawRequested;
+                _autoFit = true;
+                _viewChanged = (_, _) => { if (_ownViewChange == 0) _autoFit = false; };   // any other change of the view is the user's: leave it alone from then on
+                _session.Viewport.Changed += _viewChanged;
+            }
             // A canvas that is already laid out gets no size change when its session is replaced (File > New / Open),
             // so size the view and fit it here instead of waiting for OnSizeChanged.
             if (_session is not null && Bounds.Width > 0 && Bounds.Height > 0)
             {
-                _session.Viewport.SetViewSize(new Vec2(Bounds.Width, Bounds.Height));
+                FitToContent(Bounds.Size);
                 _fittedOnce = true;
-                _session.ZoomToContent();
             }
             InvalidateVisual();
         }
@@ -95,12 +107,29 @@ public sealed class DesignCanvas : Control
     {
         base.OnSizeChanged(e);
         if (_session is null) return;
-        _session.Viewport.SetViewSize(new Vec2(e.NewSize.Width, e.NewSize.Height));
-        if (!_fittedOnce && e.NewSize.Width > 0 && e.NewSize.Height > 0)
+        if ((!_fittedOnce || _autoFit) && e.NewSize.Width > 0 && e.NewSize.Height > 0)
         {
+            // A file opens fully zoomed out (R1): the page and everything on the pasteboard. The window and its panels may still change size after the file
+            // came in (maximizing, a bar growing a row), so the fit follows the size until the user moves the view.
             _fittedOnce = true;
-            _session.ZoomToContent();   // open at the base ("fully zoomed out") view
+            FitToContent(e.NewSize);
         }
+        else
+        {
+            _session.Viewport.SetViewSize(new Vec2(e.NewSize.Width, e.NewSize.Height));
+        }
+    }
+
+    private void FitToContent(Size size)
+    {
+        _ownViewChange++;
+        try
+        {
+            _session!.Viewport.SetViewSize(new Vec2(size.Width, size.Height));
+            _session.Viewport.ClearZoomStack();
+            _session.ZoomToContent();
+        }
+        finally { _ownViewChange--; }
     }
 
     public override void Render(DrawingContext context)

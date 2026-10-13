@@ -135,6 +135,10 @@
   <Style Selector="TabItem:pointerover">
     <Setter Property="Foreground" Value="{DynamicResource Ui.TabItemTextHover}" />
   </Style>
+  <!-- Icon buttons of the Context Bar's menu strip (R25): dimmed while their command is not available (the drawn icons do not follow Foreground). -->
+  <Style Selector="Button.strip:disabled">
+    <Setter Property="Opacity" Value="0.4" />
+  </Style>
   <!-- A hint or a quiet note: muted in either mode. -->
   <Style Selector="TextBlock.muted">
     <Setter Property="Foreground" Value="{DynamicResource Ui.Muted}" />

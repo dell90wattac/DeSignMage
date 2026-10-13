@@ -254,6 +254,23 @@ public static class TextEngine
         return TextElements.NormalizeKerning(k);
     }
 
+    /// <summary>
+    /// Height of a capital letter (a capital H) in ems for the font that would actually be used: what sign lettering is measured by.
+    /// 0.7 when the font gives no usable H.
+    /// </summary>
+    public static double CapHeightEm(string family, int weight, bool italic)
+    {
+        try
+        {
+            var font = _fonts.Resolve(family, weight, italic);
+            var h = _fonts.Shape(font, ["H"], 1000)[0].Outline;
+            double cap = h.IsEmpty ? 0 : h.GetBounds().Height / 1000;
+            if (cap > 0.2 && cap < 1.5) return cap;
+        }
+        catch (Exception) { /* fall through to a typical value */ }
+        return 0.7;
+    }
+
     /// <summary>The kerning offset (in ems) at a gap, 0 when none is stored.</summary>
     public static double KerningAt(IReadOnlyList<double> kerning, int gap) => gap >= 0 && gap < kerning.Count ? kerning[gap] : 0;
 

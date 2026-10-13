@@ -12,7 +12,7 @@ using Xunit;
 namespace DeSignMage.App.Tests;
 
 /// <summary>File ▸ Load Color Palettes / Load Color Palette File and the "…" menu of the Color Mixer: palettes from any folder or file.</summary>
-[Collection("palette-catalog")]   // these change the shared palette catalog; one at a time
+[Collection("app-settings")]   // these change the shared palette catalog and swap the program-wide settings store: one test class at a time
 public class PaletteLoadShellTests : IDisposable
 {
     private readonly string _dir = Directory.CreateTempSubdirectory("dsm-palettes-").FullName;

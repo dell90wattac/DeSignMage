@@ -150,8 +150,9 @@ public sealed class TextFormatPanel : StackPanel, IRefreshable
         _left.IsChecked = cur.Alignment is TextAlignment.Left or TextAlignment.Justify;
         _center.IsChecked = cur.Alignment == TextAlignment.Center;
         _right.IsChecked = cur.Alignment == TextAlignment.Right;
-        _convert.IsEnabled = _session.CanConvertToCurves;
+        ContextBars.Valid(_convert, _session.CanConvertToCurves);   // only when there is text to convert (R26)
         _note.Text = cur.Missing ? $"Font not installed: showing {cur.Resolved}" : "";
+        _note.IsVisible = _note.Text.Length > 0;
         _edited = false;
         _refreshing = false;
     }

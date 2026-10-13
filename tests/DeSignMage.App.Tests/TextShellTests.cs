@@ -57,6 +57,35 @@ public class TextShellTests
     }
 
     [AvaloniaFact]
+    public void Dragging_a_box_with_the_text_tool_sets_the_letter_height_then_enter_starts_a_separate_line()
+    {
+        var (w, c) = Open();
+        var s = w.Session;
+        s.SetTool("text");
+        var from = Window(c, 300, 250);
+        w.MouseDown(from, MouseButton.Left);
+        w.MouseMove(from + new Point(150, 30));
+        w.MouseMove(from + new Point(300, 80));        // 80 px tall on screen, 300 wide
+        Assert.NotEmpty(s.BuildOverlay().OfType<MarqueeOverlay>());   // the box is shown while dragging
+        w.MouseUp(from + new Point(300, 80), MouseButton.Left);
+        Assert.True(s.IsTextEditing);
+
+        w.KeyTextInput("HAT");
+        Key(w, Avalonia.Input.Key.Enter);
+        w.KeyTextInput("Sign");
+        Key(w, Avalonia.Input.Key.Escape);
+
+        var texts = s.Document.ActiveLayer.Children.Cast<TextObject>().ToList();
+        Assert.Equal(["HAT", "Sign"], texts.Select(x => x.Text));
+        double box = 80 / s.Viewport.Zoom;                              // the dragged height in document units
+        double capHeight = new TextObject("H", texts[0].FontFamily, texts[0].FontSize).Layout.Outline.GetBounds().Height;
+        Assert.Equal(box, capHeight, 0);
+        Assert.Equal(texts[0].FontSize, texts[1].FontSize, 6);          // the second line has the same size
+        Assert.Empty(s.Document.AllObjects().OfType<GroupObject>());   // and is a separate, ungrouped object
+        w.Close();
+    }
+
+    [AvaloniaFact]
     public void Vector_view_draws_letter_holes_red_and_outer_loops_blue()
     {
         var (w, _) = Open();                                   // the window installs the real font service

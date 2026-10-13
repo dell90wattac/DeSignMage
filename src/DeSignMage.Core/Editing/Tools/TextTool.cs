@@ -8,7 +8,10 @@ namespace DeSignMage.Core.Editing.Tools;
 /// <summary>
 /// The text tool and text edit mode (requirement R6).
 /// <list type="bullet">
-/// <item>Click on empty canvas: a new text object starts there (baseline-left at the click) and you type. <b>Enter starts the next line as its own, separate
+/// <item><b>Drag a box</b> on empty canvas (R24): its <b>height</b> sets the letter height (a capital letter is as tall as the box; the width is
+/// ignored and nothing wraps), the baseline sits on the box's bottom edge and the line starts at the box's left edge (centered/ending at the box's center/right
+/// edge for centered/right-aligned text); then you type and the line grows sideways without limit. A plain click (no drag) keeps the default size.
+/// <br/>Click on empty canvas: a new text object starts there (baseline-left at the click) and you type. <b>Enter starts the next line as its own, separate
 /// text object</b> one line below (basic text is never kept as several lines); Esc finishes. Click on text: edit it.
 /// The Layout tool's double-click on text enters the same mode ("If you double click on text, it allows you to start typing").</item>
 /// <item>Caret keys: Left/Right/Home/End (Shift extends the selection), Backspace/Delete; mouse click places the caret, drag selects,
@@ -27,12 +30,18 @@ public sealed class TextTool : Tool
     private IReadOnlyList<double> _origKerning = [];
     private int _caret, _anchor;
 
+    // The size box being dragged (nothing exists yet; the object is created when the button is released).
+    private Vec2? _boxStart;
+    private Vec2 _boxEnd, _boxStartScreen;
+
     public override string Id => "text";
     public override string DisplayName => "Text";
     public override CursorKind Cursor => CursorKind.IBeam;
 
-    public override string Hint => _target is null
-        ? "To ADD TEXT: Click   To EDIT TEXT: Click on it   To LAYOUT: Press Esc"
+    public override string Hint => _boxStart is not null
+        ? "To SET THE LETTER HEIGHT: Drag a box (its height = capital letter height; width is ignored)   Esc: cancel"
+        : _target is null
+        ? "To ADD TEXT: Click, or drag a box to set the letter height   To EDIT TEXT: Click on it   To LAYOUT: Press Esc"
         : _enterMakesNewLine
             ? "Enter: next line (its own text object)   Esc: finish   Move caret: arrows, Home, End (Shift: select)   Click: place caret"
             : "To FINISH: Enter or Esc (it stays text)   Move caret: arrows, Home, End (Shift: select)   Click: place caret";
@@ -59,12 +68,15 @@ public sealed class TextTool : Tool
 
     // ---- Entering and leaving edit mode ----
 
-    /// <summary>Starts a new text object with its baseline-left corner at <paramref name="at"/> (document coordinates).</summary>
-    public void BeginNew(Vec2 at)
+    /// <summary>
+    /// Starts a new text object with its baseline origin at <paramref name="at"/> (document coordinates), at the default size or
+    /// <paramref name="fontSize"/> (em, points).
+    /// </summary>
+    public void BeginNew(Vec2 at, double? fontSize = null)
     {
         Finish(returnToSelect: false);
         var f = Session.TextDefaults;
-        var t = new TextObject("", f.Family, f.Size)
+        var t = new TextObject("", f.Family, fontSize ?? f.Size)
         {
             FontWeight = f.Weight, Italic = f.Italic, Tracking = f.Tracking, Alignment = f.Alignment,
             Style = f.Style, Transform = Affine2.Translation(at),
@@ -155,7 +167,11 @@ public sealed class TextTool : Tool
     public override void Activate() { }
 
     /// <summary>Switching tools, undo and redo all end edit mode first, keeping what was typed.</summary>
-    public override void Cancel() => Finish(returnToSelect: false);
+    public override void Cancel()
+    {
+        _boxStart = null;
+        Finish(returnToSelect: false);
+    }
 
     // ---- Editing operations (letter indices; Count = LetterCount) ----
 
@@ -247,11 +263,37 @@ public sealed class TextTool : Tool
             _dragging = true;
             return;
         }
-        BeginNew(Session.SnapPoint(e.Doc));
+        // Empty canvas: a click starts text at the default size, a drag sets the letter height (decided on release).
+        _boxStart = _boxEnd = Session.SnapPoint(e.Doc);
+        _boxStartScreen = e.Screen;
+        Redraw();
+    }
+
+    /// <summary>The size box, once the pointer has moved far enough to count as a drag.</summary>
+    private Rect2? Box => _boxStart is { } s && Vec2.Distance(Session.Viewport.ToScreen(s), Session.Viewport.ToScreen(_boxEnd)) >= Session.ClickThresholdPx
+        ? Rect2.FromPoints(s, _boxEnd) : null;
+
+    private void EndBox(PointerInput e)
+    {
+        if (_boxStart is not { } start) return;
+        _boxEnd = Session.SnapPoint(e.Doc);
+        var box = Box;
+        _boxStart = null;
+        double height = box?.Height ?? 0;
+        if (box is null || height * Session.Viewport.Zoom < Session.ClickThresholdPx)
+        {
+            BeginNew(start);   // a click, or a drag too flat to mean a height
+            return;
+        }
+        var f = Session.TextDefaults;
+        double size = height / TextEngine.CapHeightEm(f.Family, f.Weight, f.Italic);   // capital letters as tall as the box
+        double x = f.Alignment switch { TextAlignment.Center => box.Value.Center.X, TextAlignment.Right => box.Value.Right, _ => box.Value.Left };
+        BeginNew(new Vec2(x, box.Value.Bottom), size);
     }
 
     public override void PointerMove(PointerInput e)
     {
+        if (_boxStart is not null) { _boxEnd = Session.SnapPoint(e.Doc); Redraw(); return; }
         if (_target is null || !_dragging) return;
         _caret = _target.Layout.IndexAt(ToLocal(_target, e.Doc));
         Redraw();
@@ -259,6 +301,7 @@ public sealed class TextTool : Tool
 
     public override void PointerUp(PointerInput e)
     {
+        if (_boxStart is not null) { EndBox(e); return; }
         if (_dragging) PointerMove(e);
         _dragging = false;
     }
@@ -284,6 +327,7 @@ public sealed class TextTool : Tool
 
     public override bool KeyDown(EditorKey key, ModifierKeys modifiers)
     {
+        if (_boxStart is not null && key == EditorKey.Escape) { _boxStart = null; Redraw(); return true; }   // cancel the size box
         if (_target is null) return false;
         bool shift = (modifiers & ModifierKeys.Shift) != 0;
         switch (key)
@@ -330,6 +374,11 @@ public sealed class TextTool : Tool
 
     public override void BuildOverlay(List<OverlayItem> items)
     {
+        if (_boxStart is not null)
+        {
+            if (Box is { } box) items.Add(new MarqueeOverlay(box, MarqueeKind.Select));
+            return;
+        }
         if (_target is null)
         {
             base.BuildOverlay(items);

@@ -87,6 +87,7 @@ public sealed class CropContextBar : ContextBarBase, IRefreshable
     private readonly TextBox _w, _h;
     private readonly Button _apply;
     private readonly TextBlock _hint = ContextBars.Hint("");
+    private readonly Control[] _fields;   // the W and H fields: shown only while there is a crop box
     private bool _refreshing;
 
     public CropContextBar(EditorSession session, CropTool tool)
@@ -99,8 +100,8 @@ public sealed class CropContextBar : ContextBarBase, IRefreshable
         var cancel = ContextBars.Action("✕ Cancel", () => { _session.SetTool("select"); ContextBars.FocusCanvas?.Invoke(); }, "Leave without cropping (Esc)");
 
         Row1.Children.Add(ContextBars.Label("Crop"));
-        Row1.Children.Add(ContextBars.Field("W", _w, "px"));
-        Row1.Children.Add(ContextBars.Field("H", _h, "px"));
+        _fields = [ContextBars.Field("W", _w, "px"), ContextBars.Field("H", _h, "px")];
+        foreach (var field in _fields) Row1.Children.Add(field);
         Row1.Children.Add(ContextBars.Separator());
         Row1.Children.Add(_apply);
         Row1.Children.Add(cancel);
@@ -128,7 +129,8 @@ public sealed class CropContextBar : ContextBarBase, IRefreshable
         var px = _tool.BoxPixels;
         if (!_w.IsFocused) _w.Text = px is { } r ? r.Width.ToString() : "";
         if (!_h.IsFocused) _h.Text = px is { } r2 ? r2.Height.ToString() : "";
-        _apply.IsEnabled = px is not null;
+        ContextBars.Valid(_apply, px is not null);
+        foreach (var field in _fields) field.IsVisible = px is not null;
         _hint.Text = _tool.Hint;   // changes once a box exists
         _refreshing = false;
     }

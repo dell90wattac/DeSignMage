@@ -724,6 +724,208 @@ public class TextEditorTests
         Assert.Empty(_s.BuildOverlay().OfType<LetterDotsOverlay>());
     }
 
+    // ---- Drag a box with the text tool to set the letter height (R24, TASKS C.30) ----
+
+    private void DragBox(double x0, double y0, double x1, double y1)
+    {
+        _s.PointerDown(At(x0, y0, PointerButton.Left));
+        _s.PointerMove(At((x0 + x1) / 2, (y0 + y1) / 2));
+        _s.PointerMove(At(x1, y1));
+        _s.PointerUp(At(x1, y1, PointerButton.Left));
+    }
+
+    /// <summary>Height of the ink of the capital H in the object's own units.</summary>
+    private static double CapHeightOf(TextObject t) => t.Layout.Outline.GetBounds().Height;
+
+    [Fact]
+    public void Dragging_a_box_sets_the_capital_letter_height_from_the_box_height_only()
+    {
+        _s.SetTool("text");
+        DragBox(100, 200, 500, 260);              // 60 tall, 400 wide
+        Assert.True(_s.IsTextEditing);
+        Type("H");
+        var t = OnlyText();
+        Assert.Equal(60, CapHeightOf(t), 0);       // the capital H is as tall as the box (± a point of rounding)
+        Assert.Equal(new Vec2(100, 260), t.Transform.Offset);   // baseline on the box's bottom edge, starting at its left edge
+        Assert.Equal(t.FontSize, 60 / TextEngine.CapHeightEm("Arial", 400, false), 6);
+        Press(EditorKey.Escape);
+
+        // The width is ignored: a box twice as wide and the same height gives the same size, and nothing wraps.
+        _s.SetTool("text");
+        DragBox(100, 400, 900, 460);
+        Type("HHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHH");   // far wider than the box
+        var u = _s.GetTool<TextTool>().Target!;
+        Assert.Equal(t.FontSize, u.FontSize, 6);
+        Assert.Single(u.Layout.Lines);
+        Assert.True(u.Layout.Frame.Width > 800);   // the line just keeps growing sideways
+        Press(EditorKey.Escape);
+    }
+
+    [Fact]
+    public void Drag_direction_does_not_matter_and_the_box_shows_while_dragging()
+    {
+        _s.SetTool("text");
+        _s.PointerDown(At(500, 260, PointerButton.Left));
+        Assert.Empty(_s.BuildOverlay().OfType<MarqueeOverlay>());   // no drag yet: nothing to show
+        _s.PointerMove(At(300, 230));
+        _s.PointerMove(At(100, 200));
+        var box = Assert.Single(_s.BuildOverlay().OfType<MarqueeOverlay>());
+        Assert.Equal(new Rect2(100, 200, 500, 260), box.Bounds);
+        Assert.Empty(_s.Document.ActiveLayer.Children);              // the text object only exists once the button is released
+        Assert.False(_s.IsTextEditing);
+        _s.PointerUp(At(100, 200, PointerButton.Left));
+        Assert.True(_s.IsTextEditing);
+        Assert.Empty(_s.BuildOverlay().OfType<MarqueeOverlay>());   // the box is gone, the caret shows
+        Type("H");
+        Assert.Equal(new Vec2(100, 260), OnlyText().Transform.Offset);   // dragged up and left: still the same box
+        Assert.Equal(60, CapHeightOf(OnlyText()), 0);
+    }
+
+    [Fact]
+    public void A_plain_click_or_a_flat_drag_keeps_the_default_size()
+    {
+        _s.SetTool("text");
+        Click(200, 400);
+        Type("a");
+        Assert.Equal(100, _s.GetTool<TextTool>().Target!.FontSize);
+        Press(EditorKey.Escape);
+
+        _s.SetTool("text");
+        DragBox(100, 600, 400, 601);               // wide but flat: no height to speak of, so it is just a click
+        Type("b");
+        var b = _s.GetTool<TextTool>().Target!;
+        Assert.Equal(100, b.FontSize);
+        Assert.Equal(new Vec2(100, 600), b.Transform.Offset);
+    }
+
+    [Fact]
+    public void The_box_anchors_centered_and_right_aligned_text_at_its_center_and_right_edge()
+    {
+        _s.TextDefaults.Alignment = TextAlignment.Center;
+        _s.SetTool("text");
+        DragBox(100, 200, 500, 260);
+        Assert.Equal(300, _s.GetTool<TextTool>().Target!.Transform.OffsetX, 6);
+        Press(EditorKey.Escape);
+
+        _s.TextDefaults.Alignment = TextAlignment.Right;
+        _s.SetTool("text");
+        DragBox(100, 400, 500, 460);
+        Assert.Equal(500, _s.GetTool<TextTool>().Target!.Transform.OffsetX, 6);
+    }
+
+    [Fact]
+    public void A_box_drag_is_one_add_text_step_and_escape_cancels_the_box_before_anything_exists()
+    {
+        _s.SetTool("text");
+        DragBox(100, 200, 500, 260);
+        Type("Sign");
+        Press(EditorKey.Escape);
+        Assert.Single(_s.History.UndoList);
+        Assert.Equal("Add Text", _s.History.UndoDescription);
+        var t = OnlyText();
+        Assert.Equal(60, CapHeightOf(new TextObject("H", t.FontFamily, t.FontSize)), 0);
+        _s.Undo();
+        Assert.Empty(_s.Document.ActiveLayer.Children);
+        _s.Redo();
+        Assert.Equal("Sign", OnlyText().Text);
+
+        _s.SetTool("text");
+        _s.PointerDown(At(100, 500, PointerButton.Left));
+        _s.PointerMove(At(300, 560));
+        Press(EditorKey.Escape);                     // cancel the box
+        Assert.Empty(_s.BuildOverlay().OfType<MarqueeOverlay>());
+        _s.PointerUp(At(300, 560, PointerButton.Left));
+        Assert.False(_s.IsTextEditing);
+        Assert.Single(_s.Document.ActiveLayer.Children);
+    }
+
+    [Fact]
+    public void Lines_started_with_enter_keep_the_size_of_a_box_drawn_line()
+    {
+        _s.SetTool("text");
+        DragBox(100, 200, 500, 260);
+        Type("One");
+        double size = _s.GetTool<TextTool>().Target!.FontSize;
+        Press(EditorKey.Enter);
+        Type("Two");
+        Press(EditorKey.Escape);
+        var texts = _s.Document.ActiveLayer.Children.Cast<TextObject>().ToList();
+        Assert.Equal(["One", "Two"], texts.Select(t => t.Text));
+        Assert.All(texts, t => Assert.Equal(size, t.FontSize, 6));
+        Assert.Equal(100, texts[1].Transform.OffsetX, 6);
+        Assert.True(texts[1].Transform.OffsetY > 260 + size * 0.9);   // a normal line below
+    }
+
+    // ---- Enter while typing: finish this text, start a new separate one under it (R24) ----
+
+    [Fact]
+    public void Enter_starts_a_separate_ungrouped_unlinked_text_with_the_same_look_lined_up_by_alignment()
+    {
+        var gold = ObjectStyle.FillOnly(DocColor.FromHex("#F2B705"));
+        _s.TextDefaults.Style = gold;
+        _s.TextDefaults.Alignment = TextAlignment.Center;
+        _s.TextDefaults.Family = "Times New Roman";
+        _s.TextDefaults.Weight = 700;
+        _s.SetTool("text");
+        Click(400, 300);
+        Type("Open");
+        Press(EditorKey.Enter);
+        Type("Daily");
+        Press(EditorKey.Enter);
+        Type("9 to 5");
+        Press(EditorKey.Escape);
+
+        var texts = _s.Document.ActiveLayer.Children.Cast<TextObject>().ToList();
+        Assert.Equal(["Open", "Daily", "9 to 5"], texts.Select(t => t.Text));
+        Assert.All(texts, t =>
+        {
+            Assert.Equal(("Times New Roman", 700, 100.0, TextAlignment.Center), (t.FontFamily, t.FontWeight, t.FontSize, t.Alignment));
+            Assert.Equal(gold, t.Style);
+            Assert.Equal(400, t.Transform.OffsetX, 6);        // centered lines share the same center
+            Assert.Same(_s.Document.ActiveLayer, t.Parent);   // plain members of the layer
+            Assert.IsNotType<GroupObject>(t.Parent);
+        });
+        Assert.DoesNotContain(_s.Document.AllObjects(), o => o is GroupObject);   // not grouped
+        Assert.Equal(300 + texts[0].Layout.LineHeight, texts[1].Transform.OffsetY, 3);
+
+        // Not linked: each one moves, restyles and undoes on its own.
+        _s.Selection.Set(texts[1]);
+        _s.NudgeSelection(new Vec2(0, 50));
+        double line = texts[0].Layout.LineHeight;
+        Assert.Equal(300 + line + 50, texts[1].Transform.OffsetY, 3);   // only the nudged one moved
+        Assert.Equal(300, texts[0].Transform.OffsetY, 6);
+        Assert.Equal(300 + 2 * line, texts[2].Transform.OffsetY, 3);
+        Assert.Equal(4, _s.History.UndoList.Count);       // three "Add Text" steps, then the nudge
+        _s.Undo();   // the nudge
+        _s.Undo();   // "9 to 5" only
+        Assert.Equal(2, _s.Document.ActiveLayer.Children.Count);
+        Assert.Equal(["Open", "Daily"], _s.Document.ActiveLayer.Children.Cast<TextObject>().Select(t => t.Text));
+    }
+
+    [Fact]
+    public void Enter_on_a_line_left_empty_keeps_nothing_and_the_other_ways_of_stopping_work()
+    {
+        _s.SetTool("text");
+        Click(100, 300);
+        Type("A");
+        Press(EditorKey.Enter);                       // second line, left empty...
+        Press(EditorKey.Escape);                      // ...and stopped
+        Assert.Equal(["A"], _s.Document.ActiveLayer.Children.Cast<TextObject>().Select(t => t.Text));
+        Assert.False(_s.IsTextEditing);
+
+        _s.SetTool("text");
+        Click(100, 600);
+        Type("B");
+        Press(EditorKey.Enter);
+        Type("C");
+        Click(700, 100);                              // click elsewhere: C is kept, a new text starts there
+        Assert.Equal(["A", "B", "C"], _s.Document.ActiveLayer.Children.Cast<TextObject>().Select(t => t.Text).Where(s => s.Length > 0));
+        Assert.True(_s.IsTextEditing);                // the new, still empty text is live (not an undo step yet)
+        _s.SetTool("select");                         // another tool: the empty new text is dropped
+        Assert.Equal(["A", "B", "C"], _s.Document.ActiveLayer.Children.Cast<TextObject>().Select(t => t.Text));
+        Assert.False(_s.IsTextEditing);
+    }
+
     // ---- Enter: new line (text tool) vs end editing (double-click) ----
 
     [Fact]

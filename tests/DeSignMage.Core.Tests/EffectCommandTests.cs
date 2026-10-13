@@ -366,6 +366,146 @@ public class EffectCommandTests
         Assert.Equal([a, b], g.Children);
     }
 
+    // ---- Weld and combined objects ----
+
+    private static PathGeometry RingGeometry()
+    {
+        var b = new PathBuilder();
+        b.MoveTo(0, 0).LineTo(100, 0).LineTo(100, 100).LineTo(0, 100).Close();          // outer, clockwise on screen
+        b.MoveTo(30, 30).LineTo(30, 70).LineTo(70, 70).LineTo(70, 30).Close();          // the hole, the other way round
+        return b.Build();
+    }
+
+    [Fact]
+    public void Weld_of_a_combined_object_merges_the_overlap_its_parts_had_knocked_out()
+    {
+        var a = AddRect(0, 0, 100, 100, Red);
+        var b = AddRect(50, 50, 100, 100, Blue);
+        _s.Selection.Set([a, b]);
+        var combined = _s.CombineSelection()!;
+        Assert.False(combined.GetLocalGeometry().Contains(new Vec2(75, 75)));            // as drawn, the overlap is a hole
+        Assert.True(_s.CanWeld);                                                          // one selected object, but it holds two shapes
+        int steps = UndoSteps;
+
+        var outcome = _s.Weld();
+
+        Assert.True(outcome.Applied);
+        Assert.Equal(steps + 1, UndoSteps);
+        var weld = Assert.IsType<PathObject>(Assert.Single(L.Children));
+        Assert.Equal("Weld", weld.Name);
+        Assert.Equal(new Rect2(0, 0, 150, 150), Bounds(weld));
+        Assert.True(weld.Geometry.Contains(new Vec2(75, 75)));                            // the overlap is filled again
+        Assert.True(weld.Geometry.Contains(new Vec2(10, 10)) && weld.Geometry.Contains(new Vec2(140, 140)));
+        Assert.False(weld.Geometry.Contains(new Vec2(140, 10)));
+        Assert.Equal(1, EffectGeometry.CountLoops(weld.Geometry).Closed);                 // one merged outline
+        Assert.Equal(ObjectStyle.None, weld.Style);                                       // no color (R15)
+
+        _s.History.Undo();
+        Assert.Same(combined, Assert.Single(L.Children));                                 // the exact combined object is back
+        Assert.Equal(2, combined.Parts.Count);
+        _s.History.Redo();
+        Assert.IsType<PathObject>(Assert.Single(L.Children));
+    }
+
+    [Fact]
+    public void Weld_of_a_combined_object_keeps_a_real_hole_and_fills_only_what_the_other_part_covers()
+    {
+        var ring = Add(new PathObject(RingGeometry()) { Style = Red });
+        var cover = AddRect(50, 50, 100, 100, Blue);                       // covers the lower right half of the ring's hole
+        _s.Selection.Set([ring, cover]);
+        _s.CombineSelection();
+        Assert.True(_s.CanWeld);
+
+        _s.Weld();
+
+        var weld = Assert.IsType<PathObject>(Assert.Single(L.Children));
+        Assert.False(weld.Geometry.Contains(new Vec2(40, 40)));                           // the part of the hole nobody covers stays a hole
+        Assert.True(weld.Geometry.Contains(new Vec2(60, 60)));                            // the covered part of the hole is solid
+        Assert.True(weld.Geometry.Contains(new Vec2(10, 10)));                            // the ring itself
+        Assert.True(weld.Geometry.Contains(new Vec2(140, 140)));                          // the other part
+        Assert.Equal(new Rect2(0, 0, 150, 150), Bounds(weld));
+    }
+
+    [Fact]
+    public void Weld_of_a_combined_object_together_with_another_shape_welds_all_of_them()
+    {
+        var a = AddRect(0, 0, 100, 100);
+        var b = AddRect(50, 50, 100, 100);
+        _s.Selection.Set([a, b]);
+        var combined = _s.CombineSelection()!;
+        var c = AddRect(120, 0, 100, 60);                                  // overlaps b, away from a
+        _s.Selection.Set([combined, c]);
+        var other = AddRect(500, 500, 10, 10);                             // not selected
+        int steps = UndoSteps;
+
+        _s.Weld();
+
+        Assert.Equal(steps + 1, UndoSteps);
+        Assert.Equal(2, L.Children.Count);
+        var weld = Assert.IsType<PathObject>(L.Children[0]);
+        Assert.Same(other, L.Children[1]);
+        Assert.Equal(new Rect2(0, 0, 220, 150), Bounds(weld));
+        Assert.True(weld.Geometry.Contains(new Vec2(75, 75)));                            // overlap inside the combined object
+        Assert.True(weld.Geometry.Contains(new Vec2(130, 55)));                           // overlap of b and c
+        Assert.Equal(1, EffectGeometry.CountLoops(weld.Geometry).Closed);
+
+        _s.History.Undo();
+        Assert.Equal([combined, c, other], L.Children);
+    }
+
+    [Fact]
+    public void Weld_of_one_shape_is_only_available_when_its_own_loops_overlap()
+    {
+        var rect = AddRect(0, 0, 100, 100);
+        _s.Selection.Set(rect);
+        Assert.False(_s.CanWeld);                                                         // one plain shape: nothing to weld
+        var ring = Add(new PathObject(RingGeometry()));
+        _s.Selection.Set(ring);
+        Assert.False(_s.CanWeld);                                                         // a hole is not an overlap
+
+        var apart = new PathBuilder();
+        apart.MoveTo(300, 0).LineTo(340, 0).LineTo(340, 40).LineTo(300, 40).Close();
+        apart.MoveTo(400, 0).LineTo(440, 0).LineTo(440, 40).LineTo(400, 40).Close();
+        var twoLoops = Add(new PathObject(apart.Build()));
+        _s.Selection.Set(twoLoops);
+        Assert.False(_s.CanWeld);                                                         // two loops, but they do not touch
+
+        var overlapping = new PathBuilder();
+        overlapping.MoveTo(0, 200).LineTo(100, 200).LineTo(100, 300).LineTo(0, 300).Close();
+        overlapping.MoveTo(60, 240).LineTo(160, 240).LineTo(160, 340).LineTo(60, 340).Close();
+        var script = Add(new PathObject(overlapping.Build()));
+        _s.Selection.Set(script);
+        Assert.True(_s.CanWeld);                                                          // loops that cross: weld merges them
+        _s.Weld();
+        var weld = Assert.IsType<PathObject>(_s.Selection.Items[0]);
+        Assert.Equal(1, EffectGeometry.CountLoops(weld.Geometry).Closed);
+        Assert.Equal(new Rect2(0, 200, 160, 340), Bounds(weld));
+    }
+
+    [Fact]
+    public void Common_weld_of_a_combined_object_is_the_overlap_of_its_parts()
+    {
+        var a = AddRect(0, 0, 100, 100);
+        var b = AddRect(60, 40, 100, 100);
+        _s.Selection.Set([a, b]);
+        var combined = _s.CombineSelection()!;
+        Assert.True(_s.CanCommonWeld);                                                     // two shapes inside the one object
+
+        _s.CommonWeld();
+        var result = Assert.IsType<PathObject>(Assert.Single(L.Children));
+        Assert.Equal("Common Weld", result.Name);
+        Assert.Equal(new Rect2(60, 40, 100, 100), Bounds(result));
+        _s.History.Undo();
+        Assert.Same(combined, Assert.Single(L.Children));
+
+        // With another shape: every pairwise overlap, A∩B, A∩C and B∩C.
+        var c = AddRect(80, 20, 100, 100);
+        _s.Selection.Set([combined, c]);
+        _s.CommonWeld();
+        var lenses = Assert.IsType<PathObject>(Assert.Single(L.Children));
+        Assert.Equal(3, EffectGeometry.CountLoops(lenses.Geometry).Closed);
+        Assert.Equal(FillRule.NonZero, lenses.Geometry.FillRule);
+    }
     // ---- Common Weld ----
 
     [Fact]

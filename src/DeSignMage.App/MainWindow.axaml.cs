@@ -90,6 +90,7 @@ public partial class MainWindow : Window
         foreach (var node in MenuLayout) MainMenu.Items.Add(MenuNode.Build(node, _commands));
         BuildToolbar();
         InitThemeButtons();
+        InitMenuStrip();
         InitFileOpening();
         InitRecentMenu();
         InitFeedback();
@@ -534,6 +535,7 @@ public partial class MainWindow : Window
     {
         var doc = _session.Document;
         foreach (var r in _refreshables) r.Refresh();
+        MenuStrip.Refresh();
         if (ContextBarHost.Content is IRefreshable bar) bar.Refresh();
         foreach (var tb in _toolbarButtons)
         {

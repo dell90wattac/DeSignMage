@@ -169,7 +169,7 @@ public class ContextBarLayoutTests
             Assert.True(rows.Count == 2, $"{tool}: {rows.Count} rows");
             foreach (var row in rows)
             {
-                Assert.True(Lines(row) == 1, $"{tool}: a row has {Lines(row)} lines");
+                Assert.True(Lines(row) <= 1, $"{tool}: a row has {Lines(row)} lines");   // never two; a row with nothing valid to show is empty (R26)
                 Assert.Equal(rowHeight, row.Bounds.Height, 1);
                 foreach (var child in row.Children.Where(c => c.IsVisible && c.Bounds.Width > 0.5))
                     Assert.True(child.Bounds.Height <= rowHeight + 0.5, $"{tool}: {child.GetType().Name} is {child.Bounds.Height} px tall in a {rowHeight} px row");
@@ -186,14 +186,14 @@ public class ContextBarLayoutTests
         wide.Session.SetTool("vector");
         Flush();
         var (barWide, canvasWide) = Metrics(wide);
-        Assert.All(ContextRows(wide), row => Assert.Equal(1, Lines(row)));
+        Assert.All(ContextRows(wide), row => Assert.InRange(Lines(row), 0, 1));   // an empty row has no line at all (R26)
         wide.Close();
 
         var narrow = Open(700);
         narrow.Session.SetTool("vector");
         Flush();
         var (barNarrow, canvasNarrow) = Metrics(narrow);
-        Assert.All(ContextRows(narrow), row => Assert.Equal(1, Lines(row)));   // no third row
+        Assert.All(ContextRows(narrow), row => Assert.InRange(Lines(row), 0, 1));   // no third row
         Assert.Equal(barWide, barNarrow, 1);
         Assert.Equal(canvasWide.Y, canvasNarrow.Y, 1);
         var scroll = narrow.FindControl<ScrollViewer>("ContextBarScroll")!;
