@@ -3,7 +3,8 @@ using DeSignMage.Core.Model;
 
 namespace DeSignMage.Rendering.Export;
 
-public enum ExportFormat { Svg, Pdf, Png, Jpeg, Eps, Ai }
+/// <summary>The file formats of File > Export. <see cref="Lyt"/> (the legacy layout) is written by the application, which has the writer; <see cref="DocumentExporter"/> does not render it.</summary>
+public enum ExportFormat { Svg, Pdf, Png, Jpeg, Eps, Ai, Lyt }
 
 /// <summary>What gets exported: the whole page, or only the selected objects (cropped to their outline).</summary>
 public enum ExportScope { Page, Selection }
@@ -34,6 +35,12 @@ public sealed record ExportOptions
     /// <summary>PNG resolution when no pixel size is given. A page of W×H inches gives W·Dpi × H·Dpi pixels.</summary>
     public double Dpi { get; init; } = 300;
 
+    /// <summary>
+    /// JPEG: the solid color behind the art (default white). A JPEG cannot be transparent, so the corners a selection leaves uncovered and every soft edge
+    /// (anti-aliasing, soft shadow, glow, feather, bevel rims) blend into this color. Formats that keep transparency ignore it. Only the color matters (not its alpha).
+    /// </summary>
+    public DocColor Background { get; init; } = DocColor.White;
+
     /// <summary>JPEG quality, 1 (smallest file) to 100 (best picture).</summary>
     public int JpegQuality { get; init; } = 90;
 
@@ -43,11 +50,6 @@ public sealed record ExportOptions
     /// <summary>EPS: dots per inch of the pictures that stand in for what PostScript cannot draw (soft effects, transparency) and the cap for embedded photos.</summary>
     public double EpsRasterDpi { get; init; } = 300;
 
-    /// <summary>
-    /// Only for the small picture of the page stored in a saved file (file browsers show it on paper): a solid white background. An export is
-    /// never given one: where nothing is drawn, a PNG has no color at all (R27), and a PDF or SVG has no page background.
-    /// </summary>
-    public bool WhiteBackground { get; init; }
 
     /// <summary>SVG: draw live text as glyph outlines (exact look, the default). Off: write real &lt;text&gt; elements (editable, needs the font).</summary>
     public bool TextAsOutlines { get; init; } = true;

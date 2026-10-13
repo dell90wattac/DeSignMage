@@ -83,7 +83,7 @@ public class SoftEffectShellTests
         Type(w, bar.OpacityBox, "80");
         Type(w, bar.Softness, "120");
         Assert.Equal(steps + 1, s.History.UndoList.Count);                          // typing edits the same undo step
-        var shadow = SoftEffect.Find((GroupObject)a.Parent!, SoftKind.SoftShadow)!;
+        var shadow = SoftEffect.Find(a, SoftKind.SoftShadow)!;
         Assert.Equal(0.8, shadow.Style.Blur!.Opacity);
         Assert.Equal(1.2, shadow.Style.Blur.Softness);
 
@@ -106,7 +106,7 @@ public class SoftEffectShellTests
         Assert.False(bar.HsGroup.IsVisible);
         Assert.True(bar.ThicknessGroup.IsVisible);
         Type(w, bar.Thickness, "200");
-        var glow = SoftEffect.Find((GroupObject)a.Parent!, SoftKind.Glow)!;
+        var glow = SoftEffect.Find(a, SoftKind.Glow)!;
         Assert.Equal(-2, glow.Style.Blur!.Inset, 6);
 
         bar.Done.RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
@@ -117,7 +117,7 @@ public class SoftEffectShellTests
         Click(EffectsItem(w, "Glow..."));
         bar = Bar<SoftEffectContextBar>(w);
         bar.Remove.RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
-        Assert.Null(SoftEffect.Find((GroupObject)a.Parent!, SoftKind.Glow));
+        Assert.Null(SoftEffect.Find(a, SoftKind.Glow));
         Assert.Equal("select", s.ActiveTool.Id);
 
         w.Close();

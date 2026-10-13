@@ -39,6 +39,10 @@ public static class EpsExporter
         return new Writer(doc, plan, options).Write();
     }
 
+    /// <summary>How many objects of the plan EPS can only carry as pictures (soft shadow, glow, feather, transparency). The Export dialog says so.</summary>
+    public static int RasterPieceCount(ExportPlan plan) =>
+        plan.Layers.SelectMany(l => l.Objects).Count(o => !(o is ImageObject && o.Style.Feather is not { Amount: > 0 }) && NeedsRaster(o));
+
     /// <summary>True when the object (or a part of it) cannot be written as plain PostScript vectors.</summary>
     internal static bool NeedsRaster(DocObject o)
     {

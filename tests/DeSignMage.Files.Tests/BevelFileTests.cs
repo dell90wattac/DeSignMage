@@ -71,8 +71,16 @@ public class BevelFileTests
         Assert.IsType<TextObject>(after.First(o => o is TextObject));                 // the text stayed live text
     }
 
-    private static SKBitmap Png(Document doc, double dpi) =>
-        SKBitmap.Decode(DocumentExporter.RenderPng(doc, new ExportOptions { Dpi = dpi, WhiteBackground = true })) ?? throw new InvalidOperationException("no PNG");
+    /// <summary>The export (transparent where nothing is drawn) laid on white, so gray levels can be read off it.</summary>
+    private static SKBitmap Png(Document doc, double dpi)
+    {
+        using var export = SKBitmap.Decode(DocumentExporter.RenderPng(doc, new ExportOptions { Dpi = dpi })) ?? throw new InvalidOperationException("no PNG");
+        var flat = new SKBitmap(export.Width, export.Height);
+        using var canvas = new SKCanvas(flat);
+        canvas.Clear(SKColors.White);
+        canvas.DrawBitmap(export, 0, 0);
+        return flat;
+    }
 
     /// <summary>Gray level at a document point, interpolated between pixel centers so it does not depend on the resolution.</summary>
     private static double Gray(SKBitmap bmp, double dpi, double x, double y)

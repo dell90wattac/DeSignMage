@@ -130,7 +130,7 @@ public static class ShadowGeometry
     }
 }
 
-/// <summary>What a shadow works on: for each selected top-level object, the outlines of the shapes in it, taken when the tool started.</summary>
+/// <summary>What a shadow works on: for each drawn object the selection holds (the members of groups one by one, at any depth), its outline, taken when the tool started.</summary>
 public sealed class ShadowSnapshot
 {
     internal sealed record Item(DocObject Source, IReadOnlyList<DocObject> Shapes, IReadOnlyList<PathGeometry> Outlines);
@@ -152,9 +152,10 @@ public sealed class ShadowSnapshot
 
 /// <summary>
 /// Effects ▸ Shadow, Extruded Shadow, Perspective Shadow and Cast Shadow (notes/effects/shadow.md; user decisions R7, R13, R22): a one-shot
-/// shadow object per selected object, <b>grouped with its source</b> (not linked: editing the source later leaves it as it is) and placed just
-/// below the source in the drawing order. A group source gets the shadow as one more member; any other object and the shadow become a new
-/// group. Live text stays live text; the shadow is a plain path. One undo step.
+/// shadow object per drawn object, <b>grouped with its source</b> (not linked: editing the source later leaves it as it is) and placed just
+/// below it in the drawing order. A group is not shadowed as a whole: every member of it, at any depth, gets its own shadow with the same settings
+/// (R13), which joins the member's own group. A single object and its shadow become a new group. Live text stays live text; the shadow is a plain
+/// path. One undo step for everything.
 /// </summary>
 public static class ShadowEffect
 {
@@ -175,11 +176,17 @@ public static class ShadowEffect
         s.BooleanService is not null && s.OffsetService is not null && !s.Selection.IsEmpty && !EffectGeometry.ContainsImage(s.Selection.Items) &&
         EffectGeometry.Operands(s.Selection.Items).Any(x => EffectGeometry.HasClosedArea(x.World));
 
-    /// <summary>Takes the outlines of the selection, one entry per selected object (a combined object contributes its parts, so its overlaps are not holes).</summary>
+    /// <summary>The drawn objects a shadow is made for: the selection's objects with groups looked through, without shadows and other effect objects made earlier.</summary>
+    public static List<DocObject> Sources(EditorSession s) =>
+        EffectGeometry.Leaves(Stacking.BottomToTop(s.Document, s.Selection.Items))
+            .Where(l => EffectGeometry.IsShape(l) && !IsShadow(l) && !BevelEffect.IsCrescent(l) && l.Style.Blur is null)
+            .ToList();
+
+    /// <summary>Takes the outlines of the selection, one entry per drawn object (a combined object contributes its parts, so its overlaps are not holes).</summary>
     public static ShadowSnapshot? Snapshot(EditorSession s)
     {
         var items = new List<ShadowSnapshot.Item>();
-        foreach (var source in Stacking.BottomToTop(s.Document, s.Selection.Items))
+        foreach (var source in Sources(s))
         {
             var operands = EffectGeometry.Operands([source]).Where(x => EffectGeometry.HasClosedArea(x.World)).ToList();
             if (operands.Count == 0) continue;
@@ -209,46 +216,38 @@ public static class ShadowEffect
         snapshot ??= Snapshot(s);
         if (snapshot is null) return null;
         string name = NameOf(settings.Form);
-        var shapes = snapshot.Items.ToDictionary(i => i.Source, i => i.Shapes[0]);
         return new EffectPlan(name, $"{name}...", ct =>
         {
             var results = Compute(booleans, offsets, snapshot, settings, ct);
             if (results.Count == 0) return EffectOutcome.Nothing("That shadow has no shape (the height is zero).");
-            return EffectOutcome.Change(session => Apply(session, results, shapes, settings));
+            return EffectOutcome.Change(session => Apply(session, results, settings));
         });
     }
 
-    private static void Apply(EditorSession session, List<(DocObject Source, PathGeometry Shadow)> results, Dictionary<DocObject, DocObject> styleSource, ShadowSettings settings)
+    private static void Apply(EditorSession session, List<(DocObject Source, PathGeometry Shadow)> results, ShadowSettings settings)
     {
         var doc = session.Document;
         string name = NameOf(settings.Form);
         var selected = new List<DocObject>();
         foreach (var (source, geometry) in results)
         {
-            // Just below the lowest drawn object of the source (R22: a group has no place of its own).
-            var order = new Stacking.Order(doc);
-            var lowest = (source is GroupObject g ? g.Leaves() : new[] { source }).Where(l => l.Layer is not null).MinBy(order.KeyOf)!;
-            var layer = lowest.Layer!;
-            int index = layer.IndexOf(lowest);
-
-            var style = settings.Color is { } c ? ObjectStyle.FillOnly(c) : styleSource[source].Style;
-            var group = source as GroupObject;
+            // Just below its own object (R22), in the group the object is in; an object that is in none makes a group with its shadow.
+            var layer = source.Layer ?? throw new InvalidOperationException($"{source} is not in the document.");
+            int index = layer.IndexOf(source);
+            var style = settings.Color is { } c ? ObjectStyle.FillOnly(c) : source.Style;
+            var group = source.Parent as GroupObject;
             var local = group is null || group.GetWorldTransform() is not { IsInvertible: true } w ? geometry : geometry.Transform(w.Invert());
             var shadow = new PathObject(local) { Name = name, Style = style, Visible = source.Visible, Locked = source.Locked };
 
             if (group is not null)
-            {
-                session.History.Execute(new InsertAtSlotCommand(new Slot(layer, index, group, group.Children.Count), shadow, name));   // one more member of the group
-                selected.Add(group);
-            }
+                session.History.Execute(new InsertAtSlotCommand(new Slot(layer, index, group, group.Children.Count), shadow, name));   // one more member of the same group
             else
             {
                 session.History.Execute(new InsertAtSlotCommand(new Slot(layer, index), shadow, name));
-                var pair = new GroupObjectsCommand(doc, [source, shadow]);
-                session.History.Execute(pair);
-                selected.Add(pair.Group);
+                session.History.Execute(new GroupObjectsCommand(doc, [source, shadow]));
             }
+            selected.Add(source.TopLevel);
         }
-        session.Selection.Set(selected);
+        session.Selection.Set(selected.Distinct().ToList());
     }
 }

@@ -393,6 +393,34 @@ public class EpsExportTests
     }
 
     [Fact]
+    public void An_easy_bevel_exports_as_vectors_plus_pictures_for_its_soft_rims_and_matches_the_png()
+    {
+        var session = new DeSignMage.Core.Editing.EditorSession(NewDoc(4, 3))
+        {
+            BooleanService = DeSignMage.Geometry.GeometryEngines.Booleans,
+            OffsetService = DeSignMage.Geometry.GeometryEngines.Offsets,
+        };
+        var red = new RectangleObject(150, 90, 14) { Transform = Affine2.Translation(40, 40), Style = Fill(new DocColor(200, 30, 30)) };
+        session.History.Execute(new AddObjectCommand(session.Document.ActiveLayer, red));
+        session.Selection.Set(red);
+        session.ApplyBevel(new DeSignMage.Core.Effects.BevelSettings { Width = 0.05, Softness = 0.08, Highlight = 0.7 });
+        var doc = session.Document;
+        var interpreter = new MiniPostScript();
+
+        var eps = Eps(doc, new ExportOptions { EpsRasterDpi = 144 });
+        using var fromEps = Draw(eps, 2, interpreter);
+        using var fromPng = Png(doc, 2);
+
+        Assert.True(interpreter.PicturesDrawn >= 1, "the soft rims go in as pictures");
+        Assert.True(interpreter.Fills >= 1, "the shape itself stays a vector");
+        double diff = Difference(fromEps, fromPng, out double bad);
+        Assert.True(diff < 3, $"mean difference {diff:0.###}");
+        Assert.True(bad < 0.02, $"{bad:P2} differ strongly");
+        var plan = ExportPlan.Create(doc, new ExportOptions { Scope = ExportScope.Selection, Selection = [doc.Layers[0].Children[0].TopLevel] });
+        Assert.True(plan.Area.Width >= 150 && plan.Area.Height >= 90);   // a selection's area still covers the bevel
+    }
+
+    [Fact]
     public void The_whole_busy_sample_document_exports_to_a_valid_eps()
     {
         var doc = SampleDocuments.Everything();

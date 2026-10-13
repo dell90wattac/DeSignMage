@@ -6,6 +6,8 @@ using DeSignMage.App.Shell;
 using DeSignMage.Core.Editing;
 using DeSignMage.Core.Model;
 using DeSignMage.Feedback;
+using DeSignMage.Core.Geometry;
+using DeSignMage.Formats.Lyt;
 using DeSignMage.Formats.Native;
 using DeSignMage.Rendering.Export;
 
@@ -152,14 +154,14 @@ public partial class MainWindow
         return true;
     }
 
-    /// <summary>A small picture of the page stored in the file (for file browsers and previews later). Never fails a save.</summary>
+    /// <summary>A small PNG of the page stored in the file (for file browsers and previews later), with real transparency where nothing is drawn. Never fails a save.</summary>
     private static byte[]? MakeThumbnail(Document document)
     {
         try
         {
             var page = document.Page;
             double dpi = Math.Max(1, 72 * 256 / Math.Max(page.Width, page.Height));
-            return DocumentExporter.RenderPng(document, new ExportOptions { Dpi = dpi, WhiteBackground = true });   // a thumbnail is shown on paper; only exports are transparent
+            return DocumentExporter.RenderPng(document, new ExportOptions { Dpi = dpi });   // transparent like every export, so a desktop preview shows whether the transparency worked
         }
         catch (Exception)
         {
@@ -185,14 +187,10 @@ public partial class MainWindow
             await dialog.ShowDialog(this);
             if (dialog.Result is not { } chosen) return;
             request = chosen;
-            _exportSettings = ExportDialog.Remember(chosen);
+            _exportSettings = dialog.CurrentSettings();
 
-            var (label, pattern) = request.Format switch
-            {
-                ExportFormat.Svg => ("SVG pictures (*.svg)", "*.svg"),
-                ExportFormat.Pdf => ("PDF documents (*.pdf)", "*.pdf"),
-                _ => ("PNG pictures (*.png)", "*.png"),
-            };
+            var format = ExportFormats.Get(request.Format);
+            var (label, pattern) = (format.PickerLabel, "*" + format.Extension);
             var basis = _documentPath ?? _sourceLayoutPath;
             IStorageFolder? start = basis is not null && Path.GetDirectoryName(basis) is { } dir ? await StorageProvider.TryGetFolderFromPathAsync(dir) : null;
             var file = await StorageProvider.SaveFilePickerAsync(new FilePickerSaveOptions
@@ -214,9 +212,10 @@ public partial class MainWindow
     internal bool RunExport(ExportRequest request, string path)
     {
         path = WithExportExtension(request, path);
-        try { WriteExport(_session.Document, request, path, ExportTitle()); }
+        var warnings = new List<string>();
+        try { WriteExport(_session.Document, request, path, ExportTitle(), _session.OffsetService, _session.BooleanService, warnings); }
         catch (Exception e) { return ExportFailed(path, e); }
-        return ExportDone(request, path);
+        return ExportDone(request, path, warnings);
     }
 
     /// <summary>Same as <see cref="RunExport"/>, but the drawing and writing happen on a worker thread with the progress window if they take a while.</summary>
@@ -225,12 +224,15 @@ public partial class MainWindow
         path = WithExportExtension(request, path);
         var document = _session.Document;
         string title = ExportTitle();
+        var offsets = _session.OffsetService;
+        var booleans = _session.BooleanService;
+        var warnings = new List<string>();
         try
         {
-            await BackgroundWork.RunAsync(this, "Export", $"Exporting {Path.GetFileName(path)}...", _ => WriteExport(document, request, path, title));
+            await BackgroundWork.RunAsync(this, "Export", $"Exporting {Path.GetFileName(path)}...", _ => WriteExport(document, request, path, title, offsets, booleans, warnings));
         }
         catch (Exception e) { return ExportFailed(path, e); }
-        return ExportDone(request, path);
+        return ExportDone(request, path, warnings);
     }
 
     private static string WithExportExtension(ExportRequest request, string path) =>
@@ -239,12 +241,18 @@ public partial class MainWindow
     private string ExportTitle() => Path.GetFileNameWithoutExtension(_documentTitle);
 
     /// <summary>Draws the design and writes it next to the target, then swaps it in, so a failed export never leaves half a file.</summary>
-    private static void WriteExport(Document document, ExportRequest request, string path, string title)
+    private static void WriteExport(Document document, ExportRequest request, string path, string title, IOffsetService? offsets, IBooleanService? booleans, List<string> warnings)
     {
         var temp = path + ".exporting";
         try
         {
-            var bytes = DocumentExporter.Render(document, request.Format, request.Options with { Title = title });
+            byte[] bytes;
+            if (request.Format == ExportFormat.Lyt)
+            {
+                bytes = LytWriter.ToBytes(document, LegacyLayoutOptions(document, title, offsets, booleans), out var result);
+                warnings.AddRange(result.Warnings);
+            }
+            else bytes = DocumentExporter.Render(document, request.Format, request.Options with { Title = title });
             File.WriteAllBytes(temp, bytes);
             File.Move(temp, path, overwrite: true);
         }
@@ -262,9 +270,45 @@ public partial class MainWindow
         return false;
     }
 
-    private bool ExportDone(ExportRequest request, string path)
+    /// <summary>What the legacy layout writer needs: a title, the small JPEG preview stored in the file, both geometry services (so strokes survive as shapes) and a picture re-encoder.</summary>
+    private static LytWriteOptions LegacyLayoutOptions(Document document, string title, IOffsetService? offsets, IBooleanService? booleans)
+    {
+        byte[]? preview = null;
+        try
+        {
+            bool wide = document.Page.Width >= document.Page.Height;
+            preview = DocumentExporter.RenderJpeg(document, new ExportOptions { IncludePasteboard = true, PixelWidth = wide ? 400 : null, PixelHeight = wide ? null : 400, JpegQuality = 85 });
+        }
+        catch (ExportException) { }   // a preview is optional
+        return new LytWriteOptions
+        {
+            Title = title.Length > 40 ? title[..40] : title,
+            ThumbnailJpeg = preview,
+            OffsetService = offsets,
+            BooleanService = booleans,
+            ImageEncoder = asset =>
+            {
+                using var bitmap = SkiaSharp.SKBitmap.Decode(asset.Data);
+                if (bitmap is null) return null;
+                using var image = SkiaSharp.SKImage.FromBitmap(bitmap);
+                return image.Encode(SkiaSharp.SKEncodedImageFormat.Png, 100).ToArray();
+            },
+        };
+    }
+
+    /// <summary>What the last export had to simplify or leave out (the legacy layout only), in plain words. For tests.</summary>
+    internal IReadOnlyList<string> LastExportWarnings { get; private set; } = [];
+
+    private bool ExportDone(ExportRequest request, string path, IReadOnlyList<string> warnings)
     {
         LastSaveError = null;
+        LastExportWarnings = warnings.ToList();
+        if (warnings.Count > 0)
+        {
+            string list = string.Join(Environment.NewLine, warnings.Take(12).Select(w => "• " + w));
+            if (warnings.Count > 12) list += $"{Environment.NewLine}… and {warnings.Count - 12} more.";
+            _ = ShowDialogAsync("Exported", $"{Path.GetFileName(path)} was written, but some things had to be simplified:{Environment.NewLine}{Environment.NewLine}{list}", "OK", null);
+        }
         AppLog.Info("file", $"exported {Path.GetFileName(path)} ({request.Extension})");
         Flash($"Exported {Path.GetFileName(path)}");
         return true;

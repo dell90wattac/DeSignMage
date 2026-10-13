@@ -72,7 +72,13 @@ public class FileCommandTests
             Assert.Equal(path, w.DocumentPath);
             Assert.Contains(path, w.RecentPaths);
             Assert.Equal(1, DsmReader.Load(path).Document.ObjectCount);
-            Assert.NotNull(DsmReader.Load(path).Thumbnail);                     // a preview picture is stored
+            var thumbnail = DsmReader.Load(path).Thumbnail;
+            Assert.NotNull(thumbnail);                                          // a preview picture is stored...
+            using var bmp = SkiaSharp.SKBitmap.Decode(thumbnail);
+            Assert.Equal((256, 128), (bmp.Width, bmp.Height));
+            Assert.Equal(0, bmp.GetPixel(128, 64).Alpha);                       // ...with real transparency where nothing is drawn, like every export
+            Assert.Equal(0, bmp.GetPixel(250, 120).Alpha);
+            Assert.Equal(new SkiaSharp.SKColor(10, 20, 30), bmp.GetPixel(3, 3)); // and the drawn box in its own color
         }
         finally { Directory.Delete(dir, true); }
     }

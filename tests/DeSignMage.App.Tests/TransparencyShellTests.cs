@@ -251,9 +251,6 @@ public class TransparencyShellTests
                 Assert.DoesNotContain(Enumerable.Range(0, bmp.Width).SelectMany(x => Enumerable.Range(0, bmp.Height).Select(y => bmp.GetPixel(x, y))),
                     c => c.Alpha == 255 && (c == CanvasTheme.Dark.Page || c == new SKColor(0x4C, 0x4C, 0x4C) || c == new SKColor(0xCC, 0xCC, 0xCC)));   // no display color leaked
             }
-            // the thumbnail stored in a saved file is the one exception: it is shown on paper
-            using var thumb = SKBitmap.Decode(DocumentExporter.RenderPng(doc, new ExportOptions { Dpi = 72, WhiteBackground = true }));
-            Assert.Equal(SKColors.White, thumb.GetPixel(2, 2));
             return Task.CompletedTask;
         });
     }

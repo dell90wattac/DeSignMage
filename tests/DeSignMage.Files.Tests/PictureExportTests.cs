@@ -3,6 +3,7 @@ using System.Text;
 using System.Text.RegularExpressions;
 using DeSignMage.Core.Geometry;
 using DeSignMage.Core.Model;
+using DeSignMage.Formats.Native;
 using DeSignMage.Rendering.Export;
 using SkiaSharp;
 using Xunit;
@@ -151,7 +152,9 @@ public class PictureExportTests
         var best = DocumentExporter.RenderJpeg(doc, new ExportOptions { PixelWidth = 900, JpegQuality = 100 });
         var middle = DocumentExporter.RenderJpeg(doc, new ExportOptions { PixelWidth = 900, JpegQuality = 70 });
         var worst = DocumentExporter.RenderJpeg(doc, new ExportOptions { PixelWidth = 900, JpegQuality = 5 });
-        using var reference = Decode(DocumentExporter.RenderPng(doc, new ExportOptions { PixelWidth = 900, WhiteBackground = true }));
+        using var transparent = Decode(DocumentExporter.RenderPng(doc, new ExportOptions { PixelWidth = 900 }));
+        using var reference = new SKBitmap(transparent.Width, transparent.Height);   // the same on white, which is what a JPEG shows
+        using (var c = new SKCanvas(reference)) { c.Clear(SKColors.White); c.DrawBitmap(transparent, 0, 0); }
 
         Assert.True(best.Length > middle.Length && middle.Length > worst.Length, $"{best.Length} > {middle.Length} > {worst.Length}");
         double ErrorOf(byte[] jpeg)
@@ -210,6 +213,64 @@ public class PictureExportTests
         Assert.InRange(edge.Alpha, 1, 254);
     }
 
+    [Fact]
+    public void A_jpeg_fills_the_corners_a_selection_leaves_with_the_chosen_background_and_soft_edges_blend_into_it()
+    {
+        var doc = NewDoc(4, 3);
+        var shadow = Add(doc, new PathObject(PathGeometry.Ellipse(new Rect2(0, 0, 120, 120))) { Transform = Affine2.Translation(60, 30), Style = new ObjectStyle(new SolidPaint(DocColor.Black), null, new BlurStyle(SoftKind.SoftShadow, 1, 0.6, 120)) });
+        var round = Add(doc, new EllipseObject(120, 120) { Transform = Affine2.Translation(60, 30), Style = Fill(new DocColor(255, 255, 255)) });   // curved edges: the selection's box has empty corners
+        var options = new ExportOptions { Scope = ExportScope.Selection, Selection = [round, shadow], PixelWidth = 600, JpegQuality = 100, Background = new DocColor(20, 40, 120) };
+
+        using var bmp = Decode(DocumentExporter.RenderJpeg(doc, options));
+
+        var corner = bmp.GetPixel(2, 2);                                             // uncovered: the chosen color
+        Assert.True(Math.Abs(corner.Red - 20) < 8 && Math.Abs(corner.Green - 40) < 8 && Math.Abs(corner.Blue - 120) < 8, corner.ToString());
+        var far = bmp.GetPixel(bmp.Width - 3, bmp.Height - 3);
+        Assert.True(Math.Abs(far.Blue - 120) < 8, far.ToString());
+        // the halo of the shadow blends into the dark blue: no pixel along the shadow's soft ring is whitish
+        int whitish = 0;
+        for (int y = 0; y < bmp.Height; y++)
+            for (int x = 0; x < bmp.Width; x++)
+            {
+                var p = bmp.GetPixel(x, y);
+                double d = Math.Sqrt(Math.Pow(x - bmp.Width / 2.0, 2) + Math.Pow(y - bmp.Height / 2.0, 2));
+                if (d > bmp.Width * 0.43 && p.Red > 120 && p.Green > 120 && p.Blue > 160) whitish++;   // outside the white disc (its radius is 0.40 of the width): nothing light
+            }
+        Assert.Equal(0, whitish);
+        // the white disc itself is still white
+        var middle = bmp.GetPixel(bmp.Width / 2, bmp.Height / 2);
+        Assert.True(middle.Red > 235 && middle.Green > 235, middle.ToString());
+    }
+
+    [Fact]
+    public void The_default_jpeg_background_is_white_and_a_png_ignores_the_option()
+    {
+        var doc = NewDoc();
+        Add(doc, new RectangleObject(30, 30) { Style = Fill(DocColor.Black) });
+
+        using var jpeg = Decode(DocumentExporter.RenderJpeg(doc, new ExportOptions { PixelWidth = 216, JpegQuality = 100 }));
+        using var png = Decode(DocumentExporter.RenderPng(doc, new ExportOptions { PixelWidth = 216, Background = new DocColor(255, 0, 0) }));
+
+        Assert.True(jpeg.GetPixel(150, 100).Red >= 250 && jpeg.GetPixel(150, 100).Blue >= 250);
+        Assert.Equal(0, png.GetPixel(150, 100).Alpha);                              // a PNG stays transparent whatever the background says
+    }
+
+    [Fact]
+    public void A_file_with_an_old_opaque_white_thumbnail_still_opens_and_keeps_it()
+    {
+        using var white = new SKBitmap(8, 4);
+        white.Erase(SKColors.White);   // what files saved before the thumbnail became transparent hold
+        using var data = SKImage.FromBitmap(white).Encode(SKEncodedImageFormat.Png, 100);
+        var oldThumbnail = data.ToArray();
+        var doc = new Document(PageSetup.FromInches(2, 1));
+        Add(doc, new RectangleObject(10, 10) { Style = Fill(DocColor.Black) });
+
+        var loaded = DsmReader.Load(new MemoryStream(DsmWriter.SaveToBytes(doc, new DsmSaveOptions { Thumbnail = oldThumbnail })));
+
+        Assert.Equal(1, loaded.Document.ObjectCount);
+        Assert.Equal(oldThumbnail, loaded.Thumbnail);
+        Assert.Equal(255, SKBitmap.Decode(loaded.Thumbnail!).GetPixel(1, 1).Alpha);
+    }
     // ---------------------------------------------------------------- AI
 
     [Fact]

@@ -41,7 +41,7 @@ public class ShadowFileTests
             }).Applied);
             sources.Add(rect);
         }
-        // a shadow of an existing group joins that group
+        // a shadow of an existing group: each member gets one, in that group
         var a = new RectangleObject(50, 50) { Transform = Affine2.Translation(100, 400) };
         var b = new RectangleObject(50, 50) { Transform = Affine2.Translation(180, 400) };
         s.History.Execute(new AddObjectCommand(layer, a));
@@ -73,6 +73,6 @@ public class ShadowFileTests
             Assert.Equal(before.OfType<PathObject>().First(p => p.Name == name).Geometry.Points.Count, shadow.Geometry.Points.Count);
         }
         var loadedGroup = Assert.IsType<GroupObject>(after.OfType<PathObject>().Last(p => p.Name == "Shadow").Parent);
-        Assert.Equal(3, loadedGroup.Children.Count);                                 // the two squares and their shadow
+        Assert.Equal(4, loadedGroup.Children.Count);                                 // the two squares, each with its own shadow
     }
 }

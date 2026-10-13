@@ -101,6 +101,8 @@ public sealed class FeatherTool : Tool
     private void OnSelectionChanged(object? sender, EventArgs e)
     {
         if (_busy || Session.ActiveTool != this) return;
+        // the selection changed because the effect was undone (or the drawing changed some other way): leave, do not make the effect again
+        if (_command is not null && !Session.History.IsTop(_command)) { Session.SetTool("select"); return; }
         if (Session.Selection.IsEmpty || !CanRun(Session)) { Session.SetTool("select"); return; }
         Finish();
         Retarget();

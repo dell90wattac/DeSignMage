@@ -1,3 +1,4 @@
+using DeSignMage.Core.Effects;
 using DeSignMage.Core.Geometry;
 using DeSignMage.Core.Model;
 
@@ -111,12 +112,10 @@ public sealed class SoftEffectCommand : IDocumentCommand, IUndoMemory
     private static void Place(Document doc, Target t)
     {
         var source = t.Source;
-        var order = new Stacking.Order(doc);
-        // just below the lowest drawn object of the source: a group has no place of its own
-        var lowest = (source is GroupObject g ? g.Leaves() : new[] { source }).Where(l => l.Layer is not null).MinBy(order.KeyOf)!;
-        var layer = lowest.Layer!;
-        int index = layer.IndexOf(lowest);
-        if (source is GroupObject group)
+        // just below the member and the effects it already has; in the member's group, or in a new group with it
+        var layer = source.Layer ?? throw new InvalidOperationException("The source is not in the document.");
+        int index = SoftEffect.LowestIndex(source);
+        if (source.Parent is GroupObject group)
         {
             t.Insert = new InsertAtSlotCommand(new Slot(layer, index, group, group.Children.Count), t.Effect, t.Effect.Name ?? "Soft Shadow");
             t.Insert.Do(doc);

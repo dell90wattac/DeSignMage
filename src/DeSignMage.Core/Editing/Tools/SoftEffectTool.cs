@@ -140,6 +140,8 @@ public sealed class SoftEffectTool : Tool
     private void OnSelectionChanged(object? sender, EventArgs e)
     {
         if (_busy || Session.ActiveTool != this) return;
+        // the selection changed because the effect was undone (or the drawing changed some other way): leave, do not make the effect again
+        if (_command is not null && !Session.History.IsTop(_command)) { Session.SetTool("select"); return; }
         if (Session.Selection.IsEmpty || !SoftEffect.CanRun(Session)) { Session.SetTool("select"); return; }
         Finish();
         Retarget();
@@ -190,7 +192,7 @@ public sealed class SoftEffectTool : Tool
                 // the new effect object joined the source's group: select the groups, as the other effects do
                 var groups = new List<DocObject>();
                 for (int i = 0; i < plan.Targets.Count; i++)
-                    groups.Add(plan.GroupOf(i) ?? (plan.Targets[i].Source as GroupObject) ?? plan.Targets[i].Source);
+                    groups.Add(plan.Targets[i].Source.TopLevel);
                 Session.Selection.Set(groups);
             }
         }

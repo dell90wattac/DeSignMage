@@ -61,7 +61,8 @@ public sealed record SoftSettings
 /// Effects ▸ Soft Shadow and Effects ▸ Glow (notes/effects/soft-shadow.md, glow.md; user decisions R7, R8, R13, R22): a separate vector object made from the
 /// source's outline, <b>grouped with its source</b> (not linked: editing the source later leaves it as it is) and placed just below the source in the drawing
 /// order. The object keeps the outline as vectors; the blur is a <see cref="BlurStyle"/> on its style that the renderer draws at any zoom or export resolution.
-/// A group source gets the shadow as one more member, its outline is the union of all of its members; any other source and the shadow become a new group.
+/// Everything inside a group gets the same treatment, individually: every drawn member (at any depth) gets its own effect object, just below it and in its group; a
+/// member that is not in a group becomes a new group with its effect object.
 /// Everything is one <see cref="SoftEffectCommand"/>, so a slider drag or typing in the Context Bar is one undo step.
 /// </summary>
 public static class SoftEffect
@@ -87,13 +88,42 @@ public static class SoftEffect
     public static bool CanRun(EditorSession s) =>
         !s.Selection.IsEmpty && s.Selection.Items.Any(i => i.Style.Blur is null && SourceLeaves(i).Any(HasArea));
 
-    /// <summary>The selected top-level objects that can be a source, bottom to top.</summary>
-    public static List<DocObject> Sources(EditorSession s) =>
-        Stacking.BottomToTop(s.Document, s.Selection.Items).Where(i => i.Style.Blur is null && SourceLeaves(i).Any(HasArea)).ToList();
+    /// <summary>
+    /// What the effect is made for: every drawn object with an area inside the selection, at any depth of groups, bottom to top (a combined object is one). Everything inside a group
+    /// gets the same treatment, individually (user decision, 2026-10-13): each of these gets its own effect object.
+    /// </summary>
+    public static List<DocObject> Sources(EditorSession s)
+    {
+        var members = new List<DocObject>();
+        foreach (var top in Stacking.BottomToTop(s.Document, s.Selection.Items))
+            foreach (var leaf in SourceLeaves(top))
+                if (HasArea(leaf) && !members.Contains(leaf)) members.Add(leaf);
+        return Stacking.BottomToTop(s.Document, members);
+    }
 
-    /// <summary>The effect object of this kind that belongs to <paramref name="source"/>: a member of the source group with a <see cref="BlurStyle"/> of that kind. Null when none.</summary>
-    public static PathObject? Find(DocObject source, SoftKind kind) =>
-        source is GroupObject g ? g.Children.OfType<PathObject>().FirstOrDefault(p => p.Style.Blur?.Kind == kind) : null;
+    /// <summary>
+    /// The effect object of this kind that belongs to <paramref name="member"/>: the objects with a <see cref="BlurStyle"/> that lie directly below it in the drawing order,
+    /// in the same group, belong to it (an effect is always put there); the first of that kind. Null when none.
+    /// </summary>
+    public static PathObject? Find(DocObject member, SoftKind kind)
+    {
+        if (member.Layer is not { } layer || member.Style.Blur is not null) return null;
+        for (int j = layer.IndexOf(member) - 1; j >= 0; j--)
+        {
+            if (layer.Children[j] is not PathObject { Style.Blur: { } blur } p || !ReferenceEquals(p.Parent, member.Parent)) break;
+            if (blur.Kind == kind) return p;
+        }
+        return null;
+    }
+
+    /// <summary>Where a new effect object for <paramref name="member"/> goes: just below the member and the effects it already has.</summary>
+    internal static int LowestIndex(DocObject member)
+    {
+        var layer = member.Layer!;
+        int j = layer.IndexOf(member);
+        while (j - 1 >= 0 && layer.Children[j - 1] is PathObject { Style.Blur: not null } p && ReferenceEquals(p.Parent, member.Parent)) j--;
+        return j;
+    }
 
     // ---- The outline of the source ----
 
@@ -143,7 +173,7 @@ public static class SoftEffect
     public static double Reference(PathGeometry silhouette, DocObject source)
     {
         double h = silhouette.GetBounds().Height;
-        var parent = source is GroupObject g ? g.GetWorldTransform() : EffectGeometry.ParentWorld(source);
+        var parent = EffectGeometry.ParentWorld(source);
         double scale = Math.Sqrt(Math.Abs(parent.Determinant));
         return scale > 1e-12 ? h / scale : h;
     }
@@ -201,7 +231,7 @@ public static class SoftEffect
         if (silhouette is null) return null;
         var shape = Shape(offsets, silhouette, settings);
         if (shape.IsEmpty) return null;
-        var into = source is GroupObject g ? g.GetWorldTransform() : Affine2.Identity;
+        var into = EffectGeometry.ParentWorld(source);   // the effect object joins the group the member is in
         var local = into.IsIdentity || !into.IsInvertible ? shape : shape.Transform(into.Invert());
         return (local, StyleOf(settings, Reference(silhouette, source)));
     }

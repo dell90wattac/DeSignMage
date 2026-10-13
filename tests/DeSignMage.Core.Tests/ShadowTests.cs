@@ -56,13 +56,14 @@ public class ShadowTests
         Assert.InRange(actual.Bottom, expected.Bottom - tol, expected.Bottom + tol);
     }
 
-    /// <summary>The shadow object a command made for <paramref name="source"/> (the one named like a shadow in the same group).</summary>
+    /// <summary>The shadow object a command made for <paramref name="source"/>: the one directly below it in the drawing order.</summary>
     private static PathObject ShadowOf(DocObject source)
     {
-        var group = source.Parent as GroupObject ?? (GroupObject)source;
-        return group.Children.OfType<PathObject>().Single(p => p.Name?.Contains("Shadow") == true);
+        var layer = source.Layer!;
+        var below = layer.Children[layer.IndexOf(source) - 1];
+        Assert.True(ShadowEffect.IsShadow(below), $"{below} is not the shadow of {source}");
+        return (PathObject)below;
     }
-
     // ---- Drop and relief, flat ----
 
     [Fact]
@@ -256,29 +257,66 @@ public class ShadowTests
     }
 
     [Fact]
-    public void A_group_source_gets_the_shadow_as_one_more_member_below_all_of_its_members()
+    public void Every_member_of_a_group_gets_its_own_shadow_just_below_it_in_the_same_group()
     {
         var a = AddRect(0, 0, 50, 50);
         var between = AddRect(500, 500, 10, 10);
         var b = AddRect(60, 0, 50, 50);
         var group = _s.GroupObjects([a, b])!;
-        group.Transform = Affine2.Translation(200, 100);                            // a moved group: the shadow must land in the right place
+        group.Transform = Affine2.Translation(200, 100);                            // a moved group: the shadows must land in the right place
         _s.Selection.Set(group);
         int groups = Doc.GroupCount;
+        int steps = UndoSteps;
 
         _s.Shadow(Drop(10, 10));
 
-        Assert.Equal(groups, Doc.GroupCount);                                        // no new group: the shadow joined this one
-        Assert.Equal(3, group.Children.Count);
-        var shadow = ShadowOf(group);
-        Assert.Same(group, shadow.Parent);
-        Assert.Equal([shadow, a, between, b], L.Children);                          // below everything of the group; the object between stays between
-        AssertRect(new Rect2(200, 100, 320, 160), shadow.GetWorldBounds());        // both squares united with their copy moved by (10, 10)
+        Assert.Equal(steps + 1, UndoSteps);                                          // one undo step for all of it
+        Assert.Equal(groups, Doc.GroupCount);                                        // no new group: the shadows joined this one
+        Assert.Equal(4, group.Children.Count);
+        var shadowA = ShadowOf(a);
+        var shadowB = ShadowOf(b);
+        Assert.Same(group, shadowA.Parent);
+        Assert.Same(group, shadowB.Parent);
+        Assert.Equal([shadowA, a, between, shadowB, b], L.Children);                // each below its own member; what lay between stays between
+        AssertRect(new Rect2(200, 100, 260, 160), shadowA.GetWorldBounds());        // a's own shadow only: its square united with its copy moved by (10, 10)
+        AssertRect(new Rect2(260, 100, 320, 160), shadowB.GetWorldBounds());
+        Assert.Equal([group], _s.Selection.Items);
         _s.History.Undo();
         Assert.Equal([a, between, b], L.Children);
         Assert.Equal(2, group.Children.Count);
+        _s.History.Redo();
+        Assert.Equal(5, L.Children.Count);
     }
 
+    [Fact]
+    public void Nested_groups_are_shadowed_member_by_member_each_in_its_own_group()
+    {
+        var a = AddRect(0, 0, 40, 40);
+        var b = AddRect(100, 0, 40, 40);
+        var c = AddRect(200, 0, 40, 40);
+        var inner = _s.GroupObjects([a, b])!;
+        var outer = _s.GroupObjects([inner, c])!;
+        _s.Selection.Set(outer);
+        int groups = Doc.GroupCount;
+        int steps = UndoSteps;
+
+        _s.Shadow(new ShadowSettings { Form = ShadowForm.Extruded, ShiftX = 8, ShiftY = 8 });
+
+        Assert.Equal(steps + 1, UndoSteps);
+        Assert.Equal(groups, Doc.GroupCount);
+        Assert.Same(inner, ShadowOf(a).Parent);                                      // the shadows of a and b are in the inner group...
+        Assert.Same(inner, ShadowOf(b).Parent);
+        Assert.Same(outer, ShadowOf(c).Parent);                                      // ...the shadow of c in the outer one
+        Assert.Equal(4, inner.Children.Count);
+        Assert.Equal(3, outer.Children.Count);                                       // the inner group, c, and c's shadow
+        Assert.Equal(6, L.Children.Count);
+        Assert.Equal("Extruded Shadow", ShadowOf(b).Name);
+        Assert.Equal([outer], _s.Selection.Items);
+        _s.History.Undo();
+        Assert.Equal([a, b, c], L.Children);
+        Assert.Equal(2, inner.Children.Count);
+        Assert.Equal(2, outer.Children.Count);
+    }
     [Fact]
     public async Task A_text_source_stays_live_text_and_gets_a_separate_shadow_object()
     {

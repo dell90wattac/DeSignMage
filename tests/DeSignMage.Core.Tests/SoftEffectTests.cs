@@ -43,7 +43,7 @@ public class SoftEffectTests
     private FeatherTool Feather => _s.GetTool<FeatherTool>();
 
     private static PathObject EffectOf(DocObject source, SoftKind kind) =>
-        Assert.IsType<PathObject>(SoftEffect.Find((source as GroupObject) ?? (GroupObject)source.Parent!, kind));
+        Assert.IsType<PathObject>(SoftEffect.Find(source, kind));
 
     // ---- Soft Shadow ----
 
@@ -179,10 +179,10 @@ public class SoftEffectTests
         Tool.Update(s => s with { Opacity = 0.4 });
         Assert.Equal(steps + 1, UndoSteps);
         Assert.Equal(2, group.Children.Count);
-        Assert.Equal(0.4, EffectOf(group, SoftKind.SoftShadow).Style.Blur!.Opacity);
+        Assert.Equal(0.4, EffectOf(a, SoftKind.SoftShadow).Style.Blur!.Opacity);
         Tool.Done();
         _s.History.Undo();
-        Assert.Equal(0.7, EffectOf(group, SoftKind.SoftShadow).Style.Blur!.Opacity);
+        Assert.Equal(0.7, EffectOf(a, SoftKind.SoftShadow).Style.Blur!.Opacity);
     }
 
     [Fact]
@@ -193,7 +193,7 @@ public class SoftEffectTests
         _s.BeginSoftEffect(SoftKind.SoftShadow);
         Tool.Done();
         var group = (GroupObject)a.Parent!;
-        var shadow = EffectOf(group, SoftKind.SoftShadow);
+        var shadow = EffectOf(a, SoftKind.SoftShadow);
         int steps = UndoSteps;
 
         _s.Selection.Set(group);
@@ -237,22 +237,136 @@ public class SoftEffectTests
     }
 
     [Fact]
-    public void A_group_gets_one_shadow_from_the_union_of_its_members_that_joins_the_group()
+    public void Every_member_of_a_group_gets_its_own_effect_just_below_it_in_the_group_with_the_same_settings()
     {
         var a = AddRect(0, 0, 50, 50);
-        var b = AddRect(30, 0, 50, 50);   // overlaps a: one shape, one shadow, no double dark where they overlap
+        var b = AddRect(30, 0, 50, 50);   // overlaps a: each is shadowed individually (the same treatment for everything inside a group)
         var group = _s.GroupObjects([a, b])!;
         _s.Selection.Set(group);
+        int steps = UndoSteps;
 
         _s.BeginSoftEffect(SoftKind.SoftShadow);
 
-        Assert.Equal(3, group.Children.Count);
-        var shadow = EffectOf(group, SoftKind.SoftShadow);
-        Assert.Equal(new Rect2(5, 5, 85, 55), shadow.GetWorldBounds());               // the union (0..80 x 0..50), moved by 10 % of its height (5)
-        Assert.Equal(50, shadow.Style.Blur!.Reference, 6);
+        Assert.Equal(steps + 1, UndoSteps);                                           // one undo step for all of them
+        Assert.Equal(4, group.Children.Count);
+        var ea = EffectOf(a, SoftKind.SoftShadow);
+        var eb = EffectOf(b, SoftKind.SoftShadow);
+        Assert.NotSame(ea, eb);
+        Assert.Equal([ea, a, eb, b], L.Children);                                      // each just below its own member
+        Assert.Same(group, ea.Parent);
+        Assert.Same(group, eb.Parent);
         Assert.Equal(1, Doc.GroupCount);
-        // the shadow is below everything in the group
-        Assert.Same(shadow, L.Children[0]);
+        Assert.Equal(new Rect2(5, 5, 55, 55), ea.GetWorldBounds());                    // each is its own member's outline moved by 10 % of the selection's height
+        Assert.Equal(new Rect2(35, 5, 85, 55), eb.GetWorldBounds());
+    }
+
+    [Fact]
+    public void Nested_groups_are_followed_down_to_the_solo_objects_and_editing_edits_all_of_them_together()
+    {
+        var a = AddRect(0, 0, 40, 40);
+        var b = AddRect(100, 0, 40, 40);
+        var c = AddRect(200, 0, 40, 40);
+        var inner = _s.GroupObjects([a, b])!;
+        var outer = _s.GroupObjects([inner, c])!;
+        _s.Selection.Set(outer);
+        int steps = UndoSteps;
+
+        _s.BeginSoftEffect(SoftKind.SoftShadow);
+
+        Assert.Equal(steps + 1, UndoSteps);
+        var ea = EffectOf(a, SoftKind.SoftShadow);
+        var eb = EffectOf(b, SoftKind.SoftShadow);
+        var ec = EffectOf(c, SoftKind.SoftShadow);
+        Assert.Same(inner, ea.Parent);                                                // the effect of a nested member stays in that member's group
+        Assert.Same(inner, eb.Parent);
+        Assert.Same(outer, ec.Parent);
+        Assert.Equal([ea, a, eb, b, ec, c], L.Children);
+        Assert.Equal(2, Doc.GroupCount);                                              // no group was added
+
+        Tool.Update(s => s with { Opacity = 0.9, ShiftX = 12, ShiftY = 7 });          // one edit changes all of them
+        Assert.Equal(steps + 1, UndoSteps);
+        foreach (var e in new[] { ea, eb, ec })
+        {
+            Assert.Equal(0.9, e.Style.Blur!.Opacity);
+            Assert.Equal(12, e.Style.Blur.Hs);
+            Assert.Equal(-7, e.Style.Blur.Vs);
+        }
+        Assert.Equal(new Rect2(12, 7, 52, 47), ea.GetWorldBounds());
+        Assert.Equal(new Rect2(212, 7, 252, 47), ec.GetWorldBounds());
+        Tool.Done();
+
+        // opening it again on the group shows the settings and keeps one effect per member
+        _s.Selection.Set(outer);
+        _s.BeginSoftEffect(SoftKind.SoftShadow);
+        Assert.True(Tool.HadEffect);
+        Assert.Equal(0.9, Tool.Settings.Opacity);
+        Assert.Equal(3, L.Children.OfType<PathObject>().Count());                      // still three effects, no second set
+        Tool.Done();
+
+        _s.History.Undo();
+        Assert.Equal([a, b, c], L.Children);
+    }
+
+    [Fact]
+    public void An_object_inside_a_group_that_gets_an_effect_alone_and_one_that_is_not_in_a_group_both_work_in_one_selection()
+    {
+        var a = AddRect(0, 0, 40, 40);
+        var b = AddRect(100, 0, 40, 40);
+        var group = _s.GroupObjects([a, b])!;
+        var solo = AddRect(200, 0, 40, 40);
+        _s.Selection.Set([group, solo]);
+
+        _s.BeginSoftEffect(SoftKind.Glow);
+
+        Assert.Equal(2, Doc.GroupCount);                                              // the solo object became a group with its glow
+        Assert.Equal(3, L.Children.OfType<PathObject>().Count());
+        var gs = EffectOf(solo, SoftKind.Glow);
+        Assert.IsType<GroupObject>(solo.Parent);
+        Assert.Same(solo.Parent, gs.Parent);
+        Assert.Same(group, EffectOf(a, SoftKind.Glow).Parent);
+        _s.History.Undo();
+        Assert.Equal([a, b, solo], L.Children);
+        Assert.Equal(1, Doc.GroupCount);
+    }
+
+    [Fact]
+    public void Remove_takes_the_effect_off_every_member_in_one_undo_step()
+    {
+        var a = AddRect(0, 0, 40, 40);
+        var b = AddRect(100, 0, 40, 40);
+        var group = _s.GroupObjects([a, b])!;
+        _s.Selection.Set(group);
+        _s.BeginSoftEffect(SoftKind.SoftShadow);
+        Tool.Done();
+        _s.Selection.Set(group);
+        Assert.True(_s.HasSoftEffect(SoftKind.SoftShadow));
+        int steps = UndoSteps;
+
+        _s.BeginSoftEffect(SoftKind.SoftShadow);
+        Tool.Remove();
+
+        Assert.Equal(steps + 1, UndoSteps);
+        Assert.Equal([a, b], L.Children);
+        Assert.False(_s.HasSoftEffect(SoftKind.SoftShadow));
+        _s.History.Undo();
+        Assert.Equal(4, L.Children.Count);
+    }
+
+    [Fact]
+    public void Feather_follows_nested_groups_down_to_the_members()
+    {
+        var a = AddRect(0, 0, 40, 40);
+        var b = AddRect(100, 0, 40, 40);
+        var c = AddRect(200, 0, 40, 40);
+        var inner = _s.GroupObjects([a, b])!;
+        var outer = _s.GroupObjects([inner, c])!;
+        _s.Selection.Set(outer);
+
+        Assert.True(_s.SetFeather(0.05, 0.2));
+
+        foreach (var o in new DocObject[] { a, b, c }) Assert.Equal(new FeatherStyle(0.05, 0.2), o.Style.Feather);
+        Assert.Null(inner.Style.Feather);
+        Assert.Null(outer.Style.Feather);
     }
 
     [Fact]
@@ -266,14 +380,13 @@ public class SoftEffectTests
 
         _s.BeginSoftEffect(SoftKind.SoftShadow);
 
-        var shadow = EffectOf(group, SoftKind.SoftShadow);
+        var shadow = EffectOf(a, SoftKind.SoftShadow);
         var blur = shadow.Style.Blur!;
-        Assert.Equal(200, shadow.GetWorldBounds().Height - 0, 0);                    // the shadow of two 200-point boxes: height 200
-        Assert.Equal(100, blur.Reference, 6);                                         // in the group's own units (the group is scaled by 2)
+        Assert.Equal(200, shadow.GetWorldBounds().Height, 0);                         // a box is 200 points high on the page
+        Assert.Equal(100, blur.Reference, 6);                                         // its height in the group's own units (the group is scaled by 2)
         var world = shadow.GetWorldTransform();
         Assert.Equal(0.068 * 0.5 * 200, blur.Sigma * Math.Sqrt(Math.Abs(world.Determinant)), 6);   // 6.8 points on the page
     }
-
     [Fact]
     public void Inset_pulls_the_shadows_outline_in_and_a_negative_inset_grows_it()
     {
@@ -317,7 +430,7 @@ public class SoftEffectTests
         _s.ApplyFill(new SolidPaint(DocColor.FromHex("#00AA00")));
 
         Assert.Equal(DocColor.FromHex("#00AA00"), ((SolidPaint)a.Style.Fill!).Color);
-        Assert.Equal(DocColor.FromHex("#303030"), ((SolidPaint)EffectOf(group, SoftKind.SoftShadow).Style.Fill!).Color);
+        Assert.Equal(DocColor.FromHex("#303030"), ((SolidPaint)EffectOf(a, SoftKind.SoftShadow).Style.Fill!).Color);
     }
 
     [Fact]
@@ -328,7 +441,7 @@ public class SoftEffectTests
         _s.BeginSoftEffect(SoftKind.SoftShadow);
         Tool.Done();
         var group = (GroupObject)a.Parent!;
-        var shadow = EffectOf(group, SoftKind.SoftShadow);
+        var shadow = EffectOf(a, SoftKind.SoftShadow);
         var before = shadow.GetWorldBounds();
 
         _s.History.Execute(TransformObjectsCommand.ApplyWorld("Move", [group], Affine2.Translation(50, 0)));
@@ -396,8 +509,8 @@ public class SoftEffectTests
         Tool.Done();
 
         Assert.Equal(3, group.Children.Count);
-        var shadow = EffectOf(group, SoftKind.SoftShadow);
-        var glow = EffectOf(group, SoftKind.Glow);
+        var shadow = EffectOf(a, SoftKind.SoftShadow);
+        var glow = EffectOf(a, SoftKind.Glow);
         Assert.Equal([glow, shadow, a], L.Children);
         Assert.True(_s.HasSoftEffect(SoftKind.Glow));
         Assert.Equal(0, shadow.Style.Blur!.Vs + 10, 6);                               // the shadow is untouched
@@ -481,7 +594,7 @@ public class SoftEffectTests
         _s.Selection.Set(group);
         _s.SetFeather(0.05, 0.3);
         Assert.NotNull(a.Style.Feather);
-        Assert.Null(EffectOf(group, SoftKind.SoftShadow).Style.Feather);
+        Assert.Null(EffectOf(a, SoftKind.SoftShadow).Style.Feather);
     }
 
     [Fact]

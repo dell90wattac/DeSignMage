@@ -7,14 +7,17 @@ namespace DeSignMage.Rendering.Export;
 
 /// <summary>
 /// Picture exports (PNG, JPEG): the size in pixels, drawing the plan into a bitmap and encoding it.
-/// A PNG keeps the alpha channel (where nothing is drawn it has no color at all, R27); a JPEG cannot hold alpha, so it gets a white background.
+/// A PNG keeps the alpha channel (where nothing is drawn it has no color at all, R27); a JPEG cannot hold alpha, so it gets a solid background (white unless <see cref="ExportOptions.Background"/> says otherwise).
 /// </summary>
 internal static class RasterExporter
 {
     /// <summary>Pixel size from the options: typed width and/or height (the missing one follows the area's aspect ratio), or the area in inches times the dpi.</summary>
-    public static (int Width, int Height) PixelSize(ExportPlan plan, ExportOptions options)
+    public static (int Width, int Height) PixelSize(ExportPlan plan, ExportOptions options) => PixelSize(plan.Area, options);
+
+    /// <summary>The same for an area that is already known (the Export dialog keeps the area of each choice, so typing in a size field plans nothing).</summary>
+    public static (int Width, int Height) PixelSize(Rect2 area, ExportOptions options)
     {
-        double areaW = plan.Area.Width, areaH = plan.Area.Height;
+        double areaW = area.Width, areaH = area.Height;
         double w, h;
         if (options.PixelWidth is not null || options.PixelHeight is not null)
         {
@@ -47,7 +50,7 @@ internal static class RasterExporter
     {
         if (options.PngCompression is < 0 or > 9) throw new ExportException("The PNG compression must be between 0 and 9.");
         var plan = ExportPlan.Create(doc, options);
-        using var surface = Render(plan, options, white: options.WhiteBackground, draw);
+        using var surface = Render(plan, options, SKColors.Transparent, draw);   // where nothing is drawn a PNG has no color at all (R27)
         using var pixmap = surface.PeekPixels();
         using var stream = new SKDynamicMemoryWStream();
         var png = new SKPngEncoderOptions(SKPngEncoderFilterFlags.AllFilters, options.PngCompression);
@@ -60,7 +63,7 @@ internal static class RasterExporter
     {
         if (options.JpegQuality is < 1 or > 100) throw new ExportException("The JPEG quality must be between 1 and 100.");
         var plan = ExportPlan.Create(doc, options);
-        using var surface = Render(plan, options, white: true, draw);   // JPEG has no alpha: a solid white page
+        using var surface = Render(plan, options, new SKColor(options.Background.R, options.Background.G, options.Background.B), draw);   // JPEG has no alpha: art is drawn straight onto the solid color, so soft edges blend into it
         using var pixmap = surface.PeekPixels();
         using var stream = new SKDynamicMemoryWStream();
         // Sharp colored edges (sign artwork) smear with the usual 4:2:0 color reduction, so a good quality keeps full color resolution.
@@ -70,13 +73,13 @@ internal static class RasterExporter
         return WithJfifDensity(data.ToArray(), DpiOf(plan, pixmap.Width));
     }
 
-    private static SKSurface Render(ExportPlan plan, ExportOptions options, bool white, Action<SKCanvas, ExportPlan> draw)
+    private static SKSurface Render(ExportPlan plan, ExportOptions options, SKColor background, Action<SKCanvas, ExportPlan> draw)
     {
         var (w, h) = PixelSize(plan, options);
         var surface = SKSurface.Create(new SKImageInfo(w, h, SKColorType.Rgba8888, SKAlphaType.Premul))
             ?? throw new ExportException("The picture could not be created (not enough memory?).");
         var canvas = surface.Canvas;
-        canvas.Clear(white ? SKColors.White : SKColors.Transparent);
+        canvas.Clear(background);
         canvas.Scale((float)(w / Math.Max(plan.Area.Width, 1e-9)), (float)(h / Math.Max(plan.Area.Height, 1e-9)));
         canvas.Translate((float)-plan.Area.Left, (float)-plan.Area.Top);
         draw(canvas, plan);

@@ -241,6 +241,33 @@ public class BevelTests
     }
 
     [Fact]
+    public void Nested_groups_are_beveled_member_by_member_each_in_its_own_group()
+    {
+        var a = AddRect(0, 0, 60, 60);
+        var b = AddRect(100, 0, 60, 60);
+        var c = AddRect(200, 0, 60, 60);
+        var inner = _s.GroupObjects([a, b])!;
+        var outer = _s.GroupObjects([inner, c])!;
+        _s.Selection.Set(outer);
+        int groups = Doc.GroupCount;
+        int steps = UndoSteps;
+
+        _s.ApplyBevel(new BevelSettings());
+
+        Assert.Equal(steps + 1, UndoSteps);                                            // one step for all of it
+        Assert.Equal(groups, Doc.GroupCount);
+        Assert.Equal([a.Name, "Bevel Highlight", "Bevel Shadow", b.Name, "Bevel Highlight", "Bevel Shadow", c.Name, "Bevel Highlight", "Bevel Shadow"],
+            L.Children.Select(o => o.Name));                                           // each pair directly above its own member
+        Assert.Same(inner, L.Children[1].Parent);                                      // a's and b's crescents are in the inner group
+        Assert.Same(inner, L.Children[5].Parent);
+        Assert.Same(outer, L.Children[7].Parent);                                      // c's in the outer one
+        Assert.Equal(6, inner.Children.Count);
+        Assert.Equal(4, outer.Children.Count);                                         // the inner group, c, c's two crescents
+        _s.History.Undo();
+        Assert.Equal([a, b, c], L.Children);
+        Assert.Equal(2, inner.Children.Count);
+    }
+    [Fact]
     public void Live_text_stays_live_and_gets_crescent_objects_of_its_own()
     {
         var text = Add(new TextObject("Hi", "Arial", 100) { Transform = Affine2.Translation(100, 300), Style = Red });

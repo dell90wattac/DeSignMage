@@ -167,6 +167,55 @@ public class SoftEffectPerfTests(ITestOutputHelper output)
     }
 
     [Fact]
+    public void A_soft_shadow_on_a_group_of_300_members_makes_one_effect_per_member_and_stays_interactive()
+    {
+        // Every member of a group gets its own effect (user decision, 2026-10-13), so a big group means many effect objects and many masks.
+        var doc = new Document(PageSetup.FromInches(48, 24));
+        var session = new EditorSession(doc);
+        var rnd = new Random(3);
+        var members = new List<DocObject>();
+        for (int i = 0; i < 300; i++)
+        {
+            var box = new RectangleObject(Units.FromInches(0.5 + rnd.NextDouble()), Units.FromInches(0.5 + rnd.NextDouble()))
+            {
+                Transform = Affine2.Translation(rnd.NextDouble() * (doc.Page.Width - 200), rnd.NextDouble() * (doc.Page.Height - 200)),
+                Style = ObjectStyle.FillOnly(new DocColor((byte)rnd.Next(256), (byte)rnd.Next(256), (byte)rnd.Next(256))),
+            };
+            session.History.Execute(new AddObjectCommand(doc.ActiveLayer, box));
+            members.Add(box);
+        }
+        var group = session.GroupObjects(members)!;
+        session.Selection.Set(group);
+
+        double start = Time(() => session.BeginSoftEffect(SoftKind.SoftShadow));
+        var tool = session.GetTool<SoftEffectTool>();
+        Assert.Equal(300, tool.Effects.Count);
+        Assert.Equal(600, doc.ActiveLayer.Children.Count);
+        using var r = new SceneRenderer(doc) { ViewScale = 0.2 };
+        double first = Time(() => r.GetDocumentPicture(null).Release());
+        Assert.Equal(300, r.SoftMasksMade);
+        double opacity = 0.5;
+        double edit = Best(6, () =>
+        {
+            opacity += 0.05;
+            return Time(() => { tool.Update(s => s with { Opacity = opacity }); r.GetDocumentPicture(null).Release(); });   // the masks stay: only the color changes
+        });
+        double move = Best(6, () =>
+        {
+            tool.Update(s => s with { ShiftX = s.ShiftX + 1 });
+            return Time(() => r.GetDocumentPicture(null).Release());
+        });
+        Report("start the tool on a group of 300 (300 effect objects made)", start, 300);
+        Report("first record, 300 effects", first, 250);
+        Report("opacity edit of 300 effects and redraw", edit, 60);
+        Report("shift edit of 300 effects (300 new outlines, same masks) and redraw", move, 60);
+        Assert.True(start < 300, $"starting the tool took {start:0} ms");
+        Assert.True(first < 250, $"recording took {first:0} ms");
+        Assert.True(edit < 60, $"an opacity edit took {edit:0.0} ms");
+        Assert.True(move < 60, $"a shift edit took {move:0.0} ms");
+    }
+
+    [Fact]
     public void A_page_of_feathered_objects_makes_each_mask_once()
     {
         var (doc, _) = Page(200, feather: true);

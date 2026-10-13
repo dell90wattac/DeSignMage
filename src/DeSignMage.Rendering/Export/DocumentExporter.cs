@@ -24,6 +24,7 @@ public static class DocumentExporter
         ".jpg" or ".jpeg" => ExportFormat.Jpeg,
         ".eps" => ExportFormat.Eps,
         ".ai" => ExportFormat.Ai,
+        ".lyt" => ExportFormat.Lyt,
         _ => null,
     };
 
@@ -35,6 +36,7 @@ public static class DocumentExporter
         ExportFormat.Jpeg => RenderJpeg(doc, options),
         ExportFormat.Eps => EpsExporter.RenderBytes(doc, options),
         ExportFormat.Ai => RenderAi(doc, options),
+        ExportFormat.Lyt => throw new ExportException("A legacy layout is written by the application, not by the picture exporters."),
         _ => throw new ArgumentOutOfRangeException(nameof(format)),
     };
 
@@ -81,6 +83,9 @@ public static class DocumentExporter
 
     /// <summary>Pixel size of a PNG or JPEG for these options (typed size, or page inches × dpi), checked against the limits.</summary>
     public static (int Width, int Height) PngSize(Document doc, ExportOptions options) => RasterExporter.PixelSize(ExportPlan.Create(doc, options), options);
+
+    /// <summary>The same for an area that is already planned (<see cref="ExportPlan.Area"/>).</summary>
+    public static (int Width, int Height) PixelSize(Rect2 area, ExportOptions options) => RasterExporter.PixelSize(area, options);
 
     public static byte[] RenderPng(Document doc, ExportOptions options) => RasterExporter.RenderPng(doc, options, (canvas, plan) => Draw(canvas, doc, plan));
 
