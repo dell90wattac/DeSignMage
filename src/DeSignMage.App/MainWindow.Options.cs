@@ -58,6 +58,7 @@ public partial class MainWindow
             FeedbackButton.Margin = UiScale.Space(4, 0, 8, 0);
             FeedbackButton.Padding = UiScale.Space(12, 3);
             ContextBarBorder.Padding = UiScale.Space(8, 6);
+            MenuStrip.FitTo(ContextBarBorder.Padding);   // the menu area reaches out through this padding to the bar's edges
             ProjectColorBarHost.Margin = UiScale.Space(8, 6);
             ProjectColorBarHost.Spacing = UiScale.Sp(8);
             ProjectColorBarHost.LineSpacing = UiScale.Sp(4);

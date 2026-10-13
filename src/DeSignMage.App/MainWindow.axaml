@@ -74,12 +74,12 @@
            canvas below never moves). A row that is too long for the window scrolls sideways instead of wrapping. It ends at the Dock's edge. -->
       <Border x:Name="ContextBarBorder" Grid.Row="0" Grid.Column="0" Grid.ColumnSpan="2" Classes="bar" Padding="8,6" ClipToBounds="True">
         <!-- Left: the tool's or the selection's controls. Right: the menu tabs (Image, Effects, Tools) and, when one is open, its icon buttons
-             (R25); the right part is only as wide as its tabs until a strip is open, then it takes the right half of the bar. -->
+             (R25); the menu area has a fixed share of the bar's width, divided from the controls by a line, whether or not a strip is open. -->
         <Grid ColumnDefinitions="*,Auto">
-          <ScrollViewer x:Name="ContextBarScroll" Grid.Column="0" HorizontalScrollBarVisibility="Auto" VerticalScrollBarVisibility="Disabled">
+          <ScrollViewer x:Name="ContextBarScroll" Grid.Column="0" Margin="0,0,8,0" HorizontalScrollBarVisibility="Auto" VerticalScrollBarVisibility="Disabled">
             <ContentControl x:Name="ContextBarHost" />
           </ScrollViewer>
-          <s:MenuStrip x:Name="MenuStrip" Grid.Column="1" Margin="8,0,0,0" />
+          <s:MenuStrip x:Name="MenuStrip" Grid.Column="1" />
         </Grid>
       </Border>
 

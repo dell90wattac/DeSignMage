@@ -465,7 +465,7 @@ public class ButtonAuditTests
     /// <summary>Two loops (an outer one first, a hole second) selected in the Loop Edit tool, the hole's loop picked.</summary>
     private static (MainWindow W, LoopEditContextBar Bar, PathObject Path) LoopSetup(bool holeFirst = false)
     {
-        var (w, c) = Open();
+        var (w, c) = Open(1700);   // the menu area (R25) keeps its share of the Context Bar, so a wide row needs a wider window for every button to be on screen
         var outer = PathEditing.ToLoops(PathGeometry.Rectangle(Rect2.FromXYWH(0, 0, 400, 400)))[0];
         var inner = PathEditing.ToLoops(PathGeometry.Rectangle(Rect2.FromXYWH(100, 100, 200, 200)))[0];
         PathEditing.Reverse(inner);

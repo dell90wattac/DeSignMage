@@ -337,7 +337,7 @@ public class ContextBarValidChoicesTests
         var shown = Buttons().Where(b => b.IsVisible).ToArray();
         Assert.NotEmpty(shown);                                               // a node is selected: some commands apply
         Assert.All(shown, b => Assert.True(b.IsEnabled));
-        Assert.True(Buttons().Any(b => !b.IsVisible));                        // and the ones that do not apply are gone, not greyed
+        Assert.Contains(Buttons(), b => !b.IsVisible);                        // and the ones that do not apply are gone, not greyed
         Assert.DoesNotContain(bar.GetVisualDescendants().OfType<TextBlock>(), t => t.IsVisible && t.Text == w.Session.ActiveTool.Hint);
         Assert.NotNull(a);
         w.Close();

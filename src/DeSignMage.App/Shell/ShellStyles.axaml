@@ -136,6 +136,14 @@
     <Setter Property="Foreground" Value="{DynamicResource Ui.TabItemTextHover}" />
   </Style>
   <!-- Icon buttons of the Context Bar's menu strip (R25): dimmed while their command is not available (the drawn icons do not follow Foreground). -->
+  <Style Selector="Button.tb.strip">
+    <Setter Property="MinWidth" Value="0" />
+    <Setter Property="MinHeight" Value="0" />
+    <Setter Property="Padding" Value="5,0" />
+    <Setter Property="Margin" Value="1,0" />
+    <Setter Property="BorderThickness" Value="0" />
+    <Setter Property="VerticalContentAlignment" Value="Center" />
+  </Style>
   <Style Selector="Button.strip:disabled">
     <Setter Property="Opacity" Value="0.4" />
   </Style>

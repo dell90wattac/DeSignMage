@@ -22,16 +22,38 @@ internal static class MenuStripIcons
     /// <summary>The command ids that have a drawn icon.</summary>
     public static IReadOnlyCollection<string> Ids => Drawn.Keys;
 
-    /// <summary>The icon of a command, or null when none is drawn (the strip then shows the command's initials).</summary>
-    public static Control? For(string commandId)
+    /// <summary>The icon of a command at <paramref name="size"/> pixels (at 100%), or null when none is drawn (the strip then shows initials).</summary>
+    public static Control? For(string commandId, double size = 20)
     {
         if (commandId.StartsWith("tool.", StringComparison.Ordinal))
         {
             string toolId = commandId["tool.".Length..].ToLowerInvariant();
-            if (Toolbox.Buttons.FirstOrDefault(b => b.ToolId == toolId) is { } spec) return UiIcons.Box(spec.Icon(), 20, 20);
+            if (Toolbox.Buttons.FirstOrDefault(b => b.ToolId == toolId) is { } spec) return UiIcons.Box(spec.Icon(), size, size);
         }
-        return Drawn.TryGetValue(commandId, out var make) ? UiIcons.Box(make(), 20, 20) : null;
+        return Drawn.TryGetValue(commandId, out var make) ? UiIcons.Box(make(), size, size) : null;
     }
+
+    /// <summary>The short word shown on a strip button (the tooltip keeps the full command name).</summary>
+    private static readonly Dictionary<string, string> Labels = new()
+    {
+        ["image.vectorize"] = "Vectorize", ["image.crop"] = "Crop", ["image.resample"] = "Resample",
+        ["image.rotateCW"] = "Rotate R", ["image.rotateCCW"] = "Rotate L", ["image.flipH"] = "Flip H", ["image.flipV"] = "Flip V",
+        ["image.invert"] = "Invert", ["image.zoom11"] = "1:1",
+        ["effects.outline"] = "Outline", ["effects.inline"] = "Inline", ["effects.knife"] = "Knife", ["effects.weld"] = "Weld",
+        ["effects.commonWeld"] = "C. Weld", ["effects.cookieCutter"] = "Cookie",
+        ["tool.select"] = "Layout", ["tool.vector"] = "Vector", ["tool.vectorDraw"] = "Draw", ["tool.loop"] = "Loops", ["tools.options"] = "Options",
+    };
+
+    /// <summary>The label of a command: its short word, or (for a command without one) the first word of its name.</summary>
+    public static string LabelFor(AppCommand command)
+    {
+        if (Labels.TryGetValue(command.Id, out var label)) return label;
+        var words = command.Header.Replace("_", "").Replace(".", "").Split(' ', StringSplitOptions.RemoveEmptyEntries);
+        return words.Length == 0 ? command.Id : words[0];
+    }
+
+    /// <summary>The command ids that have a short label of their own.</summary>
+    public static IReadOnlyCollection<string> LabeledIds => Labels.Keys;
 
     private static AvPath Stroke(string data, IBrush? brush = null, double width = 1.4, bool dashed = false) => new()
     {

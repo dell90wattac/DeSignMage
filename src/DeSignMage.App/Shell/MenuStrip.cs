@@ -16,6 +16,12 @@ namespace DeSignMage.App.Shell;
 /// </summary>
 public sealed class MenuStrip : Grid
 {
+    /// <summary>Size of a button label at 100% interface text (compact, but readable at a glance).</summary>
+    public const double LabelSize = 11;
+
+    /// <summary>Size of the small icon beside the label at 100% (it scales with the icon scale).</summary>
+    public const double IconSize = 12;
+
     /// <summary>Menus that get a tab, by their header in the menu bar (with the mnemonic underscore).</summary>
     public static readonly string[] TabbedMenus = ["_Image", "Effe_cts", "_Tools"];
 
@@ -35,8 +41,14 @@ public sealed class MenuStrip : Grid
     public MenuStrip()
     {
         RowDefinitions = new RowDefinitions("Auto,*");
-        HorizontalAlignment = HorizontalAlignment.Right;
-        Tabs = new StackPanel { Orientation = Orientation.Horizontal, HorizontalAlignment = HorizontalAlignment.Right, ZIndex = 1 }
+        // The menu area is its own region of the Context Bar: a slightly different background and a divider line down its left edge, full
+        // height, so the split from the tool controls is always visible, with or without a strip open.
+        this.Bind(BackgroundProperty, this.GetResourceObservable("Ui.MenuArea"));
+        Divider = new Border { Name = "MenuDivider", Width = 1, HorizontalAlignment = HorizontalAlignment.Left, IsHitTestVisible = false };
+        Divider.Bind(Border.BackgroundProperty, Divider.GetResourceObservable("Ui.ChromeBorder"));
+        SetRowSpan(Divider, 2);
+        Children.Add(Divider);
+        Tabs = new StackPanel { Orientation = Orientation.Horizontal, HorizontalAlignment = HorizontalAlignment.Left, ZIndex = 1 }
             .Spaced(StackPanel.SpacingProperty, 2);
         // the open tab overlaps the panel's top line by one pixel, so tab and panel read as one piece (as in the Dock)
         Tabs.Margin = new Thickness(0, 0, 0, -1);
@@ -45,14 +57,9 @@ public sealed class MenuStrip : Grid
 
         _scroll = new ScrollViewer
         {
-            HorizontalScrollBarVisibility = ScrollBarVisibility.Hidden,
-            VerticalScrollBarVisibility = ScrollBarVisibility.Disabled,
+            HorizontalScrollBarVisibility = ScrollBarVisibility.Disabled,   // the buttons wrap onto a second line instead (the panel is two button lines tall)
+            VerticalScrollBarVisibility = ScrollBarVisibility.Auto,       // and a third line, if a strip ever needs one, scrolls: no button is hidden
             Content = _rowHost,
-        };
-        _scroll.PointerWheelChanged += (_, e) =>   // a strip that is wider than its half scrolls sideways with the wheel
-        {
-            _scroll.Offset = new Vector(Math.Max(0, _scroll.Offset.X - e.Delta.Y * 48), 0);
-            e.Handled = true;
         };
         _panel = new Border
         {
@@ -69,6 +76,21 @@ public sealed class MenuStrip : Grid
         _panel.SpacedThickness(Border.PaddingProperty, new Thickness(3, 1));
         SetRow(_panel, 1);
         Children.Add(_panel);
+    }
+
+    /// <summary>The divider line down the menu area's left edge.</summary>
+    internal Border Divider { get; }
+
+    /// <summary>
+    /// The window calls this with the Context Bar's padding. The menu area reaches to the bar's top, right and bottom edges (it bleeds out
+    /// through that padding, so the divider runs the full height), and its tabs and panel keep the bar's own margins inside.
+    /// </summary>
+    public void FitTo(Thickness barPadding)
+    {
+        Margin = new Thickness(0, -barPadding.Top, -barPadding.Right, -barPadding.Bottom);
+        double side = UiScale.Sp(8);
+        Tabs.Margin = new Thickness(side, barPadding.Top, side, -1);
+        _panel.Margin = new Thickness(side, 0, side, barPadding.Bottom);
     }
 
     /// <summary>The tab row (for the window to place and for tests).</summary>
@@ -102,11 +124,12 @@ public sealed class MenuStrip : Grid
             Tabs.Children.Add(tab);
             _tabs[name] = tab;
 
-            var row = new BarRow { IsVisible = false }.Spaced(BarRow.SpacingProperty, 0);
+            var row = new BarRow { IsVisible = false, LineSpacing = 1 }.Spaced(BarRow.SpacingProperty, 0);
             var entries = new List<Entry>();
             foreach (var node in menu.Children ?? [])
             {
-                if (node.IsSeparator) { if (entries.Count > 0 && entries[^1].Command is not null) { entries.Add(new Entry(null, null)); row.Children.Add(ContextBars.Separator()); } continue; }
+                if (node.IsSeparator) {   // dividers are shorter than the bar's own: a line of text buttons is only about 15 px tall
+                 if (entries.Count > 0 && entries[^1].Command is not null) { entries.Add(new Entry(null, null)); row.Children.Add(ContextBars.Separator().ScaledHeight(12)); } continue; }
                 if (node.CommandId is not { } id) continue;   // submenus (not built yet)
                 var c = commands.Get(id);
                 if (Skipped(c)) continue;
@@ -126,8 +149,17 @@ public sealed class MenuStrip : Grid
 
     private static Button MakeButton(AppCommand c)
     {
-        Control icon = MenuStripIcons.For(c.Id) ?? Initials(c);
-        var b = new Button { Name = "Strip_" + c.Id.Replace('.', '_'), Content = icon, Focusable = false };
+        // Text first (user): the short label is the button, with a small icon beside it; the tooltip has the full command name.
+        var label = new TextBlock { Text = MenuStripIcons.LabelFor(c), VerticalAlignment = VerticalAlignment.Center, TextWrapping = TextWrapping.NoWrap }.ScaledFont(LabelSize);
+        label.Classes.Add("striplabel");
+        var content = new StackPanel { Orientation = Orientation.Horizontal, VerticalAlignment = VerticalAlignment.Center }.Spaced(StackPanel.SpacingProperty, 3);
+        if (MenuStripIcons.For(c.Id, IconSize) is { } icon)
+        {
+            icon.VerticalAlignment = VerticalAlignment.Center;
+            content.Children.Add(icon);
+        }
+        content.Children.Add(label);
+        var b = new Button { Name = "Strip_" + c.Id.Replace('.', '_'), Content = content, Focusable = false, VerticalAlignment = VerticalAlignment.Center };
         b.Classes.Add("tb");
         b.Classes.Add("strip");
         ToolTip.SetTip(b, c.ToolTip);
@@ -182,4 +214,9 @@ public sealed class MenuStrip : Grid
     internal IReadOnlyList<AppCommand> CommandsOf(string name) => [.. _entries[name].Where(e => e.Command is not null).Select(e => e.Command!)];
 
     internal Border Panel => _panel;
+
+    /// <summary>The label under each button of a strip, in order (tests).</summary>
+    internal IReadOnlyList<string> LabelsOf(string name) =>
+        [.. ButtonsOf(name).Select(b => ((StackPanel)b.Content!).Children.OfType<TextBlock>().Last().Text ?? "")];
+
 }
