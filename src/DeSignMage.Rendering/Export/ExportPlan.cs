@@ -3,7 +3,7 @@ using DeSignMage.Core.Model;
 
 namespace DeSignMage.Rendering.Export;
 
-public enum ExportFormat { Svg, Pdf, Png }
+public enum ExportFormat { Svg, Pdf, Png, Jpeg, Eps, Ai }
 
 /// <summary>What gets exported: the whole page, or only the selected objects (cropped to their outline).</summary>
 public enum ExportScope { Page, Selection }
@@ -23,11 +23,31 @@ public sealed record ExportOptions
     /// </summary>
     public bool IncludePasteboard { get; init; }
 
-    /// <summary>PNG resolution. A page of W×H inches gives W·Dpi × H·Dpi pixels.</summary>
+    /// <summary>
+    /// Picture size in pixels (PNG, JPEG). When both are null, <see cref="Dpi"/> decides. With one of them, the other follows the aspect ratio of
+    /// the exported area (the page, or the bounds of the selection with its effects); with both, they are used as given.
+    /// </summary>
+    public int? PixelWidth { get; init; }
+
+    public int? PixelHeight { get; init; }
+
+    /// <summary>PNG resolution when no pixel size is given. A page of W×H inches gives W·Dpi × H·Dpi pixels.</summary>
     public double Dpi { get; init; } = 300;
 
-    /// <summary>PNG: leave the background transparent instead of white.</summary>
-    public bool TransparentBackground { get; init; }
+    /// <summary>JPEG quality, 1 (smallest file) to 100 (best picture).</summary>
+    public int JpegQuality { get; init; } = 90;
+
+    /// <summary>PNG compression effort, 0 (fastest, biggest file) to 9 (slowest, smallest). The picture is the same at every level.</summary>
+    public int PngCompression { get; init; } = 6;
+
+    /// <summary>EPS: dots per inch of the pictures that stand in for what PostScript cannot draw (soft effects, transparency) and the cap for embedded photos.</summary>
+    public double EpsRasterDpi { get; init; } = 300;
+
+    /// <summary>
+    /// Only for the small picture of the page stored in a saved file (file browsers show it on paper): a solid white background. An export is
+    /// never given one: where nothing is drawn, a PNG has no color at all (R27), and a PDF or SVG has no page background.
+    /// </summary>
+    public bool WhiteBackground { get; init; }
 
     /// <summary>SVG: draw live text as glyph outlines (exact look, the default). Off: write real &lt;text&gt; elements (editable, needs the font).</summary>
     public bool TextAsOutlines { get; init; } = true;
@@ -105,7 +125,10 @@ public sealed record ExportPlan(Rect2 Area, IReadOnlyList<ExportLayer> Layers)
                 return r;
             }
             default:
-                return o.GetWorldBounds().Inflate(o.Style.StrokeOutset);
+                // a soft shadow or glow reaches about three sigma beyond its outline (a feather only fades inward)
+                var bounds = o.GetWorldBounds().Inflate(o.Style.StrokeOutset);
+                if (o.Style.Blur is { } blur) bounds = bounds.Inflate(3 * blur.Sigma * Math.Sqrt(Math.Abs(o.GetWorldTransform().Determinant)));
+                return bounds;
         }
     }
 }

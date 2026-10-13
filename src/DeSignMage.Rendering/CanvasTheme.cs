@@ -16,6 +16,9 @@ public sealed record CanvasTheme
     /// <summary>The page itself; null leaves it the same as the workspace (the classic look).</summary>
     public SKColor? Page { get; init; }
     public required SKColor PageEdge { get; init; }
+    /// <summary>The two squares of the transparency checkerboard (Show Transparency, R27): neutral greys, lighter or darker with the canvas.</summary>
+    public required SKColor CheckerA { get; init; }
+    public required SKColor CheckerB { get; init; }
     /// <summary>Outline view: loops of the three kinds (outer edge, hole, open path).</summary>
     public required SKColor Border { get; init; }
     public required SKColor Interior { get; init; }
@@ -33,6 +36,8 @@ public sealed record CanvasTheme
         Pasteboard = SKColors.White,
         Page = null,
         PageEdge = new SKColor(0x60, 0x60, 0x60),
+        CheckerA = new SKColor(0xFF, 0xFF, 0xFF),
+        CheckerB = new SKColor(0xCC, 0xCC, 0xCC),
         Border = new SKColor(0x00, 0x00, 0xFF),
         Interior = new SKColor(0xFF, 0x00, 0x00),
         Open = new SKColor(0x00, 0x00, 0x00),
@@ -53,6 +58,8 @@ public sealed record CanvasTheme
         Pasteboard = new SKColor(0x2A, 0x2A, 0x2A),
         Page = new SKColor(0x42, 0x42, 0x42),
         PageEdge = new SKColor(0x9A, 0x9A, 0x9A),
+        CheckerA = new SKColor(0x4C, 0x4C, 0x4C),
+        CheckerB = new SKColor(0x38, 0x38, 0x38),
         Border = new SKColor(0x6A, 0x88, 0xFF),
         Interior = new SKColor(0xFF, 0x4A, 0x4A),
         Open = new SKColor(0xE6, 0xE6, 0xE6),

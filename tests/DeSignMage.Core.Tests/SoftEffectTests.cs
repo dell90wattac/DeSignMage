@@ -417,7 +417,7 @@ public class SoftEffectTests
         Assert.Equal(steps + 1, UndoSteps);
         Assert.Equal(new FeatherStyle(0.04, 0.38), a.Style.Feather);
         Assert.Equal(Red.Fill, a.Style.Fill);                                          // the paint is untouched
-        Assert.Equal(1, L.Children.Count);                                            // no new object: the soft paint belongs to the object
+        Assert.Single(L.Children);                                                    // no new object: the soft paint belongs to the object
 
         Feather.Update(f => f with { Amount = 0.1 });
         Feather.Update(f => f with { Inset = 0.5 });

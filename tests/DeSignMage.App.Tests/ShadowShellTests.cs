@@ -118,7 +118,7 @@ public class ShadowShellTests
         var a = AddRect(w, 200, 200, 100);
         w.Session.Selection.Set(a);
         var strip = w.GetVisualDescendants().OfType<MenuStrip>().First();
-        Assert.True(new[] { "Shadow", "Extruded", "Persp.", "Cast" }.All(l => strip.LabelsOf("Effects").Contains(l)));
+        Assert.True(new[] { "Drop", "Extruded", "Persp.", "Cast" }.All(l => strip.LabelsOf("Effects").Contains(l)));
         Click(EffectsItem(w, "Cast Shadow..."));
         Assert.Equal(ShadowForm.Cast, w.Session.GetTool<ShadowTool>().Settings.Form);
         Click(EffectsItem(w, "Extruded Shadow..."));

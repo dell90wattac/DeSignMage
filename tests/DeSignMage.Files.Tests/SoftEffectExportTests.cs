@@ -35,8 +35,21 @@ public class SoftEffectExportTests
         return r;
     }
 
+    /// <summary>The picture laid on white paper: exports are transparent where nothing is drawn (R27), and these checks are about the colors of what is drawn.</summary>
+    private static SKBitmap OnWhite(SKBitmap source)
+    {
+        var paper = new SKBitmap(source.Width, source.Height);
+        using (var c = new SKCanvas(paper))
+        {
+            c.Clear(SKColors.White);
+            c.DrawBitmap(source, 0, 0);
+        }
+        source.Dispose();
+        return paper;
+    }
+
     private static SKBitmap Png(Document doc, double dpi) =>
-        SKBitmap.Decode(DocumentExporter.RenderPng(doc, new ExportOptions { Dpi = dpi })) ?? throw new InvalidOperationException("no PNG");
+        OnWhite(SKBitmap.Decode(DocumentExporter.RenderPng(doc, new ExportOptions { Dpi = dpi })) ?? throw new InvalidOperationException("no PNG"));
 
     /// <summary>Gray level at a document point (the page is white, shadows are black), interpolated between the pixel centers so it does not depend on the resolution.</summary>
     private static double Gray(SKBitmap bmp, double dpi, double x, double y)

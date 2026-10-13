@@ -1,4 +1,4 @@
-<Project Sdk="Microsoft.NET.Sdk">
+﻿<Project Sdk="Microsoft.NET.Sdk">
 
   <!-- Reads sample layouts from the untracked local-testdata folder and renders imported documents with Skia. -->
   <PropertyGroup>
@@ -20,6 +20,7 @@
   <ItemGroup>
     <ProjectReference Include="..\..\src\DeSignMage.Core\DeSignMage.Core.csproj" />
     <ProjectReference Include="..\..\src\DeSignMage.Formats\DeSignMage.Formats.csproj" />
+    <ProjectReference Include="..\..\src\DeSignMage.Geometry\DeSignMage.Geometry.csproj" />
     <ProjectReference Include="..\..\src\DeSignMage.Rendering\DeSignMage.Rendering.csproj" />
     <ProjectReference Include="..\..\src\DeSignMage.Text\DeSignMage.Text.csproj" />
   </ItemGroup>

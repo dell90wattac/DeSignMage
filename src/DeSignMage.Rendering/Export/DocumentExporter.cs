@@ -7,7 +7,7 @@ namespace DeSignMage.Rendering.Export;
 
 /// <summary>
 /// File â–¸ Export: SVG (<see cref="SvgExporter"/>), PDF (vector, Skia's PDF backend; live text is written as curves) and PNG
-/// (any DPI, optional transparent background). The same <see cref="ExportPlan"/> decides what is drawn: invisible and
+/// (any DPI, always with a transparent background: the page has no color of its own, and neither the page color nor the Show Transparency checkerboard is ever drawn). The same <see cref="ExportPlan"/> decides what is drawn: invisible and
 /// non-printable layers, guides and (by default) pasteboard objects are left out.
 /// </summary>
 public static class DocumentExporter
@@ -21,6 +21,9 @@ public static class DocumentExporter
         ".svg" => ExportFormat.Svg,
         ".pdf" => ExportFormat.Pdf,
         ".png" => ExportFormat.Png,
+        ".jpg" or ".jpeg" => ExportFormat.Jpeg,
+        ".eps" => ExportFormat.Eps,
+        ".ai" => ExportFormat.Ai,
         _ => null,
     };
 
@@ -29,16 +32,18 @@ public static class DocumentExporter
         ExportFormat.Svg => SvgExporter.RenderBytes(doc, options),
         ExportFormat.Pdf => RenderPdf(doc, options),
         ExportFormat.Png => RenderPng(doc, options),
+        ExportFormat.Jpeg => RenderJpeg(doc, options),
+        ExportFormat.Eps => EpsExporter.RenderBytes(doc, options),
+        ExportFormat.Ai => RenderAi(doc, options),
         _ => throw new ArgumentOutOfRangeException(nameof(format)),
     };
 
     /// <summary>Writes the export to <paramref name="path"/> (the format comes from the extension).</summary>
     public static void Export(Document doc, string path, ExportOptions options)
     {
-        var format = FormatOf(path) ?? throw new ExportException($"Cannot export to '{Path.GetExtension(path)}' files. Use .svg, .pdf or .png.");
+        var format = FormatOf(path) ?? throw new ExportException($"Cannot export to '{Path.GetExtension(path)}' files. Use .png, .jpg, .pdf, .svg, .eps or .ai.");
         File.WriteAllBytes(path, Render(doc, format, options));
     }
-
     // ---------------------------------------------------------------- PDF
 
     public static byte[] RenderPdf(Document doc, ExportOptions options)
@@ -64,42 +69,22 @@ public static class DocumentExporter
         return ms.ToArray();
     }
 
-    // ---------------------------------------------------------------- PNG
+    /// <summary>
+    /// Adobe Illustrator file. Modern Illustrator files are PDF files that carry Illustrator's private data as extra; Illustrator (and the
+    /// other programs that open .ai: Inkscape, Affinity, CorelDRAW) open any PDF-compatible .ai and read its vector content. So the file is the
+    /// PDF export (one page, the size of the export area, vectors, curves for text) under the .ai name. No Illustrator-private data is written, so there are no
+    /// editable Illustrator layers or artboards: everything arrives as one page of paths, which is what a hand-over file needs.
+    /// </summary>
+    public static byte[] RenderAi(Document doc, ExportOptions options) => RenderPdf(doc, options);
 
-    /// <summary>Pixel size of the PNG for these options (page inches Ã— DPI, rounded up).</summary>
-    public static (int Width, int Height) PngSize(Document doc, ExportOptions options) => PngSize(ExportPlan.Create(doc, options), options.Dpi);
+    // ---------------------------------------------------------------- pictures
 
-    private static (int Width, int Height) PngSize(ExportPlan plan, double dpi)
-    {
-        if (!(dpi > 0) || double.IsInfinity(dpi)) throw new ExportException("The resolution must be a positive number of dots per inch.");
-        double scale = dpi / Units.PointsPerInch;
-        double w = Math.Ceiling(plan.Area.Width * scale - 1e-6), h = Math.Ceiling(plan.Area.Height * scale - 1e-6);
-        if (w < 1) w = 1;
-        if (h < 1) h = 1;
-        if (w > MaxPixelEdge || h > MaxPixelEdge || w * h > MaxPixels)
-            throw new ExportException($"A {w:0} x {h:0} pixel image is too large. Use a lower resolution.");
-        return ((int)w, (int)h);
-    }
+    /// <summary>Pixel size of a PNG or JPEG for these options (typed size, or page inches × dpi), checked against the limits.</summary>
+    public static (int Width, int Height) PngSize(Document doc, ExportOptions options) => RasterExporter.PixelSize(ExportPlan.Create(doc, options), options);
 
-    public static byte[] RenderPng(Document doc, ExportOptions options)
-    {
-        var plan = ExportPlan.Create(doc, options);
-        var (w, h) = PngSize(plan, options.Dpi);
-        double scale = options.Dpi / Units.PointsPerInch;
+    public static byte[] RenderPng(Document doc, ExportOptions options) => RasterExporter.RenderPng(doc, options, (canvas, plan) => Draw(canvas, doc, plan));
 
-        using var surface = SKSurface.Create(new SKImageInfo(w, h, SKColorType.Rgba8888, SKAlphaType.Premul))
-            ?? throw new ExportException("The image could not be created (not enough memory?).");
-        var canvas = surface.Canvas;
-        canvas.Clear(options.TransparentBackground ? SKColors.Transparent : SKColors.White);
-        canvas.Scale((float)scale);
-        canvas.Translate((float)-plan.Area.Left, (float)-plan.Area.Top);
-        Draw(canvas, doc, plan);
-
-        using var image = surface.Snapshot();
-        using var data = image.Encode(SKEncodedImageFormat.Png, 100);
-        return WithDpi(data.ToArray(), options.Dpi);
-    }
-
+    public static byte[] RenderJpeg(Document doc, ExportOptions options) => RasterExporter.RenderJpeg(doc, options, (canvas, plan) => Draw(canvas, doc, plan));
     // ---------------------------------------------------------------- shared
 
     private static void Draw(SKCanvas canvas, Document doc, ExportPlan plan, double featherDpi = 0)

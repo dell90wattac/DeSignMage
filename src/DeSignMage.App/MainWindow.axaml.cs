@@ -44,8 +44,8 @@ public partial class MainWindow : Window
         MenuNode.Menu("Effe_cts", "effects.outline", "effects.inline", "effects.knife", "effects.weld", "effects.commonWeld", "effects.cookieCutter", "-",
             "effects.shadow", "effects.shadowExtruded", "effects.shadowPerspective", "effects.shadowCast", "-",
             "effects.softShadow", "effects.glow", "effects.feather", "-",
-            "effects.gradientBlend"),
-        MenuNode.Menu("_Tools", "tool.select", "tool.vector", "tool.vectorDraw", "tool.loop", "-", "tools.options", "-", "debug.stress"),
+            "effects.gradientBlend", "effects.easyBevel"),
+        MenuNode.Menu("_Tools", "tool.select", "tool.vector", "tool.vectorDraw", "tool.loop", "tools.showTransparency", "-", "tools.options", "-", "debug.stress"),
         MenuNode.Menu("_Help", "help.feedback", "-", "help.about"),
     ];
 
@@ -284,6 +284,7 @@ public partial class MainWindow : Window
         RegisterEffectCommands();   // the Effects menu (MainWindow.Effects.cs)
         RegisterOptionsCommands();   // Tools > Options, View > Interface Text Size (MainWindow.Options.cs)
         RegisterThemeCommands();   // View > Dark Menus / Dark Canvas (MainWindow.Theme.cs)
+        RegisterTransparencyCommand();   // Tools > Show Transparency (MainWindow.Theme.cs)
 
         KeyMap.Apply(_commands, KeyMap.Default);
     }

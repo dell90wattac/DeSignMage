@@ -53,7 +53,7 @@ public readonly record struct VectorNodeMark(Vec2 Position, bool Corner, bool Se
 /// <summary>A loop drawn in vector mode / outline view: blue on the border, red inside, black when broken.</summary>
 public readonly record struct OutlineLoop(PathGeometry Path, LoopKind Kind);
 
-/// <summary>Vector mode: the target's loops, its nodes, BÃ©zier/arc handles and the vector under the cursor (document coordinates).</summary>
+/// <summary>Vector mode: the target's loops, its nodes, Bézier/arc handles and the vector under the cursor (document coordinates).</summary>
 public sealed record VectorEditOverlay(
     IReadOnlyList<OutlineLoop> Loops,
     IReadOnlyList<VectorNodeMark> Nodes,

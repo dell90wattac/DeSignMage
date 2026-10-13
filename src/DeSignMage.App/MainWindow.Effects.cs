@@ -49,6 +49,10 @@ public partial class MainWindow
             () => _session.ActiveTool is FeatherTool || (_session.ActiveTool is not FeatherTool && _session.HasFeather));
 
         // Gradient Blend: the control-point tool on the selected shape or text (no shortcut yet).
+        // Easy Bevel: the tool shows the bevel at once (no shortcut yet). The check mark shows when the selection already has one.
+        Add("effects.easyBevel", "Easy _Bevel...", () => _session.BeginBevel(), () => _session.CanBevel,
+            () => _session.ActiveTool is BevelTool || (_session.ActiveTool is not BevelTool && _session.HasBevel));
+
         Add("effects.gradientBlend", "_Gradient Blend...", () => _session.BeginGradient(), () => _session.CanGradient, () => _session.ActiveTool is GradientTool);
     }
 

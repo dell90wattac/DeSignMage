@@ -166,6 +166,10 @@ public static class ShadowEffect
         _ => "Shadow",
     };
 
+    /// <summary>True for the objects a Shadow command made (other effects leave them alone).</summary>
+    public static bool IsShadow(DocObject o) =>
+        o is PathObject { Name: "Shadow" or "Extruded Shadow" or "Perspective Shadow" or "Cast Shadow" };
+
     /// <summary>Something with an area is selected and no picture is (bitmaps have no outline to shadow).</summary>
     public static bool CanRun(EditorSession s) =>
         s.BooleanService is not null && s.OffsetService is not null && !s.Selection.IsEmpty && !EffectGeometry.ContainsImage(s.Selection.Items) &&

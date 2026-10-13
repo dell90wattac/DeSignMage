@@ -136,6 +136,7 @@ public sealed class DesignCanvas : Control
     {
         if (_frames is null || Bounds.Width <= 0 || Bounds.Height <= 0) return;
         _frames.Theme = AppTheme.Canvas;   // Dark Canvas (R19): only what is drawn on screen, never an export
+        _frames.ShowTransparency = AppTheme.ShowTransparency;   // Show Transparency (R27): likewise
         var frame = _frames.Build((float)Bounds.Width, (float)Bounds.Height);
         context.Custom(new SkiaDrawOperation(new Rect(Bounds.Size), frame));
         if (_frames.SettleFramePending) RestartSettleTimer();

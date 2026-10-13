@@ -481,7 +481,7 @@ public class DarkModeTests
             Assert.Equal(pdf.Length, DocumentExporter.RenderPdf(doc, options).Length);
 
             using var bmp = SKBitmap.Decode(png);
-            Assert.Equal(SKColors.White, bmp.GetPixel(2, 2));                   // a white page, whatever the canvas looks like
+            Assert.Equal(0, bmp.GetPixel(2, 2).Alpha);                // no page color in a file (R27): transparent, whatever the canvas looks like
             Assert.Equal(new SKColor(0xE5, 0x39, 0x35), bmp.GetPixel(60, 50));  // the design's own color
 
             // the renderer itself only turns dark when the canvas asks for it

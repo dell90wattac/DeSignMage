@@ -28,8 +28,21 @@ public class GradientFileTests
         return doc;
     }
 
+    /// <summary>The picture laid on white paper: exports are transparent where nothing is drawn (R27), and most of these checks are about the colors of what is drawn.</summary>
+    private static SKBitmap OnWhite(SKBitmap source)
+    {
+        var paper = new SKBitmap(source.Width, source.Height);
+        using (var c = new SKCanvas(paper))
+        {
+            c.Clear(SKColors.White);
+            c.DrawBitmap(source, 0, 0);
+        }
+        source.Dispose();
+        return paper;
+    }
+
     private static SKBitmap Png(Document doc, double dpi = 72) =>
-        SKBitmap.Decode(DocumentExporter.RenderPng(doc, new ExportOptions { Dpi = dpi })) ?? throw new InvalidOperationException("no PNG");
+        OnWhite(SKBitmap.Decode(DocumentExporter.RenderPng(doc, new ExportOptions { Dpi = dpi })) ?? throw new InvalidOperationException("no PNG"));
 
     private static int Close(SKColor c, int r, int g, int b) => Math.Max(Math.Abs(c.Red - r), Math.Max(Math.Abs(c.Green - g), Math.Abs(c.Blue - b)));
 
@@ -154,8 +167,8 @@ public class GradientFileTests
         Assert.True(mid.Red > 245 && mid.Green is > 105 and < 150 && Math.Abs(mid.Green - mid.Blue) <= 4, mid.ToString());
         Assert.True(bmp.GetPixel(286, 36).Green > 245);                                      // gone at the end
 
-        using var clear = SKBitmap.Decode(DocumentExporter.RenderPng(doc, new ExportOptions { Dpi = 72, TransparentBackground = true }))!;
-        Assert.InRange(clear.GetPixel(144, 36).Alpha, 115, 140);                             // a real alpha channel when the background is transparent
+        using var clear = SKBitmap.Decode(DocumentExporter.RenderPng(doc, new ExportOptions { Dpi = 72 }))!;
+        Assert.InRange(clear.GetPixel(144, 36).Alpha, 115, 140);                             // a real alpha channel: the export is transparent where nothing is drawn
     }
 
     [Fact]

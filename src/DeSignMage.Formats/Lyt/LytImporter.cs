@@ -68,6 +68,12 @@ public static class LytImporter
 {
     private const double MinSweep = 1e-9;
 
+    /// <summary>Node units (inches at scale 1); an arc whose middle is closer than this to its chord is read as a line.</summary>
+    private const double FlatArc = 1e-5;
+
+    /// <summary>An arc is also read as a line when its bulge is less than this many times the distance its end point misses its own circle.</summary>
+    private const double FlatArcMissFactor = 50;
+
     /// <summary>Line width (points) for shapes that have no fill and no color: cut lines, outlines.</summary>
     private const double Hairline = 0.72;
 
@@ -340,6 +346,19 @@ public static class LytImporter
         }
         double a0 = Math.Atan2(from.Y - center.Y, from.X - center.X);
         Vec2 At(double t) => center + new Vec2(Math.Cos(a0 + sweep * t), Math.Sin(a0 + sweep * t)) * radius;
+
+        // An arc that bulges by about as little as its end point misses the circle (the coordinates are 32-bit floats, so a far centre makes
+        // the miss grow) is a line to the eye, and the three-point circle through such points is not reliable: it can come out as a huge
+        // circle, or the long way round.
+        if (Math.Abs(sweep) < Math.PI)
+        {
+            double sagitta = radius * (1 - Math.Cos(Math.Abs(sweep) / 2));
+            if (sagitta < FlatArc || sagitta < FlatArcMissFactor * Vec2.Distance(to, At(1)))
+            {
+                b.LineTo(to);
+                return;
+            }
+        }
 
         if (Math.Abs(sweep) >= 2 * Math.PI - 1e-6)
         {

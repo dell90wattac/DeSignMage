@@ -1,4 +1,4 @@
-﻿using System.Buffers.Binary;
+using System.Buffers.Binary;
 using System.Globalization;
 using System.Text;
 using System.Text.RegularExpressions;
@@ -39,7 +39,22 @@ public class ExportTests
 
     private static XDocument ParseSvg(Document doc, ExportOptions? o = null) => XDocument.Parse(SvgExporter.Render(doc, o ?? new ExportOptions()));
 
-    private static SKBitmap Decode(byte[] png) => SKBitmap.Decode(png) ?? throw new InvalidOperationException("PNG did not decode");
+    private static SKBitmap DecodeRaw(byte[] png) => SKBitmap.Decode(png) ?? throw new InvalidOperationException("PNG did not decode");
+
+    /// <summary>The picture laid on white paper: exports are transparent where nothing is drawn (R27), and most of these checks are about the colors of what is drawn.</summary>
+    private static SKBitmap OnWhite(SKBitmap source)
+    {
+        var paper = new SKBitmap(source.Width, source.Height);
+        using (var c = new SKCanvas(paper))
+        {
+            c.Clear(SKColors.White);
+            c.DrawBitmap(source, 0, 0);
+        }
+        source.Dispose();
+        return paper;
+    }
+
+    private static SKBitmap Decode(byte[] png) => OnWhite(DecodeRaw(png));
 
     // ---------------------------------------------------------------- SVG
 
@@ -294,7 +309,7 @@ public class ExportTests
     }
 
     [Fact]
-    public void Png_draws_the_design_in_exact_colors_on_white_or_transparent()
+    public void Png_draws_the_design_in_exact_colors_and_is_transparent_where_nothing_is_drawn()
     {
         var (doc, _, _, _) = Simple();
 
@@ -305,8 +320,10 @@ public class ExportTests
         Assert.Equal(new SKColor(255, 255, 255, 255), white.GetPixel(100, 130));     // ...and the horizontal one
         Assert.Equal(new SKColor(255, 255, 255, 255), white.GetPixel(165, 105));     // the non-printable layer's box is not drawn
 
-        using var clear = Decode(DocumentExporter.RenderPng(doc, new ExportOptions { Dpi = 72, TransparentBackground = true }));
+        // the file itself has no page color: real alpha 0 where nothing is drawn (R27), and the exact color where something is
+        using var clear = DecodeRaw(DocumentExporter.RenderPng(doc, new ExportOptions { Dpi = 72 }));
         Assert.Equal(0, clear.GetPixel(5, 5).Alpha);
+        Assert.Equal(0, clear.GetPixel(20, 100).Alpha);
         Assert.Equal(new SKColor(255, 0, 0, 255), clear.GetPixel(72, 54));
     }
 

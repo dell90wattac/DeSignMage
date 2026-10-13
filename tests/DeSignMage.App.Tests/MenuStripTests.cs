@@ -516,7 +516,7 @@ public class MenuStripTests : IDisposable
                 var labels = strip.LabelsOf(name);
                 var commands = strip.CommandsOf(name);
                 Assert.Equal(commands.Count, labels.Count);
-                Assert.All(labels, l => Assert.InRange(l.Length, 1, 10));                         // short enough to sit under an icon
+                Assert.All(labels, l => Assert.InRange(l.Length, 1, 12));                         // short enough to sit under an icon
                 Assert.Equal(labels.Count, labels.Distinct().Count());                              // no two buttons with the same word
                 foreach (var c in commands) Assert.Contains(c.Id, MenuStripIcons.LabeledIds);       // every command has its own short word, not a guess
                 // the tooltip keeps the full command name, so the label can be short

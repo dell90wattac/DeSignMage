@@ -37,6 +37,7 @@ public static class ContextBars
         KnifeTool k => new KnifeContextBar(session, k),
         GradientTool gt => new GradientContextBar(session, gt),
         ShadowTool sh => new ShadowContextBar(session, sh),
+        BevelTool bv => new BevelContextBar(session, bv),
         SoftEffectTool se => new SoftEffectContextBar(session, se),
         FeatherTool ft => new FeatherContextBar(session, ft),
         _ => new ToolNameContextBar(tool),

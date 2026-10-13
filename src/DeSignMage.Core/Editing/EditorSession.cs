@@ -55,6 +55,7 @@ public sealed partial class EditorSession
         RegisterTool(new KnifeTool());
         RegisterTool(new GradientTool());
         RegisterTool(new ShadowTool());
+        RegisterTool(new BevelTool());
         RegisterTool(new SoftEffectTool());
         RegisterTool(new FeatherTool());
         RegisterTool(new PlaceTool());
@@ -80,7 +81,7 @@ public sealed partial class EditorSession
     public DocObject? HitTestAt(Vec2 doc) => HitTesting.HitTest(Document, doc, Viewport.ToDocLength(HitTolerancePixels));
     public double HandleRadiusPx { get; set; } = 6;
 
-    /// <summary>Arrow-key nudge in points (Shift Ã—5, Ctrl Ã·5).</summary>
+    /// <summary>Arrow-key nudge in points (Shift ×5, Ctrl ÷5).</summary>
     public double NudgeDistance { get; set; } = Units.FromInches(0.1);
 
     /// <summary>Zoom step per wheel notch (the user's value is 25%).</summary>

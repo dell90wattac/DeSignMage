@@ -26,7 +26,7 @@ public enum LytTextKeptAs
 /// <item><b>Font:</b> <c>"_Lato Semibold.ptt"</c> is the GDI face name <c>Lato Semibold</c> (the name the legacy font table lists), which the text
 /// engine resolves itself; a font that is not installed keeps its name and is drawn in the generic fallback (R6).</item>
 /// <item><b>Size:</b> Text is sized by its capital height: the node space is 10 units from baseline to the top of a capital "H"
-/// (measured against Lato, Olivia and Corbel to 0.03 %). The em is therefore <c>10 / capHeight</c> node units, times 72Â·scale points.</item>
+/// (measured against Lato, Olivia and Corbel to 0.03 %). The em is therefore <c>10 / capHeight</c> node units, times 72·scale points.</item>
 /// <item><b>Letter positions:</b> each character marker's x is the ink-left edge of that letter (a space's marker is its pen position),
 /// counted from the first letter's ink-left. Pen = marker âˆ’ the letter's left side bearing; <see cref="TextObject.KerningForLetterPositions"/>
 /// turns those pens into per-gap offsets. The median gap becomes <see cref="TextObject.Tracking"/>, the rest per-gap kerning, so

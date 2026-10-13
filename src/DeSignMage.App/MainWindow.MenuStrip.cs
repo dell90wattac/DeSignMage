@@ -16,7 +16,8 @@ public partial class MainWindow
         MenuStrip.Populate(MenuLayout, _commands);
         ContextBarBorder.SizeChanged += (_, _) => FitMenuStrip();
         UiScale.Changed += FitMenuStrip;
-        Closed += (_, _) => UiScale.Changed -= FitMenuStrip;
+        AppTheme.Changed += MenuStrip.Refresh;   // a switch changed from the menu or its own button: the strip button follows (pressed or not)
+        Closed += (_, _) => { UiScale.Changed -= FitMenuStrip; AppTheme.Changed -= MenuStrip.Refresh; };
         FitMenuStrip();
     }
 

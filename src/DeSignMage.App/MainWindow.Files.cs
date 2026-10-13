@@ -1,4 +1,4 @@
-﻿using Avalonia;
+using Avalonia;
 using Avalonia.Controls;
 using Avalonia.Platform.Storage;
 using Avalonia.Threading;
@@ -159,7 +159,7 @@ public partial class MainWindow
         {
             var page = document.Page;
             double dpi = Math.Max(1, 72 * 256 / Math.Max(page.Width, page.Height));
-            return DocumentExporter.RenderPng(document, new ExportOptions { Dpi = dpi });
+            return DocumentExporter.RenderPng(document, new ExportOptions { Dpi = dpi, WhiteBackground = true });   // a thumbnail is shown on paper; only exports are transparent
         }
         catch (Exception)
         {

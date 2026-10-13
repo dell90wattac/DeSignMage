@@ -21,6 +21,12 @@ public sealed class CanvasFrame : IDisposable
     /// <summary>The colors of what the program itself draws (R19). Only the on-screen canvas passes <see cref="CanvasTheme.Dark"/>.</summary>
     public CanvasTheme Theme { get; init; } = CanvasTheme.Light;
 
+    /// <summary>Show Transparency (R27): the page is drawn as a checkerboard instead of its plain color, so whatever is not covered shows it through. Never part of an export.</summary>
+    public bool Checker { get; init; }
+
+    /// <summary>Side of one checkerboard square on screen, in the canvas' units: the same at any zoom.</summary>
+    public const float CheckerCell = 8;
+
     /// <summary>
     /// The view has not moved for a moment after a pan. A bitmap made by moving the old pixels can differ from drawing the picture in a few antialiased edge
     /// pixels (a shape that crosses the edge of the window is antialiased a little differently clipped than whole), so the settled frame draws it again.
@@ -73,7 +79,8 @@ public sealed class CanvasFrame : IDisposable
     {
         using (var bg = new SKPaint { Color = Theme.Pasteboard })
             canvas.DrawRect(SKRect.Create(Width, Height), bg);
-        if (Theme.Page is { } pageColor)
+        if (Checker) DrawChecker(canvas);
+        else if (Theme.Page is { } pageColor)
         {
             using var page = new SKPaint { Color = pageColor };
             canvas.DrawRect(PageScreenRect, page);
@@ -83,6 +90,30 @@ public sealed class CanvasFrame : IDisposable
         canvas.Concat(View);
         canvas.DrawPicture(Document.Picture);
         canvas.Restore();
+    }
+
+    /// <summary>
+    /// The checkerboard on the page only (not on the pasteboard): squares of <see cref="CheckerCell"/> on screen, starting from the page's
+    /// top-left corner, so the pattern moves with the page when it is panned and keeps its size when it is zoomed.
+    /// </summary>
+    private void DrawChecker(SKCanvas canvas)
+    {
+        float scale = Math.Max(0.1f, canvas.TotalMatrix.ScaleX);
+        int px = Math.Max(1, (int)Math.Round(CheckerCell * scale));    // one square in device pixels: whole pixels, so the edges stay crisp
+        using var tile = new SKBitmap(2 * px, 2 * px);
+        using (var c = new SKCanvas(tile))
+        {
+            c.Clear(Theme.CheckerA);
+            using var b = new SKPaint { Color = Theme.CheckerB };
+            c.DrawRect(SKRect.Create(px, 0, px, px), b);
+            c.DrawRect(SKRect.Create(0, px, px, px), b);
+        }
+        using var image = SKImage.FromBitmap(tile);
+        float k = CheckerCell / px;     // back to the canvas' units
+        var local = SKMatrix.CreateScaleTranslation(k, k, MathF.Round(PageScreenRect.Left), MathF.Round(PageScreenRect.Top));
+        using var shader = image.ToShader(SKShaderTileMode.Repeat, SKShaderTileMode.Repeat, new SKSamplingOptions(SKFilterMode.Nearest, SKMipmapMode.None), local);
+        using var paint = new SKPaint { Shader = shader };
+        canvas.DrawRect(PageScreenRect, paint);
     }
 
     public void Dispose()
@@ -112,7 +143,7 @@ public sealed class StaticLayerCache : IDisposable
     private int _left, _top;
     private bool _exact = true;    // false after the bitmap was made by moving the old pixels
 
-    private readonly record struct Key(uint Picture, SKMatrix Device, SKMatrix View, float Width, float Height, SKColor Pasteboard, SKColor? Page, SKRect PageRect);
+    private readonly record struct Key(uint Picture, SKMatrix Device, SKMatrix View, float Width, float Height, SKColor Pasteboard, SKColor? Page, SKRect PageRect, bool Checker);
 
     private static readonly SKSamplingOptions Nearest = new(SKFilterMode.Nearest, SKMipmapMode.None);
 
@@ -123,7 +154,7 @@ public sealed class StaticLayerCache : IDisposable
     private static bool PannedOnly(in Key a, in Key b, out int dx, out int dy)
     {
         dx = dy = 0;
-        if (a.Picture != b.Picture || !a.Device.Equals(b.Device) || a.Width != b.Width || a.Height != b.Height || a.Pasteboard != b.Pasteboard || a.Page != b.Page) return false;
+        if (a.Picture != b.Picture || !a.Device.Equals(b.Device) || a.Width != b.Width || a.Height != b.Height || a.Pasteboard != b.Pasteboard || a.Page != b.Page || a.Checker != b.Checker) return false;
         var va = a.View; var vb = b.View;
         if (va.ScaleX != vb.ScaleX || va.ScaleY != vb.ScaleY || va.SkewX != vb.SkewX || va.SkewY != vb.SkewY || va.Persp0 != vb.Persp0 || va.Persp1 != vb.Persp1) return false;
         double vx = vb.TransX - va.TransX, vy = vb.TransY - va.TransY;
@@ -151,7 +182,7 @@ public sealed class StaticLayerCache : IDisposable
         int w = right - left, h = bottom - top;
         if (w <= 0 || h <= 0 || (long)w * h > 64_000_000) return false;
 
-        var key = new Key(picture.UniqueId, m, frame.View, frame.Width, frame.Height, frame.Theme.Pasteboard, frame.Theme.Page, frame.PageScreenRect);
+        var key = new Key(picture.UniqueId, m, frame.View, frame.Width, frame.Height, frame.Theme.Pasteboard, frame.Theme.Page, frame.PageScreenRect, frame.Checker);
         lock (_gate)
         {
             bool sameSize = _image is not null && _image.Width == w && _image.Height == h && _left == left && _top == top;
@@ -215,7 +246,7 @@ public sealed class StaticLayerCache : IDisposable
         matrix = default;
         // The picture itself is not compared: it is recorded again when the zoom crosses a half octave (pictures are drawn from another copy then), which is no reason to
         // draw a picture again for a few frames that are replaced by a sharp one in a moment.
-        if (!a.Device.Equals(b.Device) || a.Width != b.Width || a.Height != b.Height || a.Pasteboard != b.Pasteboard || a.Page != b.Page) return false;
+        if (!a.Device.Equals(b.Device) || a.Width != b.Width || a.Height != b.Height || a.Pasteboard != b.Pasteboard || a.Page != b.Page || a.Checker != b.Checker) return false;
         var va = a.View; var vb = b.View;
         if (va.SkewX != 0 || va.SkewY != 0 || vb.SkewX != 0 || vb.SkewY != 0 || va.ScaleX <= 0 || va.ScaleY <= 0) return false;
         double ax = vb.ScaleX / va.ScaleX, ay = vb.ScaleY / va.ScaleY;
@@ -329,6 +360,9 @@ public sealed class CanvasFrameBuilder(EditorSession session) : IDisposable
     /// <summary>The colors for the next frames (R19): Dark Canvas on or off. Set by the canvas control before each frame (the page is drawn where <see cref="EditorSession.PageBounds"/> says, also while its border is dragged).</summary>
     public CanvasTheme Theme { get; set; } = CanvasTheme.Light;
 
+    /// <summary>Show Transparency (R27): draw the page as a checkerboard. Set by the canvas control before each frame; changing it makes the kept bitmap of the still part draw again.</summary>
+    public bool ShowTransparency { get; set; }
+
     /// <summary>How long the view must stand still before a frame counts as settled after a pan.</summary>
     public static readonly TimeSpan SettleDelay = TimeSpan.FromMilliseconds(120);
 
@@ -383,6 +417,7 @@ public sealed class CanvasFrameBuilder(EditorSession session) : IDisposable
             Preview = previewPicture,
             Overlay = overlay,
             Theme = Theme,
+            Checker = ShowTransparency,
             StaticLayer = UseStaticLayer ? _staticLayer : null,
             Settled = settled,
             ViewMoved = moved,

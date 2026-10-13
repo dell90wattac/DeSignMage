@@ -21,6 +21,15 @@ public partial class MainWindow
         });
     }
 
+    /// <summary>Tools ▸ Show Transparency (R27): the page as a checkerboard. Display only; no shortcut.</summary>
+    private void RegisterTransparencyCommand()
+    {
+        _commands.Add(new AppCommand("tools.showTransparency", "Show _Transparency", () => AppTheme.SetShowTransparency(!AppTheme.ShowTransparency))
+        {
+            IsChecked = () => AppTheme.ShowTransparency,
+        });
+    }
+
     private void InitThemeButtons()
     {
         Setup(DarkMenusButton, "view.darkMenus", filledBand: true, () => AppTheme.DarkMenus);

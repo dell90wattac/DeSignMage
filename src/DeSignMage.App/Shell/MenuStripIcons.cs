@@ -43,8 +43,8 @@ internal static class MenuStripIcons
         ["effects.commonWeld"] = "C. Weld", ["effects.cookieCutter"] = "Cookie",
         ["effects.gradientBlend"] = "Gradient",
         ["effects.softShadow"] = "Soft Sh.", ["effects.glow"] = "Glow", ["effects.feather"] = "Feather",
-        ["effects.shadow"] = "Shadow",["effects.shadowExtruded"] = "Extruded", ["effects.shadowPerspective"] = "Persp.", ["effects.shadowCast"] = "Cast",
-        ["tool.select"] = "Layout", ["tool.vector"] = "Vector", ["tool.vectorDraw"] = "Draw", ["tool.loop"] = "Loops", ["tools.options"] = "Options",
+        ["effects.easyBevel"] = "Bevel", ["effects.shadow"] = "Drop",["effects.shadowExtruded"] = "Extruded", ["effects.shadowPerspective"] = "Persp.", ["effects.shadowCast"] = "Cast",
+        ["tool.select"] = "Layout", ["tool.vector"] = "Vector", ["tool.vectorDraw"] = "Draw", ["tool.loop"] = "Loops", ["tools.showTransparency"] = "Transparency", ["tools.options"] = "Options",
     };
 
     /// <summary>The label of a command: its short word, or (for a command without one) the first word of its name.</summary>
@@ -139,9 +139,14 @@ internal static class MenuStripIcons
         ["effects.glow"] = () => Box(Stroke("M4,4 H16 V16 H4 Z", Accent, 3.2), Stroke("M2,2 H18 V18 H2 Z", Accent, 1.0, dashed: true), Fill("M6,6 H14 V14 H6 Z")),
         ["effects.feather"] = () => Box(Fill("M4,4 H16 V16 H4 Z"), Stroke("M2.5,2.5 H17.5 V17.5 H2.5 Z", Ink, 1.0, dashed: true), Stroke("M5,5 H15 V15 H5 Z", Paper, 1.2, dashed: true)),
 
+        // a block with a light rim on its upper left and a dark one on its lower right
+        ["effects.easyBevel"] = () => Box(Fill("M3,3 H17 V17 H3 Z"), Stroke("M3.5,16.5 V3.5 H16.5", Paper, 1.8), Stroke("M16.5,3.5 V16.5 H3.5", Accent, 1.8)),
+
         // ---- Tools (select, vector and vector draw come from the Toolbox) ----
         // a closed loop with its start point marked
         ["tool.loop"] = () => Box(Stroke("M3,10 A7,5 0 1 1 17,10 A7,5 0 1 1 3,10 Z"), Fill("M1,8.5 H4 V11.5 H1 Z", Accent)),
+        // a little checkerboard: the page seen as transparent
+        ["tools.showTransparency"] = () => Box(Stroke("M2,2 H18 V18 H2 Z", Ink, 1.2), Fill("M2,2 H10 V10 H2 Z M10,10 H18 V18 H10 Z")),
         // a cog: a ring with its teeth
         ["tools.options"] = () => Box(Stroke("M15,10 A5,5 0 1 1 5,10 A5,5 0 1 1 15,10 Z", Ink, 1.6), Fill("M8.5,8.5 H11.5 V11.5 H8.5 Z"),
             Stroke("M10,1.5 V4.5 M10,15.5 V18.5 M1.5,10 H4.5 M15.5,10 H18.5 M4,4 L6.1,6.1 M13.9,13.9 L16,16 M4,16 L6.1,13.9 M13.9,6.1 L16,4", Ink, 1.8)),

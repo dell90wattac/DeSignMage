@@ -16,7 +16,7 @@ internal sealed record ExportRequest(ExportFormat Format, ExportOptions Options)
 
 /// <summary>The choices the Export dialog starts with (the last ones used in this session).</summary>
 internal sealed record ExportSettings(
-    ExportFormat Format = ExportFormat.Png, double Dpi = 300, bool Transparent = false, bool IncludePasteboard = false,
+    ExportFormat Format = ExportFormat.Png, double Dpi = 300, bool IncludePasteboard = false,
     bool TextAsOutlines = true, bool SelectionOnly = false);
 
 /// <summary>File ▸ Export...: format, area, resolution and the other options. The file name is asked for afterwards.</summary>
@@ -33,7 +33,6 @@ internal sealed class ExportDialog : Window
     private readonly CheckBox _pasteboard = new() { Content = "Include objects outside the page (pasteboard)" };
     private readonly TextBox _dpi = new TextBox().ScaledWidth(70);
     private readonly TextBlock _size = new() { VerticalAlignment = VerticalAlignment.Center, Foreground = AppTheme.Brush("Ui.Muted") };
-    private readonly CheckBox _transparent = new() { Content = "Transparent background" };
     private readonly RadioButton _outlines = new() { Content = "Letters as outlines (looks the same everywhere)", GroupName = "text" };
     private readonly RadioButton _liveText = new() { Content = "Real text (editable; needs the font on the other computer)", GroupName = "text" };
     private readonly TextBlock _error = new() { Foreground = AppTheme.Brush("Ui.Error"), TextWrapping = TextWrapping.Wrap };
@@ -70,7 +69,6 @@ internal sealed class ExportDialog : Window
             Children = { new TextBlock { Text = "Resolution:", VerticalAlignment = VerticalAlignment.Center }, _dpi, new TextBlock { Text = "dpi", VerticalAlignment = VerticalAlignment.Center }, presets },
         });
         _pngPanel.Children.Add(_size);
-        _pngPanel.Children.Add(_transparent);
         _svgPanel.Children.Add(new TextBlock { Text = "Live text:", FontWeight = FontWeight.SemiBold });
         _svgPanel.Children.Add(_outlines);
         _svgPanel.Children.Add(_liveText);
@@ -99,7 +97,6 @@ internal sealed class ExportDialog : Window
         (settings.SelectionOnly && selection.Count > 0 ? _selected : _page).IsChecked = true;
         _pasteboard.IsChecked = settings.IncludePasteboard;
         _dpi.Text = settings.Dpi.ToString("0.###", CultureInfo.InvariantCulture);
-        _transparent.IsChecked = settings.Transparent;
         (settings.TextAsOutlines ? _outlines : _liveText).IsChecked = true;
 
         foreach (var r in new[] { _svg, _pdf, _png, _page, _selected, _outlines, _liveText }) r.IsCheckedChanged += (_, _) => UpdateState();
@@ -151,7 +148,6 @@ internal sealed class ExportDialog : Window
             Selection = _selection,
             IncludePasteboard = _pasteboard.IsChecked == true && _page.IsChecked == true,
             Dpi = dpi,
-            TransparentBackground = _transparent.IsChecked == true,
             TextAsOutlines = _outlines.IsChecked != false,
         };
         try
@@ -171,5 +167,5 @@ internal sealed class ExportDialog : Window
 
     /// <summary>The settings to start with next time.</summary>
     public static ExportSettings Remember(ExportRequest r) => new(
-        r.Format, r.Options.Dpi, r.Options.TransparentBackground, r.Options.IncludePasteboard, r.Options.TextAsOutlines, r.Options.Scope == ExportScope.Selection);
+        r.Format, r.Options.Dpi, r.Options.IncludePasteboard, r.Options.TextAsOutlines, r.Options.Scope == ExportScope.Selection);
 }

@@ -23,7 +23,7 @@ namespace DeSignMage.App.Shell;
 /// </summary>
 public static class AppTheme
 {
-    public const string DarkMenusSetting = "ui.darkMenus", DarkCanvasSetting = "ui.darkCanvas";
+    public const string DarkMenusSetting = "ui.darkMenus", DarkCanvasSetting = "ui.darkCanvas", ShowTransparencySetting = "ui.showTransparency";
 
     /// <summary>Light (the classic look) and dark value of every themed brush.</summary>
     private static readonly (string Key, string Light, string Dark)[] Entries =
@@ -84,13 +84,19 @@ public static class AppTheme
     // Created on first use, on the UI thread (brushes belong to it); the color tables above can be read from any thread.
     private static Dictionary<string, SolidColorBrush>? _brushes;
     private static Dictionary<string, SolidColorBrush> Brushes => _brushes ??= Entries.ToDictionary(e => e.Key, e => new SolidColorBrush(Color.Parse(e.Light)));
-    private static bool _darkMenus, _darkCanvas;
+    private static bool _darkMenus, _darkCanvas, _showTransparency;
 
     /// <summary>True while the chrome is dark (Dark Menus).</summary>
     public static bool DarkMenus => _darkMenus;
 
     /// <summary>True while the canvas is dark (Dark Canvas).</summary>
     public static bool DarkCanvas => _darkCanvas;
+
+    /// <summary>
+    /// Show Transparency (R27): the page is drawn as a checkerboard so whatever is not covered shows through. Like the dark-mode switches it only
+    /// changes what is drawn on screen: exports, saved files and the clipboard never see it.
+    /// </summary>
+    public static bool ShowTransparency => _showTransparency;
 
     /// <summary>The colors the canvas draws with right now.</summary>
     public static CanvasTheme Canvas => _darkCanvas ? CanvasTheme.Dark : CanvasTheme.Light;
@@ -139,6 +145,7 @@ public static class AppTheme
     {
         _darkMenus = store?.Get(DarkMenusSetting, false) ?? false;
         _darkCanvas = store?.Get(DarkCanvasSetting, false) ?? false;
+        _showTransparency = store?.Get(ShowTransparencySetting, false) ?? false;
         Apply();
     }
 
@@ -156,6 +163,14 @@ public static class AppTheme
         _darkCanvas = on;
         if (remember) AppSettings.Store.Set(DarkCanvasSetting, on);
         Apply();
+    }
+
+    public static void SetShowTransparency(bool on, bool remember = true)
+    {
+        if (on == _showTransparency) return;
+        _showTransparency = on;
+        if (remember) AppSettings.Store.Set(ShowTransparencySetting, on);
+        Changed?.Invoke();   // nothing to recolor: the canvas just draws again
     }
 
     /// <summary>Recolors the brushes and the Avalonia theme for the current switches, then tells everything that draws by hand.</summary>
@@ -176,6 +191,7 @@ public static class AppTheme
     {
         _darkMenus = false;
         _darkCanvas = false;
+        _showTransparency = false;
         Apply();
     }
 }
