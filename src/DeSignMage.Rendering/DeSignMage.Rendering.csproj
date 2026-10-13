@@ -1,0 +1,16 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <!-- Draws the document model with SkiaSharp. No Avalonia dependency. -->
+  <PropertyGroup>
+    <RootNamespace>DeSignMage.Rendering</RootNamespace>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="SkiaSharp" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\DeSignMage.Core\DeSignMage.Core.csproj" />
+  </ItemGroup>
+
+</Project>

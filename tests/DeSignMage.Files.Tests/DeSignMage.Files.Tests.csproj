@@ -1,0 +1,35 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <!-- The native .dsm format (save/load round trips) and File > Export (SVG/PDF/PNG). Reads the real sample layouts read-only. -->
+  <PropertyGroup>
+    <IsPackable>false</IsPackable>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="coverlet.collector" />
+    <PackageReference Include="Microsoft.NET.Test.Sdk" />
+    <PackageReference Include="xunit" />
+    <PackageReference Include="xunit.runner.visualstudio" />
+    <PackageReference Include="SkiaSharp" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <Using Include="Xunit" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\..\src\DeSignMage.Core\DeSignMage.Core.csproj" />
+    <ProjectReference Include="..\..\src\DeSignMage.Formats\DeSignMage.Formats.csproj" />
+    <ProjectReference Include="..\..\src\DeSignMage.Imaging\DeSignMage.Imaging.csproj" />
+    <ProjectReference Include="..\..\src\DeSignMage.Rendering\DeSignMage.Rendering.csproj" />
+    <ProjectReference Include="..\..\src\DeSignMage.Text\DeSignMage.Text.csproj" />
+  </ItemGroup>
+
+  <!-- Sample files that are not in the repository (local-testdata/, see the README): tests that need them are skipped when missing. -->
+  <ItemGroup>
+    <Compile Include="..\Shared\LocalData.cs" Link="Shared\LocalData.cs" />
+    <Compile Include="..\Shared\LocalFacts.cs" Link="Shared\LocalFacts.cs" />
+  </ItemGroup>
+
+</Project>
+

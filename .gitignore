@@ -1,0 +1,17 @@
+# build output
+bin/
+obj/
+publish/
+artifacts/
+*.nupkg
+
+# IDE and test output
+.vs/
+*.user
+*.suo
+TestResults/
+
+# local only, never committed
+secrets/
+local-assets/
+local-testdata/

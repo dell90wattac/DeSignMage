@@ -1,0 +1,15 @@
+﻿<Project Sdk="Microsoft.NET.Sdk">
+
+  <!-- Command-line harness: vectorize an image to SVG (and a before/after PNG) without the app. -->
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <RootNamespace>DeSignMage.Vectorize.Cli</RootNamespace>
+    <AssemblyName>dsm-vectorize</AssemblyName>
+    <PlatformTarget>x64</PlatformTarget>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\DeSignMage.Vectorize\DeSignMage.Vectorize.csproj" />
+  </ItemGroup>
+
+</Project>

@@ -1,0 +1,12 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <!-- Document model, geometry, commands/undo, editor/tool logic. No UI or rendering dependencies. -->
+  <PropertyGroup>
+    <RootNamespace>DeSignMage.Core</RootNamespace>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <InternalsVisibleTo Include="DeSignMage.Core.Tests" />
+  </ItemGroup>
+
+</Project>

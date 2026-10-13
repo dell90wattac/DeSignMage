@@ -1,0 +1,152 @@
+<Styles xmlns="https://github.com/avaloniaui"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
+  <!-- Dense chrome. Tweak here, not per control. -->
+  <Style Selector="Window">
+    <Setter Property="FontSize" Value="{DynamicResource Ui.FontSize}" />
+    <Setter Property="Background" Value="{DynamicResource Ui.WindowBack}" />
+  </Style>
+  <!-- Small print (info line, font-list captions) -->
+  <Style Selector="TextBlock.small">
+    <Setter Property="FontSize" Value="{DynamicResource Ui.SmallFontSize}" />
+  </Style>
+  <Style Selector="Border.bar">
+    <Setter Property="Background" Value="{DynamicResource Ui.Chrome}" />
+    <Setter Property="BorderBrush" Value="{DynamicResource Ui.ChromeBorder}" />
+    <Setter Property="BorderThickness" Value="0,0,0,1" />
+  </Style>
+  <!-- Captions: small, muted, sentence case; the same in the Project Color Bar, the Color Mixer and the panels. -->
+  <Style Selector="TextBlock.caption">
+    <Setter Property="VerticalAlignment" Value="Center" />
+    <Setter Property="Foreground" Value="{DynamicResource Ui.Caption}" />
+    <Setter Property="FontSize" Value="{DynamicResource Ui.SmallFontSize}" />
+  </Style>
+  <Style Selector="Button.tb, ToggleButton.tb">
+    <Setter Property="CornerRadius" Value="3" />
+    <Setter Property="Padding" Value="3" />
+    <Setter Property="MinWidth" Value="{DynamicResource Ui.ToolButtonSize}" />
+    <Setter Property="MinHeight" Value="{DynamicResource Ui.ToolButtonSize}" />
+    <Setter Property="Margin" Value="1" />
+    <Setter Property="Background" Value="Transparent" />
+    <Setter Property="BorderThickness" Value="1" />
+    <Setter Property="BorderBrush" Value="Transparent" />
+    <Setter Property="HorizontalContentAlignment" Value="Center" />
+    <Setter Property="VerticalContentAlignment" Value="Center" />
+  </Style>
+  <!-- On/off toolbar buttons (Show Guidelines, Snap to Guidelines, lock ...) look pressed while on. -->
+  <Style Selector="Button.tb.on">
+    <Setter Property="Background" Value="{DynamicResource Ui.OnBack}" />
+    <Setter Property="BorderBrush" Value="{DynamicResource Ui.OnBorder}" />
+  </Style>
+  <Style Selector="Button.tb.on:pointerover /template/ ContentPresenter#PART_ContentPresenter">
+    <Setter Property="Background" Value="{DynamicResource Ui.OnHoverBack}" />
+  </Style>
+  <Style Selector="TextBlock.glyph">
+    <Setter Property="FontFamily" Value="Segoe Fluent Icons, Segoe MDL2 Assets" />
+    <Setter Property="FontSize" Value="{DynamicResource Ui.GlyphFontSize}" />
+  </Style>
+  <Style Selector="TextBox.num">
+    <Setter Property="Width" Value="{DynamicResource Ui.NumWidth}" />
+    <Setter Property="MinHeight" Value="{DynamicResource Ui.NumMinHeight}" />
+    <Setter Property="Padding" Value="4,1" />
+    <Setter Property="VerticalContentAlignment" Value="Center" />
+  </Style>
+  <!-- Context Bar: field captions, units, separators and text buttons. The bar's rows supply the spacing. -->
+  <Style Selector="TextBlock.label">
+    <Setter Property="VerticalAlignment" Value="Center" />
+    <Setter Property="Foreground" Value="{DynamicResource Ui.Label}" />
+  </Style>
+  <Style Selector="TextBlock.unit">
+    <Setter Property="VerticalAlignment" Value="Center" />
+    <Setter Property="Foreground" Value="{DynamicResource Ui.Unit}" />
+    <Setter Property="FontSize" Value="{DynamicResource Ui.SmallFontSize}" />
+  </Style>
+  <!-- Dock Tabs (R17): browser-style tabs at the top of the Dock. An open tab has the panel's own color and no line under it, so tab and
+       panel read as one piece; closed tabs look like ordinary tabs. -->
+  <Style Selector="ToggleButton.dtab">
+    <Setter Property="Height" Value="{DynamicResource Ui.DockTabHeight}" />
+    <Setter Property="MinHeight" Value="0" />
+    <Setter Property="MinWidth" Value="0" />
+    <Setter Property="Padding" Value="10,0" />
+    <Setter Property="CornerRadius" Value="4,4,0,0" />
+    <Setter Property="FontSize" Value="{DynamicResource Ui.FontSize}" />
+    <Setter Property="HorizontalContentAlignment" Value="Center" />
+    <Setter Property="VerticalContentAlignment" Value="Center" />
+    <Setter Property="Background" Value="{DynamicResource Ui.TabBack}" />
+    <Setter Property="BorderBrush" Value="{DynamicResource Ui.TabBorder}" />
+    <Setter Property="BorderThickness" Value="1,1,1,0" />
+    <Setter Property="Foreground" Value="{DynamicResource Ui.TabText}" />
+  </Style>
+  <Style Selector="ToggleButton.dtab /template/ ContentPresenter#PART_ContentPresenter">
+    <Setter Property="Background" Value="{DynamicResource Ui.TabBack}" />
+    <Setter Property="BorderBrush" Value="{DynamicResource Ui.TabBorder}" />
+  </Style>
+  <Style Selector="ToggleButton.dtab:pointerover /template/ ContentPresenter#PART_ContentPresenter">
+    <Setter Property="Background" Value="{DynamicResource Ui.TabHoverBack}" />
+    <Setter Property="BorderBrush" Value="{DynamicResource Ui.TabHoverBorder}" />
+  </Style>
+  <Style Selector="ToggleButton.dtab:checked /template/ ContentPresenter#PART_ContentPresenter">
+    <Setter Property="Background" Value="{DynamicResource Ui.Panel}" />
+    <Setter Property="BorderBrush" Value="{DynamicResource Ui.TabBorder}" />
+    <Setter Property="Foreground" Value="{DynamicResource Ui.TabTextOpen}" />
+  </Style>
+  <Style Selector="Button.act">
+    <Setter Property="Padding" Value="{DynamicResource Ui.ActPadding}" />
+    <Setter Property="MinHeight" Value="{DynamicResource Ui.NumMinHeight}" />
+    <Setter Property="VerticalAlignment" Value="Center" />
+    <Setter Property="VerticalContentAlignment" Value="Center" />
+    <Setter Property="CornerRadius" Value="3" />
+    <Setter Property="Background" Value="{DynamicResource Ui.ActBack}" />
+    <Setter Property="BorderBrush" Value="{DynamicResource Ui.ActBorder}" />
+    <Setter Property="BorderThickness" Value="1" />
+  </Style>
+  <Style Selector="Button.act:pointerover /template/ ContentPresenter#PART_ContentPresenter">
+    <Setter Property="Background" Value="{DynamicResource Ui.ActHoverBack}" />
+    <Setter Property="BorderBrush" Value="{DynamicResource Ui.ActHoverBorder}" />
+  </Style>
+  <Style Selector="Button.act:disabled /template/ ContentPresenter#PART_ContentPresenter">
+    <Setter Property="Background" Value="{DynamicResource Ui.ActDisabledBack}" />
+    <Setter Property="BorderBrush" Value="{DynamicResource Ui.ActDisabledBorder}" />
+    <Setter Property="Foreground" Value="{DynamicResource Ui.ActDisabledText}" />
+  </Style>
+  <Style Selector="Button.act:pressed /template/ ContentPresenter#PART_ContentPresenter">
+    <Setter Property="Background" Value="{DynamicResource Ui.ActPressedBack}" />
+  </Style>
+  <Style Selector="Border.bar TextBox.num">
+    <Setter Property="CornerRadius" Value="3" />
+  </Style>
+  <!-- Color Mixer channel sliders: a small round thumb so three rows fit in a dense panel. -->
+  <Style Selector="Slider.ch /template/ Border#TrackBackground">
+    <Setter Property="Background" Value="Transparent" />
+  </Style>
+  <Style Selector="Slider.ch /template/ RepeatButton">
+    <Setter Property="Background" Value="Transparent" />
+  </Style>
+  <Style Selector="Slider.ch /template/ Thumb">
+    <Setter Property="Width" Value="{DynamicResource Ui.SliderThumb}" />
+    <Setter Property="Height" Value="{DynamicResource Ui.SliderThumb}" />
+  </Style>
+  <!-- Tab headers (Color Mixer, Layers, History): one muted look, darker when selected. -->
+  <Style Selector="TabItem">
+    <Setter Property="Foreground" Value="{DynamicResource Ui.TabItemText}" />
+  </Style>
+  <Style Selector="TabItem:selected">
+    <Setter Property="Foreground" Value="{DynamicResource Ui.TabItemTextSelected}" />
+  </Style>
+  <Style Selector="TabItem:pointerover">
+    <Setter Property="Foreground" Value="{DynamicResource Ui.TabItemTextHover}" />
+  </Style>
+  <!-- A hint or a quiet note: muted in either mode. -->
+  <Style Selector="TextBlock.muted">
+    <Setter Property="Foreground" Value="{DynamicResource Ui.Muted}" />
+  </Style>
+  <Style Selector="ListBox.panel ListBoxItem">
+    <Setter Property="Padding" Value="{DynamicResource Ui.ListItemPadding}" />
+    <Setter Property="MinHeight" Value="{DynamicResource Ui.NumMinHeight}" />
+  </Style>
+  <Style Selector="TabItem">
+    <Setter Property="FontSize" Value="{DynamicResource Ui.FontSize}" />
+    <Setter Property="MinHeight" Value="{DynamicResource Ui.TabMinHeight}" />
+    <Setter Property="Padding" Value="8,2" />
+  </Style>
+</Styles>
+

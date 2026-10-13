@@ -1,0 +1,102 @@
+using Avalonia.Controls;
+using Avalonia.Threading;
+using DeSignMage.Core.Editing;
+using DeSignMage.Core.Editing.Tools;
+using DeSignMage.Core.Effects;
+using DeSignMage.Geometry;
+using DeSignMage.App.Shell;
+
+namespace DeSignMage.App;
+
+/// <summary>
+/// Effects menu, step 2: Outline, Inline, Knife, Weld, Common Weld, Cookie Cutter. The commands are thin:
+/// the work is in Core (<c>DeSignMage.Core.Effects</c>) on top of the geometry engines this file plugs into every session.
+/// A long job runs on a worker thread; after a moment the status bar shows what it is doing and a progress bar.
+/// </summary>
+public partial class MainWindow
+{
+    private ProgressBar? _busyBar;
+    private DispatcherTimer? _busyTimer;
+
+    private void RegisterEffectCommands()
+    {
+        void Add(string id, string header, Action run, Func<bool> can, Func<bool>? isChecked = null) =>
+            _commands.Add(new AppCommand(id, header, run) { CanExecute = can, IsChecked = isChecked });
+
+        // No shortcuts yet: the usual ones (Ctrl+I, Ctrl+Shift+W, Ctrl+Shift+K) wait for the user's approval.
+        Add("effects.outline", "_Outline...", () => _session.BeginOutline(OutlineKind.Outline), () => _session.CanOutline,
+            () => _session.ActiveTool is OutlineTool { Kind: OutlineKind.Outline });
+        Add("effects.inline", "_Inline...", () => _session.BeginOutline(OutlineKind.Inline), () => _session.CanOutline,
+            () => _session.ActiveTool is OutlineTool { Kind: OutlineKind.Inline });
+        Add("effects.knife", "_Knife...", () => _session.BeginKnife(), () => _session.CanKnife, () => _session.ActiveTool is KnifeTool);
+        Add("effects.weld", "_Weld", () => RunEffect(_session.WeldAsync()), () => _session.CanWeld);
+        Add("effects.commonWeld", "Co_mmon Weld", () => RunEffect(_session.CommonWeldAsync()), () => _session.CanCommonWeld);
+        Add("effects.cookieCutter", "Cookie _Cutter...", () => _session.BeginCookieCutter(), () => _session.CanCookieCut, () => _session.ActiveTool is CookieCutterTool);
+    }
+
+    /// <summary>Starts an effect that was kicked off with an async method; a crash inside is logged and shown, never thrown at the UI loop.</summary>
+    private void RunEffect(Task<EffectOutcome> task) => _ = ObserveAsync(task);
+
+    private async Task ObserveAsync(Task<EffectOutcome> task)
+    {
+        try { await task; }
+        catch (Exception e)
+        {
+            DeSignMage.Feedback.AppLog.Warn("effects", $"effect failed: {e.GetType().Name}: {e.Message}");
+            Flash("That effect could not be done.");
+        }
+    }
+
+    /// <summary>Plugs the geometry engines into a session and shows what its effects are doing.</summary>
+    private void AttachEffects(EditorSession session)
+    {
+        session.BooleanService = GeometryEngines.Booleans;
+        session.OffsetService = GeometryEngines.Offsets;
+        session.UiPost = action => Dispatcher.UIThread.Post(action);
+        EnsureBusyBar();
+
+        session.EffectBusyChanged += (_, _) => OnEffectBusyChanged(session);
+        session.EffectFinished += (_, outcome) =>
+        {
+            if (outcome.Message is { Length: > 0 } message) Flash(message);
+            QueueRefresh();
+        };
+    }
+
+    private void EnsureBusyBar()
+    {
+        if (_busyBar is not null) return;
+        // The status bar is a grid (hint, cursor, zoom, frame times); the progress bar gets one more column at the right end.
+        if (PerfText.Parent is not Grid status) return;
+        status.ColumnDefinitions.Add(new ColumnDefinition(GridLength.Auto));
+        _busyBar = new ProgressBar
+        {
+            IsIndeterminate = true, IsVisible = false, Width = 120, Height = 10, MinHeight = 10,
+            Margin = new Avalonia.Thickness(8, 0, 4, 0), VerticalAlignment = Avalonia.Layout.VerticalAlignment.Center,
+        };
+        Grid.SetColumn(_busyBar, status.ColumnDefinitions.Count - 1);
+        status.Children.Add(_busyBar);
+    }
+
+    private void OnEffectBusyChanged(EditorSession session)
+    {
+        _busyTimer?.Stop();
+        if (!session.EffectBusy)
+        {
+            if (_busyBar is not null) _busyBar.IsVisible = false;
+            QueueRefresh();
+            return;
+        }
+        // Quick jobs finish before this fires and never flash a progress bar.
+        _busyTimer = new DispatcherTimer { Interval = TimeSpan.FromMilliseconds(150) };
+        _busyTimer.Tick += (_, _) =>
+        {
+            _busyTimer?.Stop();
+            if (!session.EffectBusy) return;
+            if (_busyBar is not null) _busyBar.IsVisible = true;
+            if (session.EffectBusyText is { } text) Flash(text + "  (Esc cancels)");
+        };
+        _busyTimer.Start();
+        QueueRefresh();
+    }
+}

@@ -1,0 +1,18 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <!-- Picture work for the Image menu: decode/encode (SkiaSharp), 90-degree rotation, flips, invert, crop, rasterize, import. No UI. -->
+  <PropertyGroup>
+    <RootNamespace>DeSignMage.Imaging</RootNamespace>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="SkiaSharp" />
+    <InternalsVisibleTo Include="DeSignMage.Imaging.Tests" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\DeSignMage.Core\DeSignMage.Core.csproj" />
+    <ProjectReference Include="..\DeSignMage.Rendering\DeSignMage.Rendering.csproj" />
+  </ItemGroup>
+
+</Project>

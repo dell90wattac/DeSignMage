@@ -1,0 +1,26 @@
+<Solution>
+  <Folder Name="/src/">
+    <Project Path="src/DeSignMage.App/DeSignMage.App.csproj" />
+    <Project Path="src/DeSignMage.Core/DeSignMage.Core.csproj" />
+    <Project Path="src/DeSignMage.Feedback/DeSignMage.Feedback.csproj" />
+    <Project Path="src/DeSignMage.Formats/DeSignMage.Formats.csproj" />
+    <Project Path="src/DeSignMage.Geometry/DeSignMage.Geometry.csproj" />
+    <Project Path="src/DeSignMage.Imaging/DeSignMage.Imaging.csproj" />
+    <Project Path="src/DeSignMage.Rendering/DeSignMage.Rendering.csproj" />
+    <Project Path="src/DeSignMage.Text/DeSignMage.Text.csproj" />
+    <Project Path="src/DeSignMage.Vectorize/DeSignMage.Vectorize.csproj" />
+    <Project Path="src/DeSignMage.Vectorize.Cli/DeSignMage.Vectorize.Cli.csproj" />
+  </Folder>
+  <Folder Name="/tests/">
+    <Project Path="tests/DeSignMage.App.Tests/DeSignMage.App.Tests.csproj" />
+    <Project Path="tests/DeSignMage.Core.Tests/DeSignMage.Core.Tests.csproj" />
+    <Project Path="tests/DeSignMage.Feedback.Tests/DeSignMage.Feedback.Tests.csproj" />
+    <Project Path="tests/DeSignMage.Files.Tests/DeSignMage.Files.Tests.csproj" />
+    <Project Path="tests/DeSignMage.Formats.Tests/DeSignMage.Formats.Tests.csproj" />
+    <Project Path="tests/DeSignMage.Geometry.Tests/DeSignMage.Geometry.Tests.csproj" />
+    <Project Path="tests/DeSignMage.Imaging.Tests/DeSignMage.Imaging.Tests.csproj" />
+    <Project Path="tests/DeSignMage.Perf.Tests/DeSignMage.Perf.Tests.csproj" />
+    <Project Path="tests/DeSignMage.Vectorize.Tests/DeSignMage.Vectorize.Tests.csproj" />
+  </Folder>
+</Solution>
+

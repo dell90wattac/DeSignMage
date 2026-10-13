@@ -1,0 +1,83 @@
+﻿<Project Sdk="Microsoft.NET.Sdk">
+
+  <!-- Avalonia desktop shell: windows, panels, menus, the Skia canvas control. -->
+  <PropertyGroup>
+    <OutputType>WinExe</OutputType>
+    <RootNamespace>DeSignMage.App</RootNamespace>
+    <AssemblyName>DeSignMage</AssemblyName>
+    <PlatformTarget>x64</PlatformTarget>
+    <ApplicationManifest>app.manifest</ApplicationManifest>
+    <!-- Temporary app icon from the user (2026-10-12); source and generator notes in Assets/README.md. -->
+    <ApplicationIcon>Assets\DeSignMage.ico</ApplicationIcon>
+    <BuiltInComInteropSupport>true</BuiltInComInteropSupport>
+    <AvaloniaUseCompiledBindingsByDefault>true</AvaloniaUseCompiledBindingsByDefault>
+    <!-- Shown in bug reports ("version, build date"); bump Version for each beta handed out. -->
+    <Version>0.2.4</Version>
+    <InformationalVersion>0.2.4</InformationalVersion>
+  </PropertyGroup>
+
+  <!-- Startup: a published build (`dotnet publish -r win-x64 ...`, framework-dependent or self-contained)
+       is precompiled to ReadyToRun machine code, so the first window appears without waiting for the JIT: about 1.9 s -> 1.0 s on the dev PC.
+       It needs a runtime identifier, so plain `dotnet build` / `dotnet test` are not affected. Tiered compilation and TieredPGO stay at the
+       runtime defaults: turning either off did not help startup (measured). -->
+  <PropertyGroup Condition="'$(RuntimeIdentifier)' != ''">
+    <PublishReadyToRun>true</PublishReadyToRun>
+    <SatelliteResourceLanguages>en</SatelliteResourceLanguages>
+  </PropertyGroup>
+
+  <!-- The native symbol files that come with SkiaSharp and HarfBuzzSharp are about 100 MB and useless to a user: leave them out of a publish.
+       The program's own .pdb files stay (small), so crash reports keep their line numbers. -->
+  <Target Name="LeaveOutNativeSymbols" AfterTargets="ComputeResolvedFilesToPublishList">
+    <ItemGroup>
+      <_NativeSymbol Include="@(ResolvedFileToPublish)" Condition="'%(Extension)' == '.pdb' and $([System.String]::new('%(Filename)').StartsWith('lib'))" />
+      <ResolvedFileToPublish Remove="@(_NativeSymbol)" />
+    </ItemGroup>
+  </Target>
+
+  <ItemGroup>
+    <AssemblyMetadata Include="BuildDate" Value="$([System.DateTime]::UtcNow.ToString('yyyy-MM-dd HH:mm'))Z" />
+  </ItemGroup>
+
+  <!-- Feedback webhook: when app/secrets/feedback-webhook.txt exists it is built into the program, so a
+       portable build needs no extra file. The file is never committed (app/secrets/.gitignore) and its text is never printed. -->
+  <ItemGroup Condition="Exists('$(MSBuildThisFileDirectory)..\..\secrets\feedback-webhook.txt')">
+    <EmbeddedResource Include="..\..\secrets\feedback-webhook.txt" LogicalName="DeSignMage.feedback-webhook.txt" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Avalonia" />
+    <PackageReference Include="Avalonia.Desktop" />
+    <PackageReference Include="Avalonia.Skia" />
+    <PackageReference Include="Avalonia.Themes.Fluent" />
+    <PackageReference Include="Avalonia.Fonts.Inter" />
+    <PackageReference Include="SkiaSharp" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <InternalsVisibleTo Include="DeSignMage.App.Tests" />
+  </ItemGroup>
+
+  <!-- Window/taskbar icon, loaded as an Avalonia resource. -->
+  <ItemGroup>
+    <AvaloniaResource Include="Assets\DeSignMage.ico" />
+  </ItemGroup>
+
+  <!-- Color palettes: palette files (.PAL / .CLR) in the untracked folder app/local-assets/palettes are copied next to the exe
+       (`palettes/`) when that folder exists. Without it the program starts with its built-in palette; more can be loaded from any folder. -->
+  <ItemGroup>
+    <Content Include="..\..\local-assets\palettes\*.PAL;..\..\local-assets\palettes\*.CLR" Link="palettes\%(Filename)%(Extension)" CopyToOutputDirectory="PreserveNewest" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\DeSignMage.Core\DeSignMage.Core.csproj" />
+    <ProjectReference Include="..\DeSignMage.Feedback\DeSignMage.Feedback.csproj" />
+    <ProjectReference Include="..\DeSignMage.Formats\DeSignMage.Formats.csproj" />
+    <ProjectReference Include="..\DeSignMage.Geometry\DeSignMage.Geometry.csproj" />
+    <ProjectReference Include="..\DeSignMage.Imaging\DeSignMage.Imaging.csproj" />
+    <ProjectReference Include="..\DeSignMage.Rendering\DeSignMage.Rendering.csproj" />
+    <ProjectReference Include="..\DeSignMage.Text\DeSignMage.Text.csproj" />
+    <ProjectReference Include="..\DeSignMage.Vectorize\DeSignMage.Vectorize.csproj" />
+  </ItemGroup>
+
+</Project>
+

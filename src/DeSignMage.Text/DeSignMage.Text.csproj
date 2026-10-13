@@ -1,0 +1,17 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <!-- Installed fonts, HarfBuzz shaping and glyph outlines for live text. Core + SkiaSharp + HarfBuzzSharp, no UI. -->
+  <PropertyGroup>
+    <RootNamespace>DeSignMage.Text</RootNamespace>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="SkiaSharp" />
+    <PackageReference Include="HarfBuzzSharp" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\DeSignMage.Core\DeSignMage.Core.csproj" />
+  </ItemGroup>
+
+</Project>

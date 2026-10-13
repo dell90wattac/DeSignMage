@@ -1,0 +1,22 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <!--
+    Shared geometry engines for the effects: path booleans, offsets, curve refit.
+    Implements IBooleanService / IOffsetService from Core (Core/Geometry/Engines). Core does not reference this project;
+    the app plugs the implementations in, like IImageService. No UI.
+    Clipper2Z = Clipper2 by Angus Johnson built with Z (user data per vertex), Boost Software License 1.0.
+  -->
+  <PropertyGroup>
+    <RootNamespace>DeSignMage.Geometry</RootNamespace>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Clipper2Z" />
+    <InternalsVisibleTo Include="DeSignMage.Geometry.Tests" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\DeSignMage.Core\DeSignMage.Core.csproj" />
+  </ItemGroup>
+
+</Project>

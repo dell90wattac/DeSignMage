@@ -1,0 +1,17 @@
+﻿<Project Sdk="Microsoft.NET.Sdk">
+
+  <!-- Raster-to-vector tracing (Image > Vectorize). The tracer itself depends only on Core; Imaging/ uses SkiaSharp for decode/preview. No UI. -->
+  <PropertyGroup>
+    <RootNamespace>DeSignMage.Vectorize</RootNamespace>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="SkiaSharp" />
+    <InternalsVisibleTo Include="DeSignMage.Vectorize.Tests" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\DeSignMage.Core\DeSignMage.Core.csproj" />
+  </ItemGroup>
+
+</Project>

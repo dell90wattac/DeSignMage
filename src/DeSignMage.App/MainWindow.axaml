@@ -1,0 +1,121 @@
+<Window xmlns="https://github.com/avaloniaui"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:c="using:DeSignMage.App.Canvas"
+        xmlns:s="using:DeSignMage.App.Shell"
+        x:Class="DeSignMage.App.MainWindow"
+        Title="DeSign Mage"
+        Icon="/Assets/DeSignMage.ico"
+        Width="1400" Height="860"
+        WindowState="Maximized"
+        WindowStartupLocation="CenterScreen">
+
+  <!--
+    Each region is a named host filled from code, so the layout can be reshaped without touching the logic. Colors come from the themed
+    brushes (Ui.*, see AppTheme), so Dark Menus recolors everything here.
+  -->
+  <DockPanel>
+    <!-- Top row: the menus on the left, then the Main Toolbar, and at the far right the Dark Menus / Dark Canvas switches and Feedback / Bug.
+         One fixed height (set from the interface text size); a toolbar that is too long for the window scrolls sideways instead of wrapping. -->
+    <Border x:Name="TopRowBorder" Classes="bar" DockPanel.Dock="Top" ClipToBounds="True">
+      <Grid ColumnDefinitions="Auto,*,Auto">
+        <Menu x:Name="MainMenu" Grid.Column="0" VerticalAlignment="Center" />
+        <ScrollViewer x:Name="MainToolbarScroll" Grid.Column="1" HorizontalScrollBarVisibility="Auto" VerticalScrollBarVisibility="Disabled" VerticalAlignment="Center">
+          <s:BarRow x:Name="MainToolbar" Margin="8,0" />
+        </ScrollViewer>
+        <StackPanel x:Name="TopRowRight" Grid.Column="2" Orientation="Horizontal" VerticalAlignment="Center">
+          <ToggleButton x:Name="DarkMenusButton" Classes="tb" Focusable="False" />
+          <ToggleButton x:Name="DarkCanvasButton" Classes="tb" Focusable="False" />
+          <Button x:Name="FeedbackButton" Content="Feedback / Bug" Focusable="False"
+                  Margin="4,0,8,0" Padding="12,3" VerticalAlignment="Center"
+                  Background="{DynamicResource Ui.NoticeBack}" BorderBrush="{DynamicResource Ui.NoticeBorder}"
+                  ToolTip.Tip="Report a problem or suggest an idea to the developer" />
+        </StackPanel>
+      </Grid>
+    </Border>
+    <!-- One-line notice (a crash report from last time was sent; where the recovered design is) -->
+    <Border x:Name="NoticeBar" DockPanel.Dock="Top" IsVisible="False" Background="{DynamicResource Ui.NoticeBack}" BorderBrush="{DynamicResource Ui.NoticeBorder}" BorderThickness="0,0,0,1">
+      <DockPanel Margin="8,2">
+        <Button x:Name="NoticeClose" DockPanel.Dock="Right" Content="&#x2715;" Focusable="False" Padding="6,0" Margin="4,0,0,0" Background="Transparent" ToolTip.Tip="Dismiss" />
+        <Button x:Name="NoticeOpenFolder" DockPanel.Dock="Right" Content="Open folder" Focusable="False" Padding="8,0" Margin="8,0,0,0" IsVisible="False" />
+        <TextBlock x:Name="NoticeText" VerticalAlignment="Center" TextTrimming="CharacterEllipsis" />
+      </DockPanel>
+    </Border>
+
+    <!-- Status bar: tool hint, pointer position, zoom, frame times -->
+    <Border DockPanel.Dock="Bottom" Background="{DynamicResource Ui.Chrome}" BorderBrush="{DynamicResource Ui.ChromeBorder}" BorderThickness="0,1,0,0">
+      <Grid ColumnDefinitions="*,Auto,Auto,Auto" Margin="4,2">
+        <TextBlock x:Name="HintText" Grid.Column="0" VerticalAlignment="Center" TextTrimming="CharacterEllipsis" />
+        <TextBlock x:Name="CursorText" Grid.Column="1" Margin="12,0" MinWidth="150" VerticalAlignment="Center" />
+        <TextBlock x:Name="ZoomText" Grid.Column="2" Margin="12,0" MinWidth="70" VerticalAlignment="Center" />
+        <TextBlock x:Name="PerfText" Grid.Column="3" Margin="12,0,4,0" Classes="muted" VerticalAlignment="Center" />
+      </Grid>
+    </Border>
+
+    <!-- Project Color Bar: colors used in the design, then fill, stroke and stroke width -->
+    <Border DockPanel.Dock="Bottom" Background="{DynamicResource Ui.Chrome}" BorderBrush="{DynamicResource Ui.ChromeBorder}" BorderThickness="0,1,0,0">
+      <s:BarRow x:Name="ProjectColorBarHost" Margin="8,6" Spacing="8" LineSpacing="4" />
+    </Border>
+
+    <!-- Toolbox -->
+    <Border DockPanel.Dock="Left" Background="{DynamicResource Ui.Chrome}" BorderBrush="{DynamicResource Ui.ChromeBorder}" BorderThickness="0,0,1,0">
+      <StackPanel x:Name="ToolboxHost" Margin="4,8" Spacing="2" />
+    </Border>
+
+    <!-- Palette Strip: the active palette's swatches, with the red X on top -->
+    <Border x:Name="PaletteStripBorder" DockPanel.Dock="Right" Background="{DynamicResource Ui.Chrome}" BorderBrush="{DynamicResource Ui.ChromeBorder}" BorderThickness="1,0,0,0" Width="22">
+      <ContentControl x:Name="PaletteStripHost" />
+    </Border>
+
+    <!-- Body: the Context Bar, ruler and canvas on the left; the Dock is a full-height column that starts right under the top row. The
+         Dock Tabs (Color Mixer, Layers, History) sit at its top, in the Context Bar's band; one panel is open at a time (see DockLayout).
+         With every panel closed the Dock is only its tab strip, and the ruler and canvas run the full width below it. -->
+    <Grid x:Name="BodyGrid" RowDefinitions="Auto,*" ColumnDefinitions="*,4,270">
+      <!-- Context Bar: always exactly two rows tall (the height is set from the interface text size, never from the content, so the
+           canvas below never moves). A row that is too long for the window scrolls sideways instead of wrapping. It ends at the Dock's edge. -->
+      <Border x:Name="ContextBarBorder" Grid.Row="0" Grid.Column="0" Grid.ColumnSpan="2" Classes="bar" Padding="8,6" ClipToBounds="True">
+        <ScrollViewer x:Name="ContextBarScroll" HorizontalScrollBarVisibility="Auto" VerticalScrollBarVisibility="Disabled">
+          <ContentControl x:Name="ContextBarHost" />
+        </ScrollViewer>
+      </Border>
+
+      <!-- The Dock Tabs, in the Context Bar's band, always at the band's right edge so they stay where they are when the Dock opens or closes.
+           An open tab has the panel's own color and no line under it, so it reads as one piece with its panel; closed tabs look like ordinary tabs. -->
+      <Grid x:Name="DockBand" Grid.Row="0" Grid.Column="2" Background="{DynamicResource Ui.Chrome}">
+        <Border VerticalAlignment="Bottom" Height="1" Background="{DynamicResource Ui.ChromeBorder}" />
+        <StackPanel x:Name="DockTabs" Orientation="Horizontal" VerticalAlignment="Bottom" HorizontalAlignment="Right" Margin="8,0" Spacing="2">
+          <ToggleButton x:Name="DockTabColorMixer" Classes="dtab" Content="Color Mixer" Focusable="False" ToolTip.Tip="Open or close the Color Mixer in the Dock" />
+          <ToggleButton x:Name="DockTabLayers" Classes="dtab" Content="Layers" Focusable="False" ToolTip.Tip="Open or close the Layers Panel in the Dock" />
+          <ToggleButton x:Name="DockTabHistory" Classes="dtab" Content="History" Focusable="False" ToolTip.Tip="Open or close the History panel in the Dock" />
+        </StackPanel>
+      </Grid>
+
+      <Grid x:Name="WorkArea" Grid.Row="1" Grid.Column="0" RowDefinitions="Auto,*">
+        <!-- Info line: selection size, object/group counts -->
+        <TextBlock x:Name="InfoLine" Classes="small" Grid.Row="0" Margin="40,4,0,4" />
+        <Grid Grid.Row="1" RowDefinitions="20,*" ColumnDefinitions="20,*">
+          <Border Grid.Row="0" Grid.Column="0" Background="{DynamicResource Ui.RulerBack}" BorderBrush="{DynamicResource Ui.RulerEdge}" BorderThickness="0,0,1,1" />
+          <c:Ruler x:Name="TopRuler" Grid.Row="0" Grid.Column="1" />
+          <c:Ruler x:Name="LeftRuler" Grid.Row="1" Grid.Column="0" Vertical="True" />
+          <c:DesignCanvas x:Name="Surface" Grid.Row="1" Grid.Column="1" />
+        </Grid>
+      </Grid>
+
+      <GridSplitter x:Name="DockSplitter" Grid.Row="1" Grid.Column="1" Background="{DynamicResource Ui.Splitter}" ResizeDirection="Columns" />
+
+      <!-- The Dock's panels. DockLayout decides which one is open; it fills the whole Dock, and its tab is its header. -->
+      <Grid x:Name="DockGrid" Grid.Row="1" Grid.Column="2" Background="{DynamicResource Ui.Panel}">
+        <Border x:Name="ColorMixerPanel" Padding="8,8,8,4">
+          <ScrollViewer VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled">
+            <StackPanel x:Name="ColorMixerHost" Spacing="6" Margin="0,0,0,4" />
+          </ScrollViewer>
+        </Border>
+        <Border x:Name="LayersPanel" Padding="8,8,8,4">
+          <ListBox x:Name="LayersList" Classes="panel" />
+        </Border>
+        <Border x:Name="HistoryPanel" Padding="8,8,8,4">
+          <ListBox x:Name="HistoryList" Classes="panel" />
+        </Border>
+      </Grid>
+    </Grid>
+  </DockPanel>
+</Window>
