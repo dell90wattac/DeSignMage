@@ -6,6 +6,7 @@ using Avalonia.Media;
 using Avalonia.Platform;
 using Avalonia.Rendering.SceneGraph;
 using Avalonia.Skia;
+using Avalonia.Threading;
 using DeSignMage.App.Shell;
 using DeSignMage.Core.Editing;
 using DeSignMage.Core.Geometry;
@@ -26,6 +27,7 @@ public sealed class DesignCanvas : Control
     private EditorSession? _session;
     private CanvasFrameBuilder? _frames;
     private bool _fittedOnce;
+    private DispatcherTimer? _settleTimer;
 
     public DesignCanvas()
     {
@@ -107,6 +109,22 @@ public sealed class DesignCanvas : Control
         _frames.Theme = AppTheme.Canvas;   // Dark Canvas (R19): only what is drawn on screen, never an export
         var frame = _frames.Build((float)Bounds.Width, (float)Bounds.Height);
         context.Custom(new SkiaDrawOperation(new Rect(Bounds.Size), frame));
+        if (_frames.SettleFramePending) RestartSettleTimer();
+    }
+
+    /// <summary>
+    /// While the view is panned the picture is drawn from moved pixels; once the view has stood still for a moment, one more frame draws it
+    /// exactly. Each panned or zoomed frame pushes that frame back, so it comes only after the last one.
+    /// </summary>
+    private void RestartSettleTimer()
+    {
+        if (_settleTimer is null)
+        {
+            _settleTimer = new DispatcherTimer { Interval = CanvasFrameBuilder.SettleDelay + TimeSpan.FromMilliseconds(40) };
+            _settleTimer.Tick += (_, _) => { _settleTimer.Stop(); InvalidateVisual(); };
+        }
+        _settleTimer.Stop();
+        _settleTimer.Start();
     }
 
     // ---- Input ----

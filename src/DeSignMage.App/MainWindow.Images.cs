@@ -38,6 +38,8 @@ public partial class MainWindow
         // Names and order follow the usual Image menu (the two rotate labels are the right way round here).
         // Shortcuts (Alt+V, Ctrl+F7, Alt+1, Ctrl+Alt+I) stay unbound until the user approves them.
         Add("image.crop", "Crop Tool", () => _session.BeginCrop(), () => _session.CanCrop);
+        Add("image.resample", "Resample...", () => _ = ResampleSelectionAsync(), () => _session.CanResample);
+        ImageActions.OpenResample = () => { if (_session.CanResample) _ = ResampleSelectionAsync(); };
         Add("image.rotateCW", "Rotate 90 degrees clockwise", () => ImageActions.RotateClockwise(_session), HasImage);
         Add("image.rotateCCW", "Rotate 90 degrees counter-clockwise", () => ImageActions.RotateCounterClockwise(_session), HasImage);
         Add("image.flipH", "Flip Horizontal", () => ImageActions.FlipHorizontal(_session), HasImage);
@@ -181,6 +183,27 @@ public partial class MainWindow
         var pictures = paths.Where(ImageCodec.IsImageFile).ToList();
         if (pictures.Count > 0) _ = ImportImagesAsync(pictures, docPoint);
         else _ = OpenFileAsync(paths[0]);   // says what is supported
+    }
+
+    // ---------------------------------------------------------------- Resample
+
+    /// <summary>The Resample dialog that is open (for tests); null otherwise.</summary>
+    internal ResampleDialog? OpenResampleDialog { get; private set; }
+
+    /// <summary>
+    /// Image ▸ Resample...: asks for the new pixel size of the selected picture (its printed size stays) and applies it as one undo step.
+    /// Resizing a big photo runs in the background with the progress window, like the other picture commands.
+    /// </summary>
+    private async Task ResampleSelectionAsync()
+    {
+        if (_session.ResampleTarget is not { } image) return;
+        var dialog = new ResampleDialog(image);
+        OpenResampleDialog = dialog;
+        try { await dialog.ShowDialog(this); }
+        finally { OpenResampleDialog = null; }
+        if (dialog.Result is not { } size) return;
+        if (!_session.Resample(size.Width, size.Height) && _session.LastImageError is { } error)
+            await ShowDialogAsync("Resample", error, "OK", null);
     }
 
     // ---------------------------------------------------------------- Rasterize

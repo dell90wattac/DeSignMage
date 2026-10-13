@@ -7,9 +7,9 @@ public enum StackMove { ToFront, ToBack, Forward, Backward }
 
 /// <summary>
 /// How the drawing order changes when the selection is moved up or down (Arrange ▸ To Front, To Back, Forward, Backward). One place, so what
-/// the legacy program does can be put in here (R22).
+/// the reference behavior turns out to be can be put in here (R22).
 /// <para>
-/// <b>Open (R22), waiting for the user's tests of the legacy program:</b> what each command does to a group whose members are not next to each
+/// <b>Open (R22), waiting for the user's tests of the reference behavior:</b> what each command does to a group whose members are not next to each
 /// other in the drawing order. Today, which is what these commands always did for a group whose members were next to each other:
 /// </para>
 /// <list type="bullet">

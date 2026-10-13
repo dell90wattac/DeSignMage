@@ -21,6 +21,18 @@ public sealed class CanvasFrame : IDisposable
     /// <summary>The colors of what the program itself draws (R19). Only the on-screen canvas passes <see cref="CanvasTheme.Dark"/>.</summary>
     public CanvasTheme Theme { get; init; } = CanvasTheme.Light;
 
+    /// <summary>
+    /// The view has not moved for a moment after a pan. A bitmap made by moving the old pixels can differ from drawing the picture in a few antialiased edge
+    /// pixels (a shape that crosses the edge of the window is antialiased a little differently clipped than whole), so the settled frame draws it again.
+    /// </summary>
+    public bool Settled { get; init; }
+
+    /// <summary>The view is different from the one of the previous frame and was panned or zoomed in (zooming out is drawn from the picture).</summary>
+    public bool ViewMoved { get; init; }
+
+    /// <summary>The view moved, and the one before it moved a moment ago too: a wheel zoom or a pan in progress, where a stretched copy of the last sharp picture will do until it settles.</summary>
+    public bool InGesture { get; init; }
+
     /// <summary>Where the still part of the picture is kept as pixels while something is dragged over it (see <see cref="StaticLayerCache"/>). Null: always draw it from the picture.</summary>
     public StaticLayerCache? StaticLayer { get; init; }
 
@@ -98,11 +110,32 @@ public sealed class StaticLayerCache : IDisposable
     private SKImage? _image;
     private Key _key, _lastKey;
     private int _left, _top;
-
-    /// <summary>How many times the bitmap was made (tests, profiling).</summary>
-    public int Rebuilds { get; private set; }
+    private bool _exact = true;    // false after the bitmap was made by moving the old pixels
 
     private readonly record struct Key(uint Picture, SKMatrix Device, SKMatrix View, float Width, float Height, SKColor Pasteboard, SKColor? Page, SKRect PageRect);
+
+    private static readonly SKSamplingOptions Nearest = new(SKFilterMode.Nearest, SKMipmapMode.None);
+
+    /// <summary>
+    /// True when <paramref name="b"/> is <paramref name="a"/> panned by a whole number of device pixels (same picture, scale, size and colors):
+    /// the picture is then the same pixels moved, apart from what scrolled into view.
+    /// </summary>
+    private static bool PannedOnly(in Key a, in Key b, out int dx, out int dy)
+    {
+        dx = dy = 0;
+        if (a.Picture != b.Picture || !a.Device.Equals(b.Device) || a.Width != b.Width || a.Height != b.Height || a.Pasteboard != b.Pasteboard || a.Page != b.Page) return false;
+        var va = a.View; var vb = b.View;
+        if (va.ScaleX != vb.ScaleX || va.ScaleY != vb.ScaleY || va.SkewX != vb.SkewX || va.SkewY != vb.SkewY || va.Persp0 != vb.Persp0 || va.Persp1 != vb.Persp1) return false;
+        double vx = vb.TransX - va.TransX, vy = vb.TransY - va.TransY;
+        double px = vx * b.Device.ScaleX, py = vy * b.Device.ScaleY;
+        if (Math.Abs(px - Math.Round(px)) > 0.01 || Math.Abs(py - Math.Round(py)) > 0.01) return false;
+        // The page outline moves with the view; if it moved differently (the page is being resized) the bitmap is not just shifted.
+        if (Math.Abs(b.PageRect.Left - a.PageRect.Left - vx) > 1e-3 || Math.Abs(b.PageRect.Top - a.PageRect.Top - vy) > 1e-3 ||
+            Math.Abs(b.PageRect.Width - a.PageRect.Width) > 1e-3 || Math.Abs(b.PageRect.Height - a.PageRect.Height) > 1e-3) return false;
+        dx = (int)Math.Round(px);
+        dy = (int)Math.Round(py);
+        return true;
+    }
 
     /// <summary>Draws the base of <paramref name="frame"/> from the kept bitmap (making it if needed). False when the frame should be drawn the usual way.</summary>
     public bool TryDraw(SKCanvas canvas, CanvasFrame frame)
@@ -121,35 +154,152 @@ public sealed class StaticLayerCache : IDisposable
         var key = new Key(picture.UniqueId, m, frame.View, frame.Width, frame.Height, frame.Theme.Pasteboard, frame.Theme.Page, frame.PageScreenRect);
         lock (_gate)
         {
-            if (_image is null || !_key.Equals(key) || _image.Width != w || _image.Height != h)
+            bool sameSize = _image is not null && _image.Width == w && _image.Height == h && _left == left && _top == top;
+            if (sameSize && _key.Equals(key) && !_exact && frame.Settled)
             {
-                // A drag preview is a sure sign that the picture under it will not change; otherwise (a rubber band, the pointer moving about) wait for
-                // a second frame with the same picture and view, so panning and zooming, where every frame is new, never pay for a bitmap.
-                bool again = _lastKey.Equals(key);
-                _lastKey = key;
-                if (frame.Preview is null && !again) return false;
-                _image?.Dispose();
-                _image = null;
-                using var surface = SKSurface.Create(new SKImageInfo(w, h, SKImageInfo.PlatformColorType, SKAlphaType.Premul));
-                if (surface is null) return false;
-                var c = surface.Canvas;
-                // The same matrix the canvas has, moved so that device pixel (left, top) is this bitmap's first pixel.
-                c.SetMatrix(m.PostConcat(SKMatrix.CreateTranslation(-left, -top)));
-                c.ClipRect(SKRect.Create(frame.Width, frame.Height));
-                frame.DrawBase(c);
-                _image = surface.Snapshot();
-                _key = key;
+                // The pan is over: make the bitmap the way drawing the picture would.
+                if (!Build(frame, m, left, top, w, h)) return false;
+                Rebuilds++;
+                Settles++;
+            }
+            else if (!(sameSize && _key.Equals(key)))
+            {
+                if (sameSize && frame.InGesture && !frame.Settled && Magnification(_key, key, left, top, m, frame, out var magnify))
+                {
+                    // Zooming in during a wheel zoom: the last sharp picture, stretched. The sharp one comes when the view has stood still for a moment.
+                    canvas.Save();
+                    canvas.SetMatrix(magnify);
+                    canvas.DrawImage(_image, 0, 0, new SKSamplingOptions(SKFilterMode.Linear, SKMipmapMode.None));
+                    canvas.Restore();
+                    Magnified++;
+                    return true;
+                }
+                if (sameSize && PannedOnly(_key, key, out int dx, out int dy) && Math.Abs(dx) < w * 3 / 4 && Math.Abs(dy) < h * 3 / 4)
+                {
+                    // Panning: the old pixels moved, and only the strip that came into view is drawn from the picture.
+                    if (!Shift(frame, m, left, top, w, h, dx, dy)) return false;
+                    _key = key;
+                    _lastKey = key;
+                    _exact = false;
+                    Shifts++;
+                }
+                else
+                {
+                    // A drag preview is a sure sign that the picture under it will not change; otherwise (a rubber band, the pointer moving about) wait for
+                    // a second frame with the same picture and view (or the same view moved by whole pixels, a pan). A frame whose view just moved makes one at once: it costs about
+                    // what drawing the picture does, and the next frames of the gesture can then move or stretch it instead of drawing the picture.
+                    bool again = _lastKey.Equals(key) || PannedOnly(_lastKey, key, out _, out _);
+                    _lastKey = key;
+                    if (frame.Preview is null && !again && !frame.ViewMoved && !frame.Settled) return false;
+                    if (!Build(frame, m, left, top, w, h)) return false;
+                    _key = key;
+                    Rebuilds++;
+                }
                 _left = left;
                 _top = top;
-                Rebuilds++;
             }
             canvas.Save();
             canvas.SetMatrix(SKMatrix.Identity);   // device pixels; the clip set before stays where it was
-            canvas.DrawImage(_image, _left, _top, new SKSamplingOptions(SKFilterMode.Nearest, SKMipmapMode.None));
+            canvas.DrawImage(_image, _left, _top, Nearest);
             canvas.Restore();
         }
         return true;
     }
+
+    /// <summary>
+    /// When <paramref name="b"/> is <paramref name="a"/> zoomed in (up to 4 times) so that the whole control rectangle lies inside what the old bitmap holds: the matrix
+    /// that draws the old bitmap (its pixel (0, 0) at device pixel (left, top)) as the new view would show it.
+    /// </summary>
+    private static bool Magnification(in Key a, in Key b, int left, int top, SKMatrix m, CanvasFrame frame, out SKMatrix matrix)
+    {
+        matrix = default;
+        // The picture itself is not compared: it is recorded again when the zoom crosses a half octave (pictures are drawn from another copy then), which is no reason to
+        // draw a picture again for a few frames that are replaced by a sharp one in a moment.
+        if (!a.Device.Equals(b.Device) || a.Width != b.Width || a.Height != b.Height || a.Pasteboard != b.Pasteboard || a.Page != b.Page) return false;
+        var va = a.View; var vb = b.View;
+        if (va.SkewX != 0 || va.SkewY != 0 || vb.SkewX != 0 || vb.SkewY != 0 || va.ScaleX <= 0 || va.ScaleY <= 0) return false;
+        double ax = vb.ScaleX / va.ScaleX, ay = vb.ScaleY / va.ScaleY;
+        if (ax < 1.0005 || ay < 1.0005 || ax > MaxMagnification || ay > MaxMagnification) return false;
+        // device = m(view(doc)): new = a * old + b on each axis
+        double bx = m.ScaleX * vb.TransX + m.TransX - ax * (m.ScaleX * va.TransX + m.TransX);
+        double by = m.ScaleY * vb.TransY + m.TransY - ay * (m.ScaleY * va.TransY + m.TransY);
+        // The new control rectangle, seen in old device pixels, must lie inside the old one (the old bitmap is only valid there), one pixel in.
+        double nl = m.TransX, nr = m.TransX + frame.Width * m.ScaleX, nt = m.TransY, nb = m.TransY + frame.Height * m.ScaleY;
+        double ol = (nl - bx) / ax, or = (nr - bx) / ax, ot = (nt - by) / ay, ob = (nb - by) / ay;
+        double vl = Math.Floor(m.TransX + 0.5), vr = Math.Floor(nr + 0.5), vt = Math.Floor(m.TransY + 0.5), vbm = Math.Floor(nb + 0.5);
+        if (ol < vl + 1 || or > vr - 1 || ot < vt + 1 || ob > vbm - 1) return false;
+        matrix = new SKMatrix((float)ax, 0, (float)(ax * left + bx), 0, (float)ay, (float)(ay * top + by), 0, 0, 1);
+        return true;
+    }
+
+    /// <summary>The largest stretch of a kept bitmap while zooming in; beyond it the picture is drawn again (it would look too blurred).</summary>
+    public const double MaxMagnification = 4;
+
+    /// <summary>The same matrix the canvas has, moved so that device pixel (left, top) is the bitmap's first pixel.</summary>
+    private static SKMatrix BitmapMatrix(SKMatrix canvasMatrix, int left, int top) => canvasMatrix.PostConcat(SKMatrix.CreateTranslation(-left, -top));
+
+    private static SKSurface? NewSurface(int w, int h) => SKSurface.Create(new SKImageInfo(w, h, SKImageInfo.PlatformColorType, SKAlphaType.Premul));
+
+    private bool Build(CanvasFrame frame, SKMatrix m, int left, int top, int w, int h)
+    {
+        using var surface = NewSurface(w, h);
+        if (surface is null) return false;
+        var c = surface.Canvas;
+        // Clipped to the control rectangle exactly as the canvas is, so every pixel is what drawing the picture there would give (a path that crosses
+        // the clip is antialiased a little differently from one that does not).
+        c.SetMatrix(BitmapMatrix(m, left, top));
+        c.ClipRect(SKRect.Create(frame.Width, frame.Height));
+        frame.DrawBase(c);
+        _image?.Dispose();
+        _image = surface.Snapshot();
+        _exact = true;
+        return true;
+    }
+
+    private bool Shift(CanvasFrame frame, SKMatrix m, int left, int top, int w, int h, int dx, int dy)
+    {
+        using var surface = NewSurface(w, h);
+        if (surface is null || _image is null) return false;
+        var c = surface.Canvas;
+        c.DrawImage(_image, dx, dy, Nearest);
+        // What shows is the control's rectangle as the canvas rounds it. The old pixels cover the part of it that lay inside the old rectangle too;
+        // what they do not cover is a band along each side they moved away from.
+        int rl = (int)Math.Floor(m.TransX - left + 0.5), rt = (int)Math.Floor(m.TransY - top + 0.5);
+        int rr = (int)Math.Floor(m.TransX - left + frame.Width * m.ScaleX + 0.5), rb = (int)Math.Floor(m.TransY - top + frame.Height * m.ScaleY + 0.5);
+        int cl = Math.Max(rl, rl + dx), ct = Math.Max(rt, rt + dy), cr = Math.Min(rr, rr + dx), cb = Math.Min(rb, rb + dy);
+        var strips = new List<SKRectI>(4);
+        if (ct > rt) strips.Add(new SKRectI(rl, rt, rr, ct));
+        if (cb < rb) strips.Add(new SKRectI(rl, cb, rr, rb));
+        if (cl > rl) strips.Add(new SKRectI(rl, ct, cl, cb));
+        if (cr < rr) strips.Add(new SKRectI(cr, ct, rr, cb));
+        var full = BitmapMatrix(m, left, top);
+        var control = SKRect.Create((float)(m.TransX - left), (float)(m.TransY - top), frame.Width * m.ScaleX, frame.Height * m.ScaleY);
+        foreach (var strip in strips)
+        {
+            c.Save();
+            c.SetMatrix(SKMatrix.Identity);
+            var clip = SKRect.Create(strip.Left, strip.Top, strip.Width, strip.Height);
+            clip.Intersect(control);
+            c.ClipRect(clip);
+            c.SetMatrix(full);
+            frame.DrawBase(c);
+            c.Restore();
+        }        _image.Dispose();
+        _image = surface.Snapshot();
+        return true;
+    }
+
+    /// <summary>How many times the bitmap was made (tests, profiling).</summary>
+    public int Rebuilds { get; private set; }
+
+    /// <summary>How many times the bitmap was moved for a pan instead of made again (tests, profiling).</summary>
+    public int Shifts { get; private set; }
+
+    /// <summary>How many frames were drawn from the last sharp bitmap stretched, during a zoom (tests, profiling).</summary>
+    public int Magnified { get; private set; }
+
+    /// <summary>How many times a bitmap that had been moved was made again exactly once the pan was over (tests, profiling).</summary>
+    public int Settles { get; private set; }
 
     public void Dispose()
     {
@@ -179,9 +329,43 @@ public sealed class CanvasFrameBuilder(EditorSession session) : IDisposable
     /// <summary>The colors for the next frames (R19): Dark Canvas on or off. Set by the canvas control before each frame (the page is drawn where <see cref="EditorSession.PageBounds"/> says, also while its border is dragged).</summary>
     public CanvasTheme Theme { get; set; } = CanvasTheme.Light;
 
+    /// <summary>How long the view must stand still before a frame counts as settled after a pan.</summary>
+    public static readonly TimeSpan SettleDelay = TimeSpan.FromMilliseconds(120);
+
+    /// <summary>The clock the settle delay is measured with (ticks of <see cref="System.Diagnostics.Stopwatch"/>); tests replace it.</summary>
+    public Func<long> Clock { get; set; } = System.Diagnostics.Stopwatch.GetTimestamp;
+
+    /// <summary>Two view changes closer than this are one gesture (a wheel turning, a pan).</summary>
+    public static readonly TimeSpan GestureGap = TimeSpan.FromMilliseconds(100);
+
+    private ViewState _lastView;
+    private long _viewChangedAt = long.MinValue / 4;
+    private bool _panPending;
+
+    /// <summary>
+    /// True after the view was panned or zoomed until a frame has been built with the view standing still for <see cref="SettleDelay"/>.
+    /// The canvas asks for one more frame after the delay when this is set, so that the settled picture is drawn exactly.
+    /// </summary>
+    public bool SettleFramePending => UseStaticLayer && _panPending;
+
     public CanvasFrame Build(float width, float height)
     {
         var view = session.Viewport;
+        long now = Clock();
+        bool settled = false, moved = false, gesture = false;
+        if (!view.State.Equals(_lastView))
+        {
+            moved = view.State.Zoom >= _lastView.Zoom;     // a bitmap is only worth making where a pan or a zoom in can use it later; zooming out shows what it does not hold
+            gesture = (now - _viewChangedAt) * 1000.0 / System.Diagnostics.Stopwatch.Frequency < GestureGap.TotalMilliseconds;
+            _panPending = true;
+            _lastView = view.State;
+            _viewChangedAt = now;
+        }
+        else if (_panPending && (now - _viewChangedAt) * 1000.0 / System.Diagnostics.Stopwatch.Frequency >= SettleDelay.TotalMilliseconds)
+        {
+            settled = true;
+            _panPending = false;
+        }
         var preview = session.Preview;
         _scene.Wireframe = !session.ShowFillColors;
         _scene.ViewScale = view.Zoom;
@@ -200,6 +384,9 @@ public sealed class CanvasFrameBuilder(EditorSession session) : IDisposable
             Overlay = overlay,
             Theme = Theme,
             StaticLayer = UseStaticLayer ? _staticLayer : null,
+            Settled = settled,
+            ViewMoved = moved,
+            InGesture = gesture,
         };
     }
 

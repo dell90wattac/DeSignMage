@@ -15,6 +15,12 @@ public abstract record ImageOp
     /// <summary>Photographic negative: R, G and B are inverted, alpha is kept.</summary>
     public sealed record Invert : ImageOp;
 
+    /// <summary>
+    /// Rebuild the picture with exactly <paramref name="Width"/> x <paramref name="Height"/> pixels (a smooth, high-quality filter, up or
+    /// down). The picture's frame on the page does not change: only how many pixels fill it.
+    /// </summary>
+    public sealed record Resample(int Width, int Height) : ImageOp;
+
     /// <summary>Keep only the pixel rectangle (X, Y, W, H), measured from the top-left corner.</summary>
     public sealed record Crop(int X, int Y, int Width, int Height) : ImageOp;
 }

@@ -86,6 +86,32 @@ public sealed partial class EditorSession
         return commands.Count;
     }
 
+    // ---- Resample ----
+
+    /// <summary>Resample works on one selected picture.</summary>
+    public bool CanResample => ImageService is not null && HasSingleImageSelected;
+
+    /// <summary>The selected picture Resample would work on, with its pixel size known; null when there is none.</summary>
+    public ImageObject? ResampleTarget => CanResample && Selection.Items[0] is ImageObject image && EnsurePixelSize(image) ? image : null;
+
+    /// <summary>
+    /// Image ▸ Resample: rebuilds the selected picture with <paramref name="width"/> x <paramref name="height"/> pixels. Its size on the
+    /// page stays the same (only the dpi changes). One undo step; undo brings back the original pixels exactly. Big pictures are
+    /// processed in the background like the other picture commands.
+    /// </summary>
+    public bool Resample(int width, int height)
+    {
+        if (ResampleTarget is not { } image) return false;
+        LastImageError = null;
+        if (width < 1 || height < 1 || width == image.PixelWidth && height == image.PixelHeight) return false;
+        if (width > ResampleSizing.MaxSide || height > ResampleSizing.MaxSide || (long)width * height > ResampleSizing.MaxPixels)
+        {
+            LastImageError = "That would make the picture too large.";
+            return false;
+        }
+        return ApplyImageOp(new ImageOp.Resample(width, height), "Resample Bitmap") > 0;
+    }
+
     // ---- Slow pictures ----
 
     /// <summary>

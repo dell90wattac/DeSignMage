@@ -35,7 +35,7 @@ public partial class MainWindow : Window
         MenuNode.Menu("_Text", "tool.text", "-", "text.toCurves"),
         MenuNode.Menu("_Paragraph"),
         // Image menu: what is not built yet is shown disabled.
-        MenuNode.Menu("_Image", "image.vectorize", "image.crop", "image.rasterize", "-",
+        MenuNode.Menu("_Image", "image.vectorize", "image.crop", "image.rasterize", "image.resample", "-",
             MenuNode.Menu("Modify Pixels"), "-",
             "image.rotateCW", "image.rotateCCW", "image.flipH", "image.flipV", "image.invert", "image.commitRotation", "image.zoom11", "-",
             MenuNode.Menu("Color Depth"), "image.extractAlpha", "-",
@@ -345,7 +345,7 @@ public partial class MainWindow : Window
 
     private static readonly string[] GroupMenu = ["arrange.ungroup", "arrange.combine", "arrange.breakApart", "text.toCurves", "-", "edit.cut", "edit.copy", "edit.delete", "-", "arrange.toTop", "arrange.toBottom"];
     private static readonly string[] CombinedMenu = ["arrange.breakApart", "-", "edit.cut", "edit.copy", "edit.delete", "-", "arrange.toTop", "arrange.toBottom"];
-    private static readonly string[] ImageMenu = ["image.rotateCW", "image.rotateCCW", "image.flipH", "image.flipV", "image.invert", "-", "image.crop", "image.zoom11", "image.vectorize", "-", "edit.cut", "edit.copy", "edit.delete", "-", "arrange.toTop", "arrange.toBottom"];
+    private static readonly string[] ImageMenu = ["image.rotateCW", "image.rotateCCW", "image.flipH", "image.flipV", "image.invert", "-", "image.crop", "image.resample", "image.zoom11", "image.vectorize", "-", "edit.cut", "edit.copy", "edit.delete", "-", "arrange.toTop", "arrange.toBottom"];
     private static readonly string[] PartMenu = ["edit.cut", "edit.copy", "edit.delete", "-", "arrange.toTop", "arrange.toBottom"];
     /// <summary>Vector popup (double-click a vector in the vector tool).</summary>
     private static readonly string[] VectorMenu = ["vector.insert", "vector.toLine", "vector.toArc", "vector.toBezier", "vector.breakLoop", "vector.setStart", "vector.join", "-", "vector.delete"];
@@ -544,12 +544,14 @@ public partial class MainWindow : Window
         var b = _session.Selection.GetBounds();
         int groups = doc.GroupCount;
         long bitmapBytes = BitmapStats.TotalBytes(doc);
+        // A single selected picture: its pixels and resolution, as plain information.
+        string pictureInfo = _session.Selection.Items is [ImageObject picture] && ImageSizing.InfoText(picture) is { } text ? "    " + text : "";
         // While a path tool has an object open, the info line describes that graphic (R8 item 7).
         InfoLine.Text = _session.ActiveTool is PathEditToolBase { HasTarget: true } pathTool
             ? pathTool.InfoLine()
             : string.Create(CultureInfo.InvariantCulture,
             $"{(b.IsEmpty ? "" : $"{Units.ToInches(b.Width):0.0000} x {Units.ToInches(b.Height):0.0000}    ")}" +
-            $"{doc.ObjectCount} Objects    {groups} Groups    Bitmaps: {bitmapBytes / 1048576.0:0.00} MB total");
+            $"{doc.ObjectCount} Objects    {groups} Groups    Bitmaps: {bitmapBytes / 1048576.0:0.00} MB total{pictureInfo}");
         ZoomText.Text = $"{_session.Viewport.ZoomPercent:0.#}%";
         Title = $"{_documentTitle}{(_session.History.IsModified ? " *" : "")} - DeSign Mage";
 

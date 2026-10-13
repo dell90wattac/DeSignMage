@@ -49,6 +49,40 @@ public class ShellTests
     }
 
     [AvaloniaFact]
+    public void Layers_panel_lists_objects_in_drawing_order_and_notes_the_group_without_moving_rows_next_to_each_other()
+    {
+        var (w, c) = Open();
+        var s = w.Session;
+        RectangleObject Add(string name)
+        {
+            var r = new RectangleObject(10, 10) { Name = name, Style = ObjectStyle.FillOnly(DocColor.Black) };
+            s.History.Execute(new AddObjectCommand(s.Document.ActiveLayer, r));
+            return r;
+        }
+        var box = Add("box"); var outline = Add("outline"); var number = Add("number");
+        s.Selection.Set([box, number]);
+        var group = s.GroupSelection()!;
+        Dispatcher.UIThread.RunJobs();
+        w.CaptureRenderedFrame();
+
+        var rows = w.FindControl<ListBox>("LayersList")!.Items.Cast<string>().ToList();
+        // Layer row, then its objects top to bottom in drawing order: number, outline, box. The outline row stays between the members' rows.
+        Assert.Equal(4, rows.Count);
+        Assert.Contains("in Group", rows[1]);
+        Assert.DoesNotContain("in Group", rows[2]);
+        Assert.Contains("in Group", rows[3]);
+        Assert.Equal([group], s.Selection.Items);
+
+        // Clicking the outline's row selects only the outline; a member's row selects the whole group.
+        var list = w.FindControl<ListBox>("LayersList")!;
+        list.SelectedIndex = 2;
+        Assert.Equal([outline], s.Selection.Items);
+        list.SelectedIndex = 3;
+        Assert.Equal([group], s.Selection.Items);
+        w.Close();
+    }
+
+    [AvaloniaFact]
     public void Window_opens_and_renders_a_frame()
     {
         var (w, c) = Open(demo: true);

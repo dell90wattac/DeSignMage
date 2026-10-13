@@ -112,7 +112,7 @@ public class ImageShellTests : IDisposable
         string Name(Control c) => c is MenuItem m ? Strip(m.Header) : "-";
         Assert.Equal(
         [
-            "Vectorize...", "Crop Tool", "Rasterize...", "-", "Modify Pixels", "-",
+            "Vectorize...", "Crop Tool", "Rasterize...", "Resample...", "-", "Modify Pixels", "-",
             "Rotate 90 degrees clockwise", "Rotate 90 degrees counter-clockwise", "Flip Horizontal", "Flip Vertical", "Invert", "Commit Rotation", "1:1 Zoom", "-",
             "Color Depth", "Extract Alpha Channel", "-", "Save As...", "-",
             "Manage Image Fill Library...", "Update Image Fill Library", "Add to Image Fill Library..",
@@ -121,7 +121,7 @@ public class ImageShellTests : IDisposable
         // Nothing selected: picture commands are off (Vectorize asks for a file, so it stays on).
         bool Enabled(string header) => Cmd(w, "Image", header).CanExecute();
         Assert.True(Enabled("Vectorize..."));
-        foreach (var h in new[] { "Crop Tool", "Rasterize...", "Rotate 90 degrees clockwise", "Rotate 90 degrees counter-clockwise", "Flip Horizontal", "Flip Vertical", "Invert", "1:1 Zoom" })
+        foreach (var h in new[] { "Crop Tool", "Rasterize...", "Resample...", "Rotate 90 degrees clockwise", "Rotate 90 degrees counter-clockwise", "Flip Horizontal", "Flip Vertical", "Invert", "1:1 Zoom" })
             Assert.False(Enabled(h), h);
         // Never built yet: disabled whatever is selected.
         foreach (var h in new[] { "Commit Rotation", "Extract Alpha Channel", "Save As...", "Manage Image Fill Library...", "Update Image Fill Library", "Add to Image Fill Library.." })
@@ -135,7 +135,7 @@ public class ImageShellTests : IDisposable
         var (w, _) = Open();
         await ImportOne(w, WriteFlat("a.png", 60, 30));
 
-        foreach (var h in new[] { "Crop Tool", "Rotate 90 degrees clockwise", "Rotate 90 degrees counter-clockwise", "Flip Horizontal", "Flip Vertical", "Invert", "1:1 Zoom" })
+        foreach (var h in new[] { "Crop Tool", "Resample...", "Rotate 90 degrees clockwise", "Rotate 90 degrees counter-clockwise", "Flip Horizontal", "Flip Vertical", "Invert", "1:1 Zoom" })
             Assert.True(Cmd(w, "Image", h).CanExecute(), h);
         Assert.False(Cmd(w, "Image", "Rasterize...").CanExecute());   // a picture alone has nothing to rasterize
         // Shortcuts (Alt+V, Ctrl+F7, Alt+1) wait for the user's approval.

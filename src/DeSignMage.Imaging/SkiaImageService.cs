@@ -36,6 +36,7 @@ public sealed class SkiaImageService : IImageService
             ImageOp.Flip f => PixelOps.Flip(source, f.Horizontal),
             ImageOp.Invert => PixelOps.Invert(source),
             ImageOp.Crop c => PixelOps.Crop(source, c.X, c.Y, c.Width, c.Height),
+            ImageOp.Resample r => PixelResampler.Resample(source, r.Width, r.Height),
             _ => throw new ArgumentException($"Unknown image operation {op}."),
         };
         return Store(doc, result);

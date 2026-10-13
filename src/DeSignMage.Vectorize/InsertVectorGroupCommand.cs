@@ -6,7 +6,7 @@ namespace DeSignMage.Vectorize;
 
 /// <summary>
 /// Image ▸ Vectorize: puts the traced parts into the document as one <see cref="GroupObject"/> of
-/// <see cref="PathObject"/>s (bottom to top). One undo step removes the whole group.
+/// <see cref="PathObject"/>s (bottom to top; the parts go on top of the drawing order, the group is membership only). One undo step removes the whole group.
 /// </summary>
 public sealed class InsertVectorGroupCommand : IDocumentCommand, IUndoMemory
 {

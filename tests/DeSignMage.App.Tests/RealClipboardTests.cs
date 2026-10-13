@@ -67,6 +67,11 @@ public class RealClipboardTests
         w.KeyPress(Avalonia.Input.Key.V, Avalonia.Input.RawInputModifiers.Control, Avalonia.Input.PhysicalKey.V, "v");
         await w.ClipboardIdle;
         Avalonia.Threading.Dispatcher.UIThread.RunJobs();
+        Assert.True(w.Session.IsPlacing);                                  // the picture hangs on the cursor until a click
+        var at = w.Session.Viewport.VisibleDocRect.Center;
+        var screen = w.Session.Viewport.ToScreen(at);
+        w.Session.PointerDown(new DeSignMage.Core.Editing.PointerInput(screen, at, DeSignMage.Core.Editing.PointerButton.Left, DeSignMage.Core.Editing.ModifierKeys.None));
+        w.Session.PointerUp(new DeSignMage.Core.Editing.PointerInput(screen, at, DeSignMage.Core.Editing.PointerButton.Left, DeSignMage.Core.Editing.ModifierKeys.None));
 
         var img = Assert.IsType<DeSignMage.Core.Model.ImageObject>(Assert.Single(w.Session.Selection.Items));
         var px = ImageCodec.Decode(w.Session.Document.Assets.Get(img.AssetId)!.Data);

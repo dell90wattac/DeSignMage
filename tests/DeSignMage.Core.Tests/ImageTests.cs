@@ -33,6 +33,7 @@ internal sealed class FakeImageService : IImageService
         {
             ImageOp.Rotate90 => (s.H, s.W),
             ImageOp.Crop c => (c.Width, c.Height),
+            ImageOp.Resample r => (r.Width, r.Height),
             _ => s,
         };
         return new ImagePixels(Register(doc, w, h), w, h);

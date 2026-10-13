@@ -64,7 +64,7 @@ public static class Stacking
     /// the position that object will have once all of them are gone. Not inside any group.
     /// <para>
     /// (R22, open: a replacement for objects that were not next to each other in the drawing order covers whatever was between them. That is
-    /// what Weld, Combine and the effect commands did before and still do; whether the legacy program does the same with interleaved
+    /// what Weld, Combine and the effect commands did before and still do; whether the reference behavior is the same with interleaved
     /// members is not known yet. This method is the one place to change it.)
     /// </para>
     /// </summary>

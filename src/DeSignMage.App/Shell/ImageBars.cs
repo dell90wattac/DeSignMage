@@ -13,6 +13,9 @@ internal static class ImageActions
     /// <summary>The shell shows a failure (an unreadable picture) with this; null in tests that don't care.</summary>
     public static Action<string>? ShowError { get; set; }
 
+    /// <summary>Opens the Resample dialog (the window sets it).</summary>
+    public static Action? OpenResample { get; set; }
+
     public static bool Run(EditorSession session, ImageOp op, string description)
     {
         int done = session.ApplyImageOp(op, description);
@@ -48,6 +51,7 @@ public sealed class ImageContextRow : BarRow, IRefreshable
         AddButton("Flip V", "Flip Vertical", () => ImageActions.FlipVertical(session));
         AddButton("Invert", "Invert colors", () => ImageActions.Invert(session));
         AddButton("Crop", "Crop Tool", () => session.BeginCrop());
+        AddButton("Resample", "Resample: set the pixel size or resolution (the size on the page stays)", () => ImageActions.OpenResample?.Invoke());
         AddButton("1:1", "1:1 Zoom: one picture pixel per screen pixel", () => session.ZoomToImagePixels());
     }
 

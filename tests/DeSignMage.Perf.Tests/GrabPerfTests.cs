@@ -195,32 +195,94 @@ public class GrabPerfTests(ITestOutputHelper output)
     }
 
     [LocalFact(File)]
-    public void Frames_over_an_unchanged_picture_are_drawn_from_the_kept_bitmap_but_panning_and_zooming_never_make_one()
+    public void Frames_over_an_unchanged_picture_are_drawn_from_the_kept_bitmap()
     {
         var (session, frames, surface) = Open();
         using var keepFrames = frames; using var keepSurface = surface;
         session.ZoomToContent();
-        Frame(frames, surface, out _, out _);
-        Assert.Equal(0, frames.StaticLayer.Rebuilds);               // one frame: nothing to compare with yet
+        Frame(frames, surface, out _, out double first);           // the view is new: the bitmap is made at once (it costs about a drawing of the picture)
+        Assert.Equal(1, frames.StaticLayer.Rebuilds);
         Frame(frames, surface, out _, out double second);
-        Assert.Equal(1, frames.StaticLayer.Rebuilds);               // the same picture and view twice: kept
         Frame(frames, surface, out _, out double third);
         Assert.Equal(1, frames.StaticLayer.Rebuilds);
-        output.WriteLine($"second frame (makes the bitmap) {second:0.0} ms, then {third:0.0} ms");
+        output.WriteLine($"first frame (makes the bitmap) {first:0.0} ms, then {second:0.0} and {third:0.0} ms");
         Assert.True(third < 6, $"a frame over an unchanged picture took {third:0.0} ms");
-
-        for (int i = 0; i < 6; i++)
-        {
-            session.Viewport.PanBy(new Vec2(40, 10));               // every frame is a new view: a bitmap would never be used again
-            Frame(frames, surface, out _, out _);
-        }
-        for (int i = 0; i < 4; i++)
-        {
-            session.Wheel(new Vec2(800, 450), 1);
-            Frame(frames, surface, out _, out _);
-        }
-        Assert.Equal(1, frames.StaticLayer.Rebuilds);
     }
+
+    /// <summary>
+    /// Panning (middle button or Space + drag): every frame is the view moved by some pixels. Before, every frame replayed the whole picture (24 to 41 ms in
+    /// software, up to 80 ms at worst); now the kept bitmap is moved and only the strip that came into view is drawn, and when the pan stops the picture is drawn once more exactly.
+    /// </summary>
+    [LocalFact(File)]
+    public void Panning_the_big_layout_moves_the_kept_bitmap_and_ends_with_an_exact_picture()
+    {
+        var (session, frames, surface) = Open();
+        using var keepFrames = frames; using var keepSurface = surface;
+        var clock = new FakeClock();
+        frames.Clock = clock.Tick;
+        double worstUi = 0, worstDraw = 0, worstSettle = 0;
+        foreach (bool zoomedIn in new[] { false, true })
+        {
+            if (zoomedIn) session.Viewport.ZoomToFit(new Rect2(11000, -3250, 16300, 200)); else session.ZoomToContent();
+            Frame(frames, surface, out _, out _);
+            clock.Advance(500);
+            Frame(frames, surface, out _, out _);
+            var ui = new List<double>(); var draws = new List<double>();
+            int shiftsBefore = frames.StaticLayer.Shifts;
+            for (int k = 0; k < 30; k++)
+            {
+                session.Viewport.PanBy(new Vec2(k % 2 == 0 ? 21 : -9, k % 3 == 0 ? 7 : -4));
+                clock.Advance(16);
+                    Frame(frames, surface, out double build, out double draw);
+                ui.Add(build); draws.Add(draw);
+            }
+            Assert.Equal(30, frames.StaticLayer.Shifts - shiftsBefore);
+            Assert.True(frames.SettleFramePending);
+            clock.Advance(500);
+            Frame(frames, surface, out _, out double settle);          // the pan is over: drawn exactly, once
+            Assert.False(frames.SettleFramePending);
+            Frame(frames, surface, out _, out double idle);
+            draws.Sort(); ui.Sort();
+            output.WriteLine($"{(zoomedIn ? "flyers, zoomed in" : "whole layout")}: pan frames UI median {ui[15]:0.0} max {ui[^1]:0.0} ms, drawing median {draws[15]:0.0} max {draws[^1]:0.0} ms | settle frame {settle:0.0} ms, next {idle:0.0} ms");
+            worstUi = Math.Max(worstUi, ui[^1]); worstDraw = Math.Max(worstDraw, draws[^1]); worstSettle = Math.Max(worstSettle, idle);
+        }
+        // Debug, dev PC: drawing 2 to 4 ms per frame (24 to 41 ms median, 80 at worst, when every frame replays the picture).
+        Assert.True(worstDraw < 12, $"drawing a pan frame took {worstDraw:0.0} ms");
+        Assert.True(worstUi < 3, $"a pan frame cost the UI thread {worstUi:0.0} ms");
+        Assert.True(worstSettle < 6, $"the frame after the settle took {worstSettle:0.0} ms");
+    }
+
+    /// <summary>A wheel zoom in: the first notch is drawn sharp (and kept), the notches that follow while the wheel still turns are that bitmap stretched; sharp again when it stops.</summary>
+    [LocalFact(File)]
+    public void Zooming_in_with_the_wheel_stretches_the_kept_bitmap_and_ends_sharp()
+    {
+        var (session, frames, surface) = Open();
+        using var keepFrames = frames; using var keepSurface = surface;
+        var clock = new FakeClock();
+        frames.Clock = clock.Tick;
+        session.ZoomToContent();
+        Frame(frames, surface, out _, out _);
+        clock.Advance(500);
+        Frame(frames, surface, out _, out _);
+
+        var draws = new List<double>();
+        for (int notch = 0; notch < 5; notch++)
+        {
+            session.Wheel(new Vec2(900, 450), 1);
+            clock.Advance(40);
+            Frame(frames, surface, out _, out double draw);
+            draws.Add(draw);
+        }
+        output.WriteLine($"wheel zoom in, drawing per notch: {string.Join(", ", draws.Select(d => d.ToString("0.0")))} ms; {frames.StaticLayer.Magnified} stretched");
+        Assert.True(frames.StaticLayer.Magnified >= 2, $"only {frames.StaticLayer.Magnified} frames were stretched");
+        Assert.True(draws.Skip(1).Take(frames.StaticLayer.Magnified).Max() < 12, $"a stretched frame took {draws.Skip(1).Max():0.0} ms");   // 4 to 7 ms; 14 to 30 ms drawn from the picture
+        clock.Advance(500);
+        Frame(frames, surface, out _, out double settle);
+        Assert.False(frames.SettleFramePending);
+        output.WriteLine($"settle frame {settle:0.0} ms");
+    }
+
+    private sealed class FakeClock { public long Now; public long Tick() => Now; public void Advance(double ms) => Now += (long)(ms * Stopwatch.Frequency / 1000); }
     private static void Frame(CanvasFrameBuilder frames, SKSurface surface, out double buildMs, out double drawMs)
     {
         long t = Stopwatch.GetTimestamp();

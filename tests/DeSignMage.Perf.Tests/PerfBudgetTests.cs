@@ -174,6 +174,38 @@ public class PerfBudgetTests : IDisposable
         Assert.True(edit < 150, $"re-recording after an edit took {edit:0} ms");
     }
 
+    // ---- Groups (R22: a group is membership only, the drawing order is one flat list) ----
+
+    [Fact]
+    public void Grouping_moving_and_deleting_a_group_of_10000_shapes_stay_under_budget()
+    {
+        var doc = Shapes(10_000);
+        var s = new EditorSession(doc);
+        using var r = new SceneRenderer(doc) { ViewScale = 1 };
+        r.GetDocumentPicture(null).Release();
+
+        double group = Time(() => s.GroupObjects(doc.Layers[0].Children.ToList()));          // 10,000 members: a rubber band over everything
+        var g = Assert.IsType<GroupObject>(s.Selection.Items[0]);
+        double move = Best(5, () =>
+        {
+            s.TransformSelection("Move", Affine2.Translation(1, 0));                            // one transform on the group, whatever its size
+            return Time(() => r.GetDocumentPicture(null).Release());
+        });
+        double delete = Time(() => s.DeleteSelection());
+        double undo = Time(() => s.Undo());
+        double ungroup = Time(() => { s.Selection.Set(g); s.UngroupSelection(); });
+        Report("group 10,000 shapes", group, 400);
+        Report("re-record after moving a group of 10,000", move, 150);
+        Report("delete a group of 10,000", delete, 800);
+        Report("undo the delete", undo, 800);
+        Report("ungroup 10,000", ungroup, 400);
+        Assert.True(group < 400, $"grouping took {group:0} ms");
+        Assert.True(move < 150, $"re-recording after moving the group took {move:0} ms");
+        Assert.True(delete < 800 && undo < 800, $"delete {delete:0} ms, undo {undo:0} ms");
+        Assert.True(ungroup < 400, $"ungrouping took {ungroup:0} ms");
+        Assert.Equal(10_000, doc.Layers[0].Children.Count);
+    }
+
     // ---- Hit testing ----
 
     [Fact]
