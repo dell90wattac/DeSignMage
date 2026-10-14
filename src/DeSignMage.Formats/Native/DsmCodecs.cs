@@ -77,6 +77,8 @@ public sealed class DsmCodecRegistry
         r.Register(new GradientPaintCodec());
         r.Register(new RectangleCodec());
         r.Register(new EllipseCodec());
+        r.Register(new PolygonCodec());
+        r.Register(new ArrowCodec());
         r.Register(new PathCodec());
         r.Register(new GroupCodec());
         r.Register(new CombinedCodec());

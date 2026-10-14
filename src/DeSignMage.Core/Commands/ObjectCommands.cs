@@ -1,4 +1,4 @@
-﻿using DeSignMage.Core.Geometry;
+using DeSignMage.Core.Geometry;
 using DeSignMage.Core.Model;
 
 namespace DeSignMage.Core.Commands;
@@ -26,9 +26,13 @@ public sealed class AddObjectsCommand : IDocumentCommand, IUndoMemory
     private readonly DocObject[] _items;
     private readonly DocObject[] _drawingOrder;
 
-    public AddObjectsCommand(IObjectContainer container, IEnumerable<DocObject> items)
+    private readonly bool _atBottom;
+
+    /// <param name="atBottom">New items (a paste, a drop, an import): they go under everything in the layer, <see cref="Stacking.NewItemIndex"/>. Copies made by dragging go on top.</param>
+    public AddObjectsCommand(IObjectContainer container, IEnumerable<DocObject> items, bool atBottom = false)
     {
         _container = container;
+        _atBottom = atBottom;
         _items = items.ToArray();
         _drawingOrder = Stacking.DrawingOrderOf(_items).ToArray();
     }
@@ -41,7 +45,7 @@ public sealed class AddObjectsCommand : IDocumentCommand, IUndoMemory
     {
         var slot = _container switch
         {
-            Layer layer => new Slot(layer, layer.Children.Count),
+            Layer layer => new Slot(layer, _atBottom ? Stacking.NewItemIndex : layer.Children.Count),
             GroupObject group => new Slot(group.Layer ?? throw new InvalidOperationException($"{group} is not in the document."),
                 group.Layer.Children.Count, group, group.Children.Count),
             _ => throw new ArgumentException("A container is a layer or a group."),

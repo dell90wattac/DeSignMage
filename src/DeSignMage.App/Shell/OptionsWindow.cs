@@ -22,10 +22,12 @@ public static class OptionsPages
 {
     public const string AccessibilityId = "accessibility";
     public const string PerformanceId = "performance";
+    public const string VectorId = "vector";
 
     private static readonly List<OptionsPage> Pages =
     [
         new(AccessibilityId, "Accessibility", () => new AccessibilityOptionsPage()),
+        new(VectorId, "Vector editing", () => new VectorOptionsPage()),
         new(PerformanceId, "Performance & memory", () => new PerformanceOptionsPage()),
         // Add further sections here.
     ];

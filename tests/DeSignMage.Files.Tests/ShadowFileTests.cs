@@ -75,4 +75,40 @@ public class ShadowFileTests
         var loadedGroup = Assert.IsType<GroupObject>(after.OfType<PathObject>().Last(p => p.Name == "Shadow").Parent);
         Assert.Equal(4, loadedGroup.Children.Count);                                 // the two squares, each with its own shadow
     }
+
+    [Fact]
+    public void Black_shadows_with_a_moved_vanishing_point_and_a_dragged_cast_point_come_back_the_same()
+    {
+        var s = new EditorSession(new Document(PageSetup.FromInches(24, 12)))
+        {
+            BooleanService = GeometryEngines.Booleans,
+            OffsetService = GeometryEngines.Offsets,
+        };
+        var layer = s.Document.ActiveLayer;
+        var red = ObjectStyle.FillOnly(DocColor.FromHex("#CC0000"));
+        var p = new RectangleObject(100, 100) { Transform = Affine2.Translation(100, 100), Style = red };
+        var c = new RectangleObject(100, 100) { Transform = Affine2.Translation(400, 100), Style = red };
+        s.History.Execute(new AddObjectCommand(layer, p));
+        s.History.Execute(new AddObjectCommand(layer, c));
+        s.Selection.Set(p);
+        Assert.True(s.Shadow(new ShadowSettings { Form = ShadowForm.Perspective, ShiftX = 80, ShiftY = 20, DepthPercent = 50, Outline = 1, Pivot = new Vec2(100, 100) }).Applied);
+        s.Selection.Set(c);
+        Assert.True(s.Shadow(new ShadowSettings { Form = ShadowForm.Cast, ShiftX = 30, ShiftY = -40 }).Applied);   // Hs 30, Vs 40: a taller, slanted shadow
+
+        var loaded = Reload(s.Document);
+
+        var before = s.Document.Layers[0].Children;
+        var after = loaded.Layers[0].Children;
+        Assert.Equal(before.Count, after.Count);
+        for (int i = 0; i < before.Count; i++)
+        {
+            Assert.Equal(before[i].Style, after[i].Style);
+            Assert.Equal(before[i].GetWorldBounds(), after[i].GetWorldBounds());
+        }
+        foreach (var name in new[] { "Perspective Shadow", "Cast Shadow" })
+        {
+            var shadow = after.OfType<PathObject>().First(x => x.Name == name);
+            Assert.Equal(ObjectStyle.FillOnly(DocColor.Black), shadow.Style);            // black, not the red of the sources
+        }
+    }
 }

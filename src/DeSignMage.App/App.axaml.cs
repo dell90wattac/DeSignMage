@@ -27,6 +27,7 @@ public partial class App : Application
         AppSettings.Store = FeedbackHost.Get().Settings;
         UiScale.Load(AppSettings.Store);
         AppTheme.Load(AppSettings.Store);   // Dark Menus / Dark Canvas (R19), remembered between runs
+        VectorEditSettings.Load(AppSettings.Store);   // the small-vector threshold
         PerformanceSettings.Load(AppSettings.Store);   // undo memory limit, before any document exists
         if (Program.Options.TextScale is { } devScale) UiScale.SetScale(devScale, remember: false);
 

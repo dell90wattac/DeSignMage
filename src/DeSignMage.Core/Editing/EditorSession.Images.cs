@@ -259,7 +259,7 @@ public sealed partial class EditorSession
     {
         if (images.Count == 0) return;
         using (History.BeginTransaction(description ?? (images.Count == 1 ? "Import Bitmap" : "Import Bitmaps")))
-            foreach (var img in images) History.Execute(new AddObjectCommand(Document.ActiveLayer, img));
+            History.Execute(new AddObjectsCommand(Document.ActiveLayer, images, atBottom: true));   // new items go to the bottom of the layer
         Selection.Set(images);
     }
 

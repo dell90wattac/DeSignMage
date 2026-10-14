@@ -27,7 +27,8 @@ public abstract record OverlayItem;
 /// <summary>Selection bounding box, optionally with the 8 scale handles.</summary>
 public sealed record SelectionOverlay(Rect2 Bounds, bool Handles) : OverlayItem;
 
-public enum MarqueeKind { Select, Zoom }
+/// <summary>Select = rubber band, Zoom = right-button zoom box, Delete = a Vector Edit box that will delete the small nodes inside it (drawn red).</summary>
+public enum MarqueeKind { Select, Zoom, Delete }
 
 /// <summary>Rubber-band rectangle in document coordinates.</summary>
 public sealed record MarqueeOverlay(Rect2 Bounds, MarqueeKind Kind) : OverlayItem;
@@ -47,8 +48,11 @@ public sealed record ContextMenuRequest(Model.DocObject Target, Vec2 Screen, Men
 /// <summary>Which popup: the object's menu (groups, text, ...) or the vector menu inside the vector tool.</summary>
 public enum MenuKind { Object, Vector, Loop }
 
-/// <summary>A node mark in vector mode: big square = corner ("structural"), small cross = smooth node.</summary>
-public readonly record struct VectorNodeMark(Vec2 Position, bool Corner, bool Selected, bool Start = false);
+/// <summary>
+/// A node mark in vector mode: a square for a corner, a cross for a smooth node. <paramref name="Small"/> nodes (they start or end a vector
+/// shorter than the small-vector threshold, see <see cref="SmallVectors"/>) are drawn smaller than the rest.
+/// </summary>
+public readonly record struct VectorNodeMark(Vec2 Position, bool Corner, bool Selected, bool Start = false, bool Small = false);
 
 /// <summary>A loop drawn in vector mode / outline view: blue on the border, red inside, black when broken.</summary>
 public readonly record struct OutlineLoop(PathGeometry Path, LoopKind Kind);
@@ -102,3 +106,12 @@ public readonly record struct GradientHandleMark(Vec2 Position, Model.DocColor? 
 /// circle/ellipse outline (<see cref="Shape"/>) and, for an ellipse, the end of its second axis.
 /// </summary>
 public sealed record GradientOverlay(Vec2 Start, Vec2 End, Vec2? Axis2End, PathGeometry? Shape, IReadOnlyList<GradientHandleMark> Marks) : OverlayItem;
+
+/// <summary>One draggable point of an effect tool (the light of a bevel, the vanishing point of a perspective shadow, the top edge of a cast shadow): where it is, whether it is being dragged.</summary>
+public readonly record struct PointHandleMark(Vec2 Position, bool Active);
+
+/// <summary>
+/// Draggable points with the guide lines that explain them, in document coordinates: an optional dashed <see cref="Ring"/> (the dial of a light), lines from
+/// a fixed anchor to a point, and the points themselves (round handles).
+/// </summary>
+public sealed record PointHandlesOverlay(PathGeometry? Ring, IReadOnlyList<(Vec2 From, Vec2 To)> Lines, IReadOnlyList<PointHandleMark> Points) : OverlayItem;

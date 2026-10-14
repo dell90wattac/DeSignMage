@@ -9,6 +9,15 @@ namespace DeSignMage.Core.Commands;
 /// </summary>
 public static class Stacking
 {
+    /// <summary>
+    /// Where a NEW item goes in a layer's drawing order: the very bottom, under everything that was there before (the user's test of the
+    /// reference program, 2026-10-13: "when I copy and then paste something, or drag an item or draw a new square, it always ends up on the
+    /// bottom most layer"). New = drawn shapes, new text, pasted, dropped or imported items, Vectorize results. Not effect results (they
+    /// stay attached to their source) and not Combine/Weld results (they go to the front, see <see cref="ReplacementSlot"/>). Moving an
+    /// existing object never changes its stacking.
+    /// </summary>
+    public const int NewItemIndex = 0;
+
     /// <summary>Layer number and position of drawn objects, as numbers that compare in drawing order. Make one per operation: it must not outlive a change.</summary>
     public sealed class Order(Document doc)
     {
@@ -63,9 +72,10 @@ public static class Stacking
     /// Where a single object replacing <paramref name="bottomToTop"/> (top-level objects) goes: over the topmost drawn object among them, at
     /// the position that object will have once all of them are gone. Not inside any group.
     /// <para>
-    /// (R22, open: a replacement for objects that were not next to each other in the drawing order covers whatever was between them. That is
-    /// what Weld, Combine and the effect commands did before and still do; whether the reference behavior is the same with interleaved
-    /// members is not known yet. This method is the one place to change it.)
+    /// <b>R22 (the user's rule, 2026-10-13):</b> objects that are modified so that their stacking has to be readjusted are pulled to the front. So
+    /// when the objects were <i>apart</i> (not next to each other in one layer's drawing order, or on several layers), the result goes to the
+    /// <b>front</b>: the top of the layer of their topmost member. When they were next to each other it takes their place, as it always did,
+    /// so nothing around it changes. Used by Combine, Weld and Common Weld; the other effects replace one object with its own pieces in place.
     /// </para>
     /// </summary>
     internal static Slot ReplacementSlot(Document doc, IReadOnlyList<DocObject> bottomToTop)
@@ -87,8 +97,10 @@ public static class Stacking
         if (top is null) return new Slot(doc.ActiveLayer, doc.ActiveLayer.Children.Count);
         var layer = top.Layer!;
         int topIndex = layer.IndexOf(top);
-        int below = leaves.Count(l => ReferenceEquals(l.Layer, layer) && layer.IndexOf(l) < topIndex);
-        return new Slot(layer, topIndex - below);
+        var here = leaves.Where(l => ReferenceEquals(l.Layer, layer)).Select(layer.IndexOf).ToList();
+        bool together = here.Count == leaves.Count && here.Max() - here.Min() + 1 == here.Count;
+        if (!together) return new Slot(layer, layer.Children.Count - here.Count);   // apart: the front, as it is once they are gone
+        return new Slot(layer, topIndex - here.Count(i => i < topIndex));
     }
 
     /// <summary>Removes objects top-down, returning what undo needs to put them back.</summary>

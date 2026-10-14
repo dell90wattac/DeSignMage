@@ -44,10 +44,17 @@ public sealed partial class EditorSession
         RegisterTool(new SelectTool());
         RegisterTool(new RectangleTool());
         RegisterTool(new EllipseTool());
+        RegisterTool(new RoundedRectangleTool());   // Layout > Shapes
+        RegisterTool(new SquareTool());
+        RegisterTool(new CircleTool());
+        RegisterTool(new PolygonTool());
+        RegisterTool(new ArrowTool());
+        RegisterTool(new RoundCornersTool());
         RegisterTool(new VectorEditTool());
         RegisterTool(new LoopEditTool());
         RegisterTool(new VectorDrawTool());
         RegisterTool(new TextTool());
+        RegisterTool(new TextPathTool());
         RegisterTool(new EyedropperTool());
         RegisterTool(new CropTool());
         RegisterTool(new OutlineTool());
@@ -390,7 +397,7 @@ public sealed partial class EditorSession
             RemoveGuide(guide);   // Delete removes the selected guide
             return;
         }
-        if (Selection.IsEmpty) return;
+        if (Selection.IsEmpty || SelectionLocked) return;   // a locked object can't be deleted by accident
         History.Execute(new DeleteObjectsCommand(Selection.Items));
     }
 
@@ -414,7 +421,7 @@ public sealed partial class EditorSession
 
     public void TransformSelection(string description, Affine2 worldDelta)
     {
-        if (Selection.IsEmpty || worldDelta.IsIdentity) return;
+        if (Selection.IsEmpty || worldDelta.IsIdentity || SelectionLocked) return;   // a locked object stays where it is
         History.Execute(TransformObjectsCommand.ApplyWorld(description, Selection.Items, worldDelta));
     }
 
@@ -433,9 +440,9 @@ public sealed partial class EditorSession
 
     // ---- Grouping (requirement R2) ----
 
-    public bool CanGroup => Selection.Count >= 2;
-    public bool CanUngroup => Selection.Items.Any(o => o is GroupObject);
-    public bool CanCombine => CombineCommand.CanCombine(Selection.Items) &&
+    public bool CanGroup => Selection.Count >= 2 && !SelectionLocked;
+    public bool CanUngroup => Selection.Items.Any(o => o is GroupObject) && !SelectionLocked;
+    public bool CanCombine => !SelectionLocked && CombineCommand.CanCombine(Selection.Items) &&
                               (Selection.Count >= 2 || Selection.Items[0] is GroupObject);
 
     /// <summary>Make Group: wraps the selected top-level objects in a new group and selects it.</summary>
@@ -474,7 +481,7 @@ public sealed partial class EditorSession
         return cmd.Combined;
     }
 
-    public bool CanBreakApart => Selection.Items.Any(IsBreakApartTarget);
+    public bool CanBreakApart => Selection.Items.Any(IsBreakApartTarget) && !SelectionLocked;
 
     // A group dissolves completely; a combined object splits back into its original pieces; any other multi-loop graphic
     // (e.g. an imported shape made of a pad + toes) splits into its loops, which is what K does.
@@ -541,7 +548,7 @@ public sealed partial class EditorSession
 
     public void Cut()
     {
-        if (Selection.IsEmpty) return;
+        if (Selection.IsEmpty || SelectionLocked) return;
         Copy();
         DeleteSelection();
     }

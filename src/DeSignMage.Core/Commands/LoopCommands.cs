@@ -45,7 +45,7 @@ public sealed class BreakIntoLoopsCommand : IDocumentCommand, IUndoMemory
     };
 
     /// <summary>Shapes whose outline is real geometry. Text and pictures only have a bounding box, so they are never split.</summary>
-    private static bool HasLoops(DocObject o) => o is PathObject or RectangleObject or EllipseObject;
+    private static bool HasLoops(DocObject o) => Editing.OutlineView.HasShape(o);
 
     private static int LoopCount(DocObject part) => HasLoops(part) && part.GetLocalGeometry() is { } g ? PathEditing.ToLoops(g).Count : 0;
 

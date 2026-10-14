@@ -30,7 +30,7 @@ internal static class MenuStripIcons
             string toolId = commandId["tool.".Length..].ToLowerInvariant();
             if (Toolbox.Buttons.FirstOrDefault(b => b.ToolId == toolId) is { } spec) return UiIcons.Box(spec.Icon(), size, size);
         }
-        return Drawn.TryGetValue(commandId, out var make) ? UiIcons.Box(make(), size, size) : null;
+        return Drawn.TryGetValue(commandId, out var make) ? UiIcons.Box(make(), size, size) : ArrangeIcons.For(commandId, size);   // Arrange's own icons (ArrangeIcons.cs)
     }
 
     /// <summary>The short word shown on a strip button (the tooltip keeps the full command name).</summary>
@@ -43,14 +43,14 @@ internal static class MenuStripIcons
         ["effects.commonWeld"] = "C. Weld", ["effects.cookieCutter"] = "Cookie",
         ["effects.gradientBlend"] = "Gradient",
         ["effects.softShadow"] = "Soft Sh.", ["effects.glow"] = "Glow", ["effects.feather"] = "Feather",
-        ["effects.easyBevel"] = "Bevel", ["effects.shadow"] = "Drop",["effects.shadowExtruded"] = "Extruded", ["effects.shadowPerspective"] = "Persp.", ["effects.shadowCast"] = "Cast",
+        ["effects.easyBevel"] = "Bevel", ["effects.textOnPath"] = "Path", ["effects.shadow"] = "Drop",["effects.shadowExtruded"] = "Extruded", ["effects.shadowPerspective"] = "Persp.", ["effects.shadowCast"] = "Cast",
         ["tool.select"] = "Layout", ["tool.vector"] = "Vector", ["tool.vectorDraw"] = "Draw", ["tool.text"] = "Text", ["tool.rectangle"] = "Rectangle", ["tool.ellipse"] = "Ellipse", ["tool.loop"] = "Loops", ["tools.showTransparency"] = "Transparency", ["tools.options"] = "Options",
     };
 
     /// <summary>The label of a command: its short word, or (for a command without one) the first word of its name.</summary>
     public static string LabelFor(AppCommand command)
     {
-        if (Labels.TryGetValue(command.Id, out var label)) return label;
+        if (Labels.TryGetValue(command.Id, out var label) || ArrangeIcons.Labels.TryGetValue(command.Id, out label)) return label;
         var words = command.Header.Replace("_", "").Replace(".", "").Split(' ', StringSplitOptions.RemoveEmptyEntries);
         return words.Length == 0 ? command.Id : words[0];
     }
@@ -141,6 +141,9 @@ internal static class MenuStripIcons
 
         // a block with a light rim on its upper left and a dark one on its lower right
         ["effects.easyBevel"] = () => Box(Fill("M3,3 H17 V17 H3 Z"), Stroke("M3.5,16.5 V3.5 H16.5", Paper, 1.8), Stroke("M16.5,3.5 V16.5 H3.5", Accent, 1.8)),
+
+        // a curve with three letters standing on it, each turned to follow it
+        ["effects.textOnPath"] = () => Box(Stroke("M2,16 C6,15 9,11 12,8 C14,6 16,4 18,3", Accent, 1.6), Fill("M3,11 H5.4 V15 H3 Z"), Fill("M8.2,6.6 H10.6 V10.6 H8.2 Z"), Fill("M13.6,1.2 H16 V5.2 H13.6 Z")),
 
         // ---- Tools (select, vector and vector draw come from the Toolbox) ----
         // a closed loop with its start point marked

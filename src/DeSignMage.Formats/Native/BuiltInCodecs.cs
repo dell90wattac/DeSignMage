@@ -1,5 +1,6 @@
-﻿using System.Text.Json;
+using System.Text.Json;
 using DeSignMage.Core.Model;
+using DeSignMage.Core.Text;
 
 namespace DeSignMage.Formats.Native;
 
@@ -40,6 +41,38 @@ internal sealed class EllipseCodec : ObjectCodec<EllipseObject>
     }
 
     protected override EllipseObject ReadFields(JsonElement e, DsmReadContext ctx) => new(e.Num("width"), e.Num("height"));
+}
+
+internal sealed class PolygonCodec : ObjectCodec<PolygonObject>
+{
+    public override string Kind => "polygon";
+
+    protected override void WriteFields(PolygonObject o, DsmWriteContext ctx)
+    {
+        ctx.Json.WriteNumber("sides", o.Sides);
+        ctx.Json.WriteNum("radius", o.Radius);
+        if (o.InnerRatio != 0) ctx.Json.WriteNum("innerRatio", o.InnerRatio);
+        ctx.Json.WriteNum("startAngle", o.StartAngle);
+    }
+
+    protected override PolygonObject ReadFields(JsonElement e, DsmReadContext ctx) =>
+        new(e.Int("sides", 5), e.Num("radius"), e.Num("innerRatio"), e.Num("startAngle", -Math.PI / 2));
+}
+
+internal sealed class ArrowCodec : ObjectCodec<ArrowObject>
+{
+    public override string Kind => "arrow";
+
+    protected override void WriteFields(ArrowObject o, DsmWriteContext ctx)
+    {
+        ctx.Json.WriteNum("length", o.Length);
+        ctx.Json.WriteNum("headWidth", o.HeadWidth);
+        ctx.Json.WriteNum("headFraction", o.HeadFraction);
+        ctx.Json.WriteNum("shaftFraction", o.ShaftFraction);
+    }
+
+    protected override ArrowObject ReadFields(JsonElement e, DsmReadContext ctx) =>
+        new(e.Num("length"), e.Num("headWidth"), e.Num("headFraction", 0.4), e.Num("shaftFraction", 0.4));
 }
 
 internal sealed class PathCodec : ObjectCodec<PathObject>
@@ -106,6 +139,38 @@ internal sealed class TextCodec : ObjectCodec<TextObject>
             w.WriteBoolean("fontMissing", true);
             w.WriteString("fontResolved", o.ResolvedFontFamily);
         }
+        if (o.OnPath is { } onPath) WriteOnPath(w, onPath);
+    }
+
+    /// <summary>
+    /// Text on a Path: the path (in the text's own space) and how the text follows it. An optional field: a reader that does not know it shows the
+    /// text straight, and nothing else changes.
+    /// </summary>
+    private static void WriteOnPath(System.Text.Json.Utf8JsonWriter w, TextOnPath p)
+    {
+        w.WriteStartObject("onPath");
+        w.WritePath("path", p.Path);
+        w.WriteNum("curveCompensation", p.CurveCompensation);
+        if (p.Spacing != TextPathSpacing.Fit) w.WriteEnum("spacing", p.Spacing);
+        if (p.StartOffset != 0) w.WriteNum("startOffset", p.StartOffset);
+        if (p.Side != TextPathSide.Above) w.WriteEnum("side", p.Side);
+        if (p.Flip) w.WriteBoolean("flip", true);
+        if (p.Raise != 0) w.WriteNum("raise", p.Raise);
+        w.WriteEndObject();
+    }
+
+    private static TextOnPath? ReadOnPath(JsonElement e, DsmReadContext ctx)
+    {
+        if (!e.TryGet("onPath", out var p) || !p.TryGet("path", out _)) return null;
+        return new TextOnPath(DsmJson.ReadPath(p.Obj("path")))
+        {
+            CurveCompensation = p.Num("curveCompensation", TextOnPath.DefaultCompensation),
+            Spacing = p.EnumOf("spacing", TextPathSpacing.Fit, ctx),
+            StartOffset = p.Num("startOffset"),
+            Side = p.EnumOf("side", TextPathSide.Above, ctx),
+            Flip = p.Bool("flip"),
+            Raise = p.Num("raise"),
+        };
     }
 
     protected override TextObject ReadFields(JsonElement e, DsmReadContext ctx) =>
@@ -117,6 +182,7 @@ internal sealed class TextCodec : ObjectCodec<TextObject>
             Kerning = e.Doubles("kerning"),
             Alignment = e.EnumOf("alignment", TextAlignment.Left, ctx),
             LineSpacing = e.Num("lineSpacing", 1),
+            OnPath = ReadOnPath(e, ctx),
         };
 }
 

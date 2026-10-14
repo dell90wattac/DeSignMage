@@ -100,6 +100,11 @@ internal static class SampleDocuments
         string asset = doc.Assets.Add(TinyPng(), "image/png");
         doc.Insert(l3, -1, new ImageObject(asset, 72, 54, 4, 3, "customer logo.png") { Name = "photo", Transform = Affine2.Translation(600, 20) });
 
+        // shapes with their own settings: a star, a plain polygon, an arrow
+        doc.Insert(l3, -1, new PolygonObject(7, 33.5, 0.42, 0.7) { Name = "star", Transform = Affine2.Translation(120.25, 80.5), Style = ObjectStyle.FillOnly(VinylGold) });
+        doc.Insert(l3, -1, new PolygonObject(6, 20) { Style = ObjectStyle.None, Transform = Affine2.Rotation(0.2) * Affine2.Translation(300, 90) });
+        doc.Insert(l3, -1, new ArrowObject(150.5, 45.25, 0.35, 0.55) { Name = "arrow", Transform = Affine2.Rotation(0.5) * Affine2.Translation(10, 10), Style = ObjectStyle.FillOnly(GlassBlue) });
+
         // guides
         new AddGuideCommand(Guide.Horizontal(100.5)).Do(doc);
         new AddGuideCommand(Guide.Vertical(250)).Do(doc);

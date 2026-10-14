@@ -126,7 +126,7 @@ public static class SvgExporter
                     WriteImage(img, img.GetWorldTransform());
                     break;
 
-                case TextObject text when !options.TextAsOutlines:
+                case TextObject text when !options.TextAsOutlines && !text.IsOnPath:   // on a path the letters are written as outlines
                     WriteLiveText(text, text.GetWorldTransform());
                     break;
 
@@ -174,7 +174,7 @@ public static class SvgExporter
                 case ImageObject img:
                     if (fill) WriteImage(img, world);
                     break;
-                case TextObject text when !options.TextAsOutlines:
+                case TextObject text when !options.TextAsOutlines && !text.IsOnPath:   // on a path the letters are written as outlines
                     if (fill) WriteLiveText(text, world);   // live text keeps one element; its outline (if any) goes with it
                     break;
                 default:

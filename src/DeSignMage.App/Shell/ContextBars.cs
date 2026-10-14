@@ -28,6 +28,10 @@ public static class ContextBars
     {
         SelectTool => new SelectionContextBar(session),
         RectangleTool r => new RectangleContextBar(session, r),
+        RoundedRectangleTool rr => new RoundedRectangleContextBar(session, rr),
+        PolygonTool pg => new PolygonContextBar(session, pg),
+        ArrowTool ar => new ArrowContextBar(session, ar),
+        RoundCornersTool rc => new RoundCornersContextBar(session, rc),
         TextTool => new TextToolContextBar(session),
         CropTool c => new CropContextBar(session, c),
         VectorEditTool v => new VectorEditContextBar(session, v),
@@ -40,6 +44,7 @@ public static class ContextBars
         BevelTool bv => new BevelContextBar(session, bv),
         SoftEffectTool se => new SoftEffectContextBar(session, se),
         FeatherTool ft => new FeatherContextBar(session, ft),
+        TextPathTool tp => new TextPathContextBar(session, tp),
         _ => new ToolNameContextBar(tool),
     };
 
@@ -179,8 +184,11 @@ public sealed class SelectionContextBar : ContextBarBase, IRefreshable
     private readonly TextBlock _count = new() { VerticalAlignment = VerticalAlignment.Center, Foreground = AppTheme.Brush("Ui.Muted") };
     private bool _refreshing, _edited;
     private readonly Button _combine, _breakApart, _group, _ungroup;
+    private readonly (AlignMode Mode, Button Button)[] _align;   // Arrange > Align: Left, Center, Right, Top, Middle, Bottom
+    private readonly Button _centerLayout, _mirrorH, _mirrorV, _lock;
     private readonly TextFormatPanel _text;
     private readonly ImageContextRow _image;   // pixel size, dpi and the Image menu buttons while a bitmap is selected
+    private readonly ShapeSelectionFields _shapeFields;
 
     internal TextFormatPanel TextPanel => _text;
 
@@ -189,6 +197,7 @@ public sealed class SelectionContextBar : ContextBarBase, IRefreshable
         _session = session;
         _text = new TextFormatPanel(session, twoRows: false) { IsVisible = false };
         _image = new ImageContextRow(session);
+        _shapeFields = new ShapeSelectionFields(session);
         _x = ContextBars.NumberBox(Apply);
         _y = ContextBars.NumberBox(Apply);
         _w = ContextBars.NumberBox(Apply);
@@ -212,10 +221,47 @@ public sealed class SelectionContextBar : ContextBarBase, IRefreshable
         Row2.Children.Add(_group);
         Row2.Children.Add(_ungroup);
         Row2.Children.Add(ContextBars.Separator());
+
+        // Arrange: Align (and center on the layout), Mirror and Lock, as small icon buttons at the end of row 2 (after the picture and text
+        // controls, which keep their places). Each shows only when its command would work (R26).
+        _align =
+        [
+            (AlignMode.Left, ArrangeButton("arrange.alignLeft", "Align Left (L)", () => _session.Align(AlignMode.Left))),
+            (AlignMode.Center, ArrangeButton("arrange.alignCenter", "Align Center (N)", () => _session.Align(AlignMode.Center))),
+            (AlignMode.Right, ArrangeButton("arrange.alignRight", "Align Right (R)", () => _session.Align(AlignMode.Right))),
+            (AlignMode.Top, ArrangeButton("arrange.alignTop", "Align Top Edge", () => _session.Align(AlignMode.Top))),
+            (AlignMode.Middle, ArrangeButton("arrange.alignMiddle", "Align Vertical Center", () => _session.Align(AlignMode.Middle))),
+            (AlignMode.Bottom, ArrangeButton("arrange.alignBottom", "Align Bottom Edge", () => _session.Align(AlignMode.Bottom))),
+        ];
+        _centerLayout = ArrangeButton("arrange.centerBoth", "Center of Layout: center the selection on the page", () => _session.CenterOnPage(PageCentering.Both));
+        _mirrorH = ArrangeButton("arrange.mirrorH", "Horizontal Mirror", () => _session.Mirror(horizontal: true));
+        _mirrorV = ArrangeButton("arrange.mirrorV", "Vertical Mirror", () => _session.Mirror(horizontal: false));
+        _lock = ArrangeButton("arrange.lock", "Locked", () => _session.ToggleLockSelection());
         Row2.Children.Add(_image);   // shown while a bitmap is selected
         Row2.Children.Add(ContextBars.Separator());
         Row2.Children.Add(_text);    // font controls: shown while the selection holds live text (R6)
+        Row2.Children.Add(_shapeFields);   // polygon / star and arrow settings: shown while only those are selected
+        foreach (var (_, button) in _align) Row2.Children.Add(button);
+        Row2.Children.Add(_centerLayout);
+        Row2.Children.Add(ContextBars.Separator());
+        Row2.Children.Add(_mirrorH);
+        Row2.Children.Add(_mirrorV);
+        Row2.Children.Add(ContextBars.Separator());
+        Row2.Children.Add(_lock);
         Refresh();
+    }
+
+    /// <summary>A small icon button of the Arrange group (Align, Mirror, Locked): the drawn icon, with the command's name as its tooltip.</summary>
+    private static Button ArrangeButton(string commandId, string tip, Action run)
+    {
+        var b = new Button { Content = ArrangeIcons.For(commandId, 16), Focusable = false, VerticalAlignment = VerticalAlignment.Center };
+        b.Classes.Add("tb");
+        b.MinWidth = b.MinHeight = 0;   // compact: ten of them share the row with the group buttons
+        b.Padding = new Avalonia.Thickness(2);
+        ToolTip.SetTip(b, tip);
+        Avalonia.Automation.AutomationProperties.SetName(b, tip);
+        b.Click += (_, _) => run();
+        return b;
     }
 
     /// <summary>True when the selection is one or more text objects selected directly, and nothing else.</summary>
@@ -229,8 +275,10 @@ public sealed class SelectionContextBar : ContextBarBase, IRefreshable
         _text.IsVisible = IsOnlyText(_session);
         if (_text.IsVisible) _text.Refresh();
         _image.Refresh();
+        _shapeFields.Refresh();
         var b = _session.Selection.GetBounds();
-        bool has = !b.IsEmpty;
+        bool locked = _session.SelectionLocked;
+        bool has = !b.IsEmpty && !locked;   // a locked selection can't be moved or resized: no fields
         foreach (var t in new[] { _x, _y, _w, _h }) t.IsEnabled = has;
         foreach (var field in _fields) field.IsVisible = has;
         if (has)
@@ -251,11 +299,18 @@ public sealed class SelectionContextBar : ContextBarBase, IRefreshable
         ContextBars.Valid(_breakApart, _session.CanBreakApart);
         ContextBars.Valid(_group, _session.CanGroup);
         ContextBars.Valid(_ungroup, _session.CanUngroup);
+        foreach (var (mode, button) in _align) ContextBars.Valid(button, _session.CanAlign(mode));
+        ContextBars.Valid(_centerLayout, _session.CanCenterOnPage);
+        ContextBars.Valid(_mirrorH, _session.CanMirror);
+        ContextBars.Valid(_mirrorV, _session.CanMirror);
+        ContextBars.Valid(_lock, _session.CanLock);
+        _lock.Classes.Set("on", _session.SelectionAllLocked);   // pressed while the selection is locked: a click unlocks
+        ToolTip.SetTip(_lock, _session.SelectionAllLocked ? "Locked (click to unlock)" : "Lock: a locked object can't be selected on the canvas or moved");
         _count.Text = _session.Selection.Count switch
         {
             0 => "Nothing selected",
-            1 => _session.Selection.Items[0].KindName + " selected",
-            int n => $"{n} objects selected",
+            1 => _session.Selection.Items[0].KindName + (locked ? " selected (locked)" : " selected"),
+            int n => $"{n} objects selected" + (locked ? " (locked)" : ""),
         };
         _refreshing = false;
     }
@@ -283,6 +338,11 @@ public sealed class SelectionContextBar : ContextBarBase, IRefreshable
     internal Button BreakApart => _breakApart;
     internal Button Group => _group;
     internal Button Ungroup => _ungroup;
+    internal Button AlignButton(AlignMode mode) => _align.First(a => a.Mode == mode).Button;
+    internal Button CenterLayout => _centerLayout;
+    internal Button MirrorH => _mirrorH;
+    internal Button MirrorV => _mirrorV;
+    internal Button Lock => _lock;
     internal TextBox X => _x;
     internal TextBox Y => _y;
     internal TextBox W => _w;

@@ -13,6 +13,23 @@ public sealed class AddGuideCommand(Guide guide, int index = -1) : IDocumentComm
     public void Undo(Document doc) => doc.Guides.Remove(Guide);
 }
 
+/// <summary>Adds several guides as one undo step (Layout ▸ Guides). Undo removes exactly those guides again.</summary>
+public sealed class AddGuidesCommand(IReadOnlyList<Guide> guides, string description = "Add Guides") : IDocumentCommand
+{
+    public IReadOnlyList<Guide> Guides { get; } = guides.ToArray();
+    public string Description { get; } = description;
+
+    public void Do(Document doc)
+    {
+        foreach (var g in Guides) doc.Guides.Insert(-1, g);
+    }
+
+    public void Undo(Document doc)
+    {
+        for (int i = Guides.Count - 1; i >= 0; i--) doc.Guides.Remove(Guides[i]);
+    }
+}
+
 /// <summary>Removes one guide; undo puts it back at its old position in the list.</summary>
 public sealed class RemoveGuideCommand(Guide guide) : IDocumentCommand
 {

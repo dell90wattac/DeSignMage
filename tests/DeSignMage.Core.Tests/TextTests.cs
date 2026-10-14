@@ -734,20 +734,25 @@ public class TextEditorTests
         _s.PointerUp(At(x1, y1, PointerButton.Left));
     }
 
-    /// <summary>Height of the ink of the capital H in the object's own units.</summary>
-    private static double CapHeightOf(TextObject t) => t.Layout.Outline.GetBounds().Height;
+    /// <summary>Where the baseline lands for a box starting at <paramref name="top"/>: the font's ascent..descent line fills the box.</summary>
+    private static double BaselineFor(double top, double height)
+    {
+        var f = TextEngine.Fonts.Resolve("Arial", 400, false);
+        return top + height * f.Ascent / (f.Ascent + f.Descent);
+    }
 
     [Fact]
-    public void Dragging_a_box_sets_the_capital_letter_height_from_the_box_height_only()
+    public void Dragging_a_box_sets_the_full_font_size_from_the_box_height_only()
     {
         _s.SetTool("text");
         DragBox(100, 200, 500, 260);              // 60 tall, 400 wide
         Assert.True(_s.IsTextEditing);
         Type("H");
         var t = OnlyText();
-        Assert.Equal(60, CapHeightOf(t), 0);       // the capital H is as tall as the box (± a point of rounding)
-        Assert.Equal(new Vec2(100, 260), t.Transform.Offset);   // baseline on the box's bottom edge, starting at its left edge
-        Assert.Equal(t.FontSize, 60 / TextEngine.CapHeightEm("Arial", 400, false), 6);
+        Assert.Equal(60, t.FontSize, 6);           // the box height IS the font size (em): a 2 inch box gives 2 inch type
+        Assert.Equal(100, t.Transform.OffsetX, 6); // starting at the box's left edge
+        Assert.Equal(BaselineFor(200, 60), t.Transform.OffsetY, 6);
+        Assert.True(t.GetWorldBounds().Top >= 200 && t.GetWorldBounds().Bottom <= 260);   // the letters sit inside the box
         Press(EditorKey.Escape);
 
         // The width is ignored: a box twice as wide and the same height gives the same size, and nothing wraps.
@@ -777,8 +782,8 @@ public class TextEditorTests
         Assert.True(_s.IsTextEditing);
         Assert.Empty(_s.BuildOverlay().OfType<MarqueeOverlay>());   // the box is gone, the caret shows
         Type("H");
-        Assert.Equal(new Vec2(100, 260), OnlyText().Transform.Offset);   // dragged up and left: still the same box
-        Assert.Equal(60, CapHeightOf(OnlyText()), 0);
+        Assert.Equal(new Vec2(100, BaselineFor(200, 60)), OnlyText().Transform.Offset);   // dragged up and left: still the same box
+        Assert.Equal(60, OnlyText().FontSize, 6);
     }
 
     [Fact]
@@ -823,7 +828,7 @@ public class TextEditorTests
         Assert.Single(_s.History.UndoList);
         Assert.Equal("Add Text", _s.History.UndoDescription);
         var t = OnlyText();
-        Assert.Equal(60, CapHeightOf(new TextObject("H", t.FontFamily, t.FontSize)), 0);
+        Assert.Equal(60, t.FontSize, 6);
         _s.Undo();
         Assert.Empty(_s.Document.ActiveLayer.Children);
         _s.Redo();
@@ -849,11 +854,11 @@ public class TextEditorTests
         Press(EditorKey.Enter);
         Type("Two");
         Press(EditorKey.Escape);
-        var texts = _s.Document.ActiveLayer.Children.Cast<TextObject>().ToList();
+        var texts = _s.Document.ActiveLayer.Children.Cast<TextObject>().Reverse().ToList();   // new text goes to the bottom, so each new line is under the one before: this is creation order
         Assert.Equal(["One", "Two"], texts.Select(t => t.Text));
         Assert.All(texts, t => Assert.Equal(size, t.FontSize, 6));
         Assert.Equal(100, texts[1].Transform.OffsetX, 6);
-        Assert.True(texts[1].Transform.OffsetY > 260 + size * 0.9);   // a normal line below
+        Assert.True(texts[1].Transform.OffsetY > texts[0].Transform.OffsetY + size * 0.9);   // a normal line below
     }
 
     // ---- Enter while typing: finish this text, start a new separate one under it (R24) ----
@@ -875,7 +880,7 @@ public class TextEditorTests
         Type("9 to 5");
         Press(EditorKey.Escape);
 
-        var texts = _s.Document.ActiveLayer.Children.Cast<TextObject>().ToList();
+        var texts = _s.Document.ActiveLayer.Children.Cast<TextObject>().Reverse().ToList();
         Assert.Equal(["Open", "Daily", "9 to 5"], texts.Select(t => t.Text));
         Assert.All(texts, t =>
         {
@@ -899,7 +904,7 @@ public class TextEditorTests
         _s.Undo();   // the nudge
         _s.Undo();   // "9 to 5" only
         Assert.Equal(2, _s.Document.ActiveLayer.Children.Count);
-        Assert.Equal(["Open", "Daily"], _s.Document.ActiveLayer.Children.Cast<TextObject>().Select(t => t.Text));
+        Assert.Equal(["Open", "Daily"], _s.Document.ActiveLayer.Children.Cast<TextObject>().Reverse().Select(t => t.Text));
     }
 
     [Fact]
@@ -919,10 +924,10 @@ public class TextEditorTests
         Press(EditorKey.Enter);
         Type("C");
         Click(700, 100);                              // click elsewhere: C is kept, a new text starts there
-        Assert.Equal(["A", "B", "C"], _s.Document.ActiveLayer.Children.Cast<TextObject>().Select(t => t.Text).Where(s => s.Length > 0));
+        Assert.Equal(["A", "B", "C"], _s.Document.ActiveLayer.Children.Cast<TextObject>().Reverse().Select(t => t.Text).Where(s => s.Length > 0));
         Assert.True(_s.IsTextEditing);                // the new, still empty text is live (not an undo step yet)
         _s.SetTool("select");                         // another tool: the empty new text is dropped
-        Assert.Equal(["A", "B", "C"], _s.Document.ActiveLayer.Children.Cast<TextObject>().Select(t => t.Text));
+        Assert.Equal(["A", "B", "C"], _s.Document.ActiveLayer.Children.Cast<TextObject>().Reverse().Select(t => t.Text));
         Assert.False(_s.IsTextEditing);
     }
 
@@ -942,7 +947,7 @@ public class TextEditorTests
         Type("Third");
         Press(EditorKey.Escape);                             // Esc ends it
 
-        var texts = _s.Document.ActiveLayer.Children.Cast<TextObject>().ToList();
+        var texts = _s.Document.ActiveLayer.Children.Cast<TextObject>().Reverse().ToList();
         Assert.Equal(["First", "Second", "Third"], texts.Select(t => t.Text));   // separate objects, never multi-line
         Assert.All(texts, t => Assert.DoesNotContain('\n', t.Text));
         double step = texts[0].Layout.LineHeight;
@@ -966,7 +971,7 @@ public class TextEditorTests
         Press(EditorKey.Enter);          // blank line
         Type("C");
         Press(EditorKey.Escape);
-        var texts = _s.Document.ActiveLayer.Children.Cast<TextObject>().ToList();
+        var texts = _s.Document.ActiveLayer.Children.Cast<TextObject>().Reverse().ToList();
         Assert.Equal(["A", "C"], texts.Select(t => t.Text));
         Assert.Equal(300 + 2 * texts[0].Layout.LineHeight, texts[1].Transform.OffsetY, 3);
     }
@@ -982,7 +987,7 @@ public class TextEditorTests
         Press(EditorKey.Enter);
         Type("Next");
         Press(EditorKey.Escape);
-        var (a, b) = (_s.Document.ActiveLayer.Children.Cast<TextObject>().First(), _s.Document.ActiveLayer.Children.Cast<TextObject>().Last());
+        var (a, b) = (_s.Document.ActiveLayer.Children.Cast<TextObject>().Reverse().First(), _s.Document.ActiveLayer.Children.Cast<TextObject>().Reverse().Last());
         Assert.Equal(("Times New Roman", 700, 60.0), (b.FontFamily, b.FontWeight, b.FontSize));
         // "Below" is in the text's own direction: perpendicular to the baseline, here to the left on the page.
         Assert.True(b.Transform.OffsetX < a.Transform.OffsetX - 50);

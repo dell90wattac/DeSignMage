@@ -169,6 +169,19 @@ public class ExportTests
     }
 
     [Fact]
+    public void Polygons_stars_and_arrows_export_as_ordinary_shapes()
+    {
+        var doc = new Document(PageSetup.FromInches(4, 3));
+        var red = new DocColor(200, 0, 0);
+        doc.Insert(doc.ActiveLayer, -1, new PolygonObject(5, 30, 0.4) { Transform = Affine2.Translation(100, 100), Style = ObjectStyle.FillOnly(red) });
+        doc.Insert(doc.ActiveLayer, -1, new ArrowObject(100, 30) { Transform = Affine2.Translation(50, 180), Style = ObjectStyle.FillOnly(red) });
+        var svg = ParseSvg(doc);
+        var paths = svg.Descendants().Where(e => e.Name.LocalName == "path").ToList();
+        Assert.Equal(2, paths.Count);
+        Assert.All(paths, p => Assert.Contains("#C80000", p.ToString(), StringComparison.OrdinalIgnoreCase));
+    }
+
+    [Fact]
     public void Svg_arcs_cover_the_right_part_of_the_circle()
     {
         // A half circle from (0,0) to (20,0) bulging up, radius 10, must come out as arcs with radius 10 and the sweep the model has.

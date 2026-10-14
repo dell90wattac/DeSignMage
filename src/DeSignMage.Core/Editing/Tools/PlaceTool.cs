@@ -132,7 +132,7 @@ public sealed class PlaceTool : Tool
         // The items are still detached, so moving them is not an edit yet; the Add commands are the undo step.
         foreach (var o in items) o.Transform = o.Transform * Affine2.Translation(delta);
         using (Session.History.BeginTransaction(_description))
-            Session.History.Execute(new AddObjectsCommand(Session.Document.ActiveLayer, items));
+            Session.History.Execute(new AddObjectsCommand(Session.Document.ActiveLayer, items, atBottom: true));
         Session.SetTool("select");
         Session.Selection.Set(items);
     }

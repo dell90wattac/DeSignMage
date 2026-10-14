@@ -267,16 +267,16 @@ public sealed class ShadowContextBar : ContextBarBase, IRefreshable
 {
     private static readonly (string Name, DocColor? Color)[] Colors =
     [
-        ("Same as object", null), ("Black", DocColor.Black), ("Dark gray", DocColor.FromHex("#404040")),
-        ("Gray", DocColor.FromHex("#808080")), ("Light gray", DocColor.FromHex("#C0C0C0")), ("White", DocColor.White),
+        ("Black", DocColor.Black), ("Gray", DocColor.FromHex("#808080")), ("Dark gray", DocColor.FromHex("#404040")),
+        ("Light gray", DocColor.FromHex("#C0C0C0")), ("White", DocColor.White), ("Same as object", null),
     ];
 
     private readonly EditorSession _session;
     private readonly ShadowTool _tool;
-    private readonly EffectBarParts.Field _hs, _vs, _outline, _outlinePct, _depth;
+    private readonly EffectBarParts.Field _hs, _vs, _outline, _outlinePct, _depth, _vpX, _vpY;
     private readonly ComboBox _type, _form, _corners, _color;
-    private readonly Button _apply;
-    private readonly Control _outlinePctGroup, _depthGroup;
+    private readonly Button _apply, _vpCenter;
+    private readonly Control _outlinePctGroup, _depthGroup, _vpGroup;
     private bool _refreshing;
 
     public ShadowContextBar(EditorSession session, ShadowTool tool)
@@ -288,6 +288,8 @@ public sealed class ShadowContextBar : ContextBarBase, IRefreshable
         _outline = new EffectBarParts.Field(v => tool.Update(s => s with { Outline = Units.FromInches(v) }));
         _outlinePct = new EffectBarParts.Field(v => { if (tool.HasPercent) tool.Update(s => s with { Outline = v / 100 * tool.Height }); });
         _depth = new EffectBarParts.Field(v => tool.Update(s => s with { DepthPercent = Math.Clamp(v, 1, 1000) }));
+        _vpX = new EffectBarParts.Field(v => tool.SetHandle(new Vec2(Units.FromInches(v), tool.VanishingPoint.Y)), live: true);
+        _vpY = new EffectBarParts.Field(v => tool.SetHandle(new Vec2(tool.VanishingPoint.X, Units.FromInches(v))), live: true);
 
         _type = new ComboBox { ItemsSource = new[] { "Drop", "Relief" }, VerticalAlignment = VerticalAlignment.Center };
         ToolTip.SetTip(_type, "Drop: the shadow includes the object (a bold, merged silhouette). Relief: the object is cut out of the shadow.");
@@ -315,7 +317,7 @@ public sealed class ShadowContextBar : ContextBarBase, IRefreshable
             ContextBars.FocusCanvas?.Invoke();
         };
         _color = new ComboBox { ItemsSource = Colors.Select(c => c.Name).Append("Custom").ToArray(), VerticalAlignment = VerticalAlignment.Center };
-        ToolTip.SetTip(_color, "The shadow's color. \"Same as object\" makes the shadow a copy of the object's fill and stroke.");
+        ToolTip.SetTip(_color, "The shadow's color (black to begin with). \"Same as object\" makes the shadow a copy of the object's fill and stroke.");
         _color.SelectionChanged += (_, _) =>
         {
             if (_refreshing || _color.SelectedIndex < 0 || _color.SelectedIndex >= Colors.Length) return;   // "Custom" only shows a color that is not in the list
@@ -328,6 +330,14 @@ public sealed class ShadowContextBar : ContextBarBase, IRefreshable
 
         _outlinePctGroup = ContextBars.Field("%", _outlinePct.Box);
         _depthGroup = ContextBars.Field("3D %", _depth.Box);
+        _vpCenter = PathBarParts.Action("↺", "Put the vanishing point back at the center of each object", () => { tool.ResetVanishingPoint(); ContextBars.FocusCanvas?.Invoke(); });
+        // The bar is only so wide: the vanishing point shares one caption, the boxes are narrow and Corners has no caption (its list says what it is).
+        _vpX.Box.Width = _vpY.Box.Width = _depth.Box.Width = 54;
+        var vpLabel = ContextBars.Label("VP");
+        ToolTip.SetTip(vpLabel, "Vanishing point (inches from the left and the top of the page): where the far end of the shadow shrinks toward. Drag the round point on the page too.");
+        _vpGroup = ContextBars.Group(vpLabel, _vpX.Box, _vpY.Box, _vpCenter);
+        ToolTip.SetTip(_vpX.Box, "Vanishing point, inches from the left of the page");
+        ToolTip.SetTip(_vpY.Box, "Vanishing point, inches from the top of the page");
         ToolTip.SetTip(_hs.Box, "Hs: how far the shadow moves to the right (Cast: how far the top edge is pushed sideways)");
         ToolTip.SetTip(_vs.Box, "Vs: how far the shadow moves up (negative: down). Cast: the change of the shadow's height; a negative value larger than the height flips it under the object");
         // The first row is what you do (Apply, the shift, the outline); the second what kind of shadow. The two lists carry no captions to stay narrow.
@@ -339,7 +349,7 @@ public sealed class ShadowContextBar : ContextBarBase, IRefreshable
                      ContextBars.Field("Outline", _outline.Box, "in"), _outlinePctGroup,
                  })
             Row1.Children.Add(c);
-        foreach (var c in new Control[] { _form, _type, _color, ContextBars.Group(ContextBars.Label("Corners"), _corners), _depthGroup })
+        foreach (var c in new Control[] { _form, _type, _color, _corners, _depthGroup, _vpGroup })
             Row2.Children.Add(c);
         EffectBarParts.Bind(this, session, Refresh, h => tool.Changed += h, h => tool.Changed -= h);
         Refresh();
@@ -357,6 +367,11 @@ public sealed class ShadowContextBar : ContextBarBase, IRefreshable
         _outlinePct.Box.IsEnabled = _outlinePctGroup.IsVisible = _tool.HasPercent;
         _depth.Show(ContextBars.Fmt(s.DepthPercent));
         _depth.Box.IsEnabled = _depthGroup.IsVisible = s.Form == ShadowForm.Perspective;
+        var vp = _tool.VanishingPoint;
+        _vpX.Show(ContextBars.Fmt(Units.ToInches(vp.X)));
+        _vpY.Show(ContextBars.Fmt(Units.ToInches(vp.Y)));
+        _vpGroup.IsVisible = _vpX.Box.IsEnabled = _vpY.Box.IsEnabled = s.Form == ShadowForm.Perspective && _tool.HasHandle;
+        ContextBars.Valid(_vpCenter, s.Pivot is not null);
         _form.SelectedIndex = (int)s.Form;
         _type.SelectedIndex = (int)s.Type;
         _corners.SelectedIndex = s.Corners switch { CornerStyle.Miter => 1, CornerStyle.Round => 2, _ => 0 };
@@ -378,4 +393,8 @@ public sealed class ShadowContextBar : ContextBarBase, IRefreshable
     internal TextBox Vs => _vs.Box;
     internal TextBox Outline => _outline.Box;
     internal TextBox Depth => _depth.Box;
+    internal TextBox VanishingX => _vpX.Box;
+    internal TextBox VanishingY => _vpY.Box;
+    internal Control VanishingGroup => _vpGroup;
+    internal Button VanishingCenter => _vpCenter;
 }

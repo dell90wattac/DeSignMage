@@ -8,8 +8,8 @@ namespace DeSignMage.Core.Editing.Tools;
 /// <summary>
 /// The text tool and text edit mode (requirement R6).
 /// <list type="bullet">
-/// <item><b>Drag a box</b> on empty canvas (R24): its <b>height</b> sets the letter height (a capital letter is as tall as the box; the width is
-/// ignored and nothing wraps), the baseline sits on the box's bottom edge and the line starts at the box's left edge (centered/ending at the box's center/right
+/// <item><b>Drag a box</b> on empty canvas (R24): its <b>height</b> is the <b>full font size</b> (a 2 inch box gives 2 inch type, the user's answer; the width is
+/// ignored and nothing wraps), the line sits in the box (the font's ascent above the baseline, its descent below) and starts at the box's left edge (centered/ending at the box's center/right
 /// edge for centered/right-aligned text); then you type and the line grows sideways without limit. A plain click (no drag) keeps the default size.
 /// <br/>Click on empty canvas: a new text object starts there (baseline-left at the click) and you type. <b>Enter starts the next line as its own, separate
 /// text object</b> one line below (basic text is never kept as several lines); Esc finishes. Click on text: edit it.
@@ -39,7 +39,7 @@ public sealed class TextTool : Tool
     public override CursorKind Cursor => CursorKind.IBeam;
 
     public override string Hint => _boxStart is not null
-        ? "To SET THE LETTER HEIGHT: Drag a box (its height = capital letter height; width is ignored)   Esc: cancel"
+        ? "To SET THE LETTER HEIGHT: Drag a box (its height = font size; width is ignored)   Esc: cancel"
         : _target is null
         ? "To ADD TEXT: Click, or drag a box to set the letter height   To EDIT TEXT: Click on it   To LAYOUT: Press Esc"
         : _enterMakesNewLine
@@ -82,7 +82,7 @@ public sealed class TextTool : Tool
             Style = f.Style, Transform = Affine2.Translation(at),
         };
         _newContainer = Session.Document.ActiveLayer;
-        Session.Document.Insert(_newContainer, -1, t);   // live while typing; becomes one "Add Text" step when finished
+        Session.Document.Insert(_newContainer, Stacking.NewItemIndex, t);   // new text goes to the bottom of the layer; live while typing, becomes one "Add Text" step when finished
         Enter(t, isNew: true, caret: 0, newLines: true);
     }
 
@@ -103,7 +103,7 @@ public sealed class TextTool : Tool
         IObjectContainer container = _isNew ? _newContainer! : prev.Parent as Layer ?? Session.Document.ActiveLayer;
         Finish(returnToSelect: false);   // the finished line becomes a normal undo step ("Add Text" / "Edit Text")
         _newContainer = container;
-        Session.Document.Insert(container, -1, next);
+        Session.Document.Insert(container, Stacking.NewItemIndex, next);
         Enter(next, isNew: true, caret: 0, newLines: true);
     }
 
@@ -145,7 +145,7 @@ public sealed class TextTool : Tool
         if (_isNew)
         {
             if (doc.Contains(t)) doc.Remove(t);
-            if (t.Text.Length > 0) history.Execute(new AddObjectCommand(_newContainer!, t, -1));
+            if (t.Text.Length > 0) history.Execute(new AddObjectCommand(_newContainer!, t, Stacking.NewItemIndex));
             else doc.NotifyChanged();
         }
         else if (doc.Contains(t))
@@ -286,9 +286,11 @@ public sealed class TextTool : Tool
             return;
         }
         var f = Session.TextDefaults;
-        double size = height / TextEngine.CapHeightEm(f.Family, f.Weight, f.Italic);   // capital letters as tall as the box
+        double size = height;   // the box is the font size (em)
+        var font = TextEngine.Fonts.Resolve(f.Family, f.Weight, f.Italic);
+        double baseline = box.Value.Top + height * font.Ascent / Math.Max(font.Ascent + font.Descent, 1e-6);   // the line's ascent..descent fills the box
         double x = f.Alignment switch { TextAlignment.Center => box.Value.Center.X, TextAlignment.Right => box.Value.Right, _ => box.Value.Left };
-        BeginNew(new Vec2(x, box.Value.Bottom), size);
+        BeginNew(new Vec2(x, baseline), size);
     }
 
     public override void PointerMove(PointerInput e)
@@ -390,7 +392,13 @@ public sealed class TextTool : Tool
         items.Add(new SelectionOverlay(t.GetWorldBounds(), Handles: false));
 
         var highlights = new List<Vec2[]>();
-        if (HasSelection)
+        if (HasSelection && layout.IsOnPath)
+        {
+            // On a path each selected letter is its own tilted box.
+            for (int i = SelectionStart; i < SelectionEnd && i < layout.Letters.Count; i++)
+                if (!layout.Letters[i].IsBreak) highlights.Add(layout.LetterQuad(i).Select(w.Transform).ToArray());
+        }
+        else if (HasSelection)
         {
             foreach (var line in layout.Lines)
             {
@@ -401,7 +409,7 @@ public sealed class TextTool : Tool
                 highlights.Add([w.Transform(new Vec2(xa, top)), w.Transform(new Vec2(xb, top)), w.Transform(new Vec2(xb, bottom)), w.Transform(new Vec2(xa, bottom))]);
             }
         }
-        var c = layout.CaretPosition(_caret);
-        items.Add(new TextEditOverlay(w.Transform(new Vec2(c.X, c.Y - layout.Ascent)), w.Transform(new Vec2(c.X, c.Y + layout.Descent)), highlights));
+        var (top0, bottom0) = layout.CaretLine(_caret);   // placed on the path for text on a path
+        items.Add(new TextEditOverlay(w.Transform(top0), w.Transform(bottom0), highlights));
     }
 }

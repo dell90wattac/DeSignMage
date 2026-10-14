@@ -62,7 +62,10 @@ public static class KeyMap
         ("Ctrl+G", "arrange.group"), ("Ctrl+B", "arrange.combine"),
         // Plain-letter keys (R3)
         ("U", "arrange.ungroup"), ("Ctrl+U", "arrange.ungroup"),
-        ("K", "arrange.breakApart"),                                     // plain K only (user, 2026-10-11); Ctrl+K "Break Into Loops" is not bound
+        // Align Left / Right / Center: plain L, R and N, approved by the user (2026-10-13). L is also To Line in the Vector Edit tool: the two commands are
+        // never enabled together (the align commands need the Layout tool), so the key does whichever applies.
+        ("L", "arrange.alignLeft"), ("R", "arrange.alignRight"), ("N", "arrange.alignCenter"),
+        ("K", "arrange.breakApart"),                                   // plain K only (user, 2026-10-11); Ctrl+K "Break Into Loops" is not bound
         ("D1", "tool.select"), ("D2", "tool.vector"),                    // 1 = Layout tool, 2 = Vector Edit tool
         ("F3", "view.fillColors"),
         // Vector menu keys: active only in the vector tool (their commands are disabled elsewhere)

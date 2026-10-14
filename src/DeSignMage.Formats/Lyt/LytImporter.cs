@@ -71,8 +71,12 @@ public static class LytImporter
     /// <summary>Node units (inches at scale 1); an arc whose middle is closer than this to its chord is read as a line.</summary>
     private const double FlatArc = 1e-5;
 
-    /// <summary>An arc is also read as a line when its bulge is less than this many times the distance its end point misses its own circle.</summary>
-    private const double FlatArcMissFactor = 50;
+    /// <summary>
+    /// The coordinates are 32-bit floats: a point of magnitude M is only known to about M × 1.2e-7, and an arc that is built from a far centre
+    /// (radius R, so M ≥ R) is known to a few times that. An arc that bulges by less than this many times M is a line to the eye and its circle
+    /// is not reliable.
+    /// </summary>
+    private const double FlatArcNoise = 1e-6;
 
     /// <summary>Line width (points) for shapes that have no fill and no color: cut lines, outlines.</summary>
     private const double Hairline = 0.72;
@@ -279,7 +283,10 @@ public static class LytImporter
         if (style?.Fill is { Type: 4, Image: { } image } && TryGetRectangle(o.Nodes, out var rect))
         {
             string assetId = doc.Assets.Add(image, style.Fill.ImageMediaType ?? "application/octet-stream");
-            return new ImageObject(assetId, rect.Width, rect.Height)
+            // The pixel size is what the Info Line's "Bitmaps" total counts (width x height x 4 bytes), not the size of the JPEG file.
+            int pixelWidth = 0, pixelHeight = 0;
+            if (DeSignMage.Formats.Vector.ImageInfo.TryRead(image, out _, out int w, out int h)) { pixelWidth = w; pixelHeight = h; }
+            return new ImageObject(assetId, rect.Width, rect.Height, pixelWidth, pixelHeight)
             {
                 Name = name,
                 Transform = Affine2.Translation(rect.Left, rect.Top) * xf,
@@ -345,15 +352,33 @@ public static class LytImporter
             return;
         }
         double a0 = Math.Atan2(from.Y - center.Y, from.X - center.X);
+        if (Math.Abs(sweep) < 2 * Math.PI - 1e-3)
+        {
+            // The end point is exact, the stored sweep is not always: it can be a degree short, half or double of the angle the end point makes
+            // about the centre, and a dummy 4 to 5 degrees on a repeated point. So the arc ends where the end point is, on the turn nearest to the
+            // stored sweep (which still tells a long arc from a short one).
+            double d = Math.Atan2(to.Y - center.Y, to.X - center.X) - a0;
+            while (d > Math.PI) d -= 2 * Math.PI;
+            while (d <= -Math.PI) d += 2 * Math.PI;
+            double best = d, bestError = Math.Abs(d - sweep);
+            foreach (double turn in new[] { d + 2 * Math.PI, d - 2 * Math.PI })
+                if (Math.Abs(turn - sweep) < bestError) { best = turn; bestError = Math.Abs(turn - sweep); }
+            sweep = best;
+            if (Math.Abs(sweep) < MinSweep)
+            {
+                b.LineTo(to);
+                return;
+            }
+        }
         Vec2 At(double t) => center + new Vec2(Math.Cos(a0 + sweep * t), Math.Sin(a0 + sweep * t)) * radius;
 
-        // An arc that bulges by about as little as its end point misses the circle (the coordinates are 32-bit floats, so a far centre makes
-        // the miss grow) is a line to the eye, and the three-point circle through such points is not reliable: it can come out as a huge
-        // circle, or the long way round.
+        // An arc that bulges by about as little as the coordinates can tell apart (see FlatArcNoise) is a line to the eye, and the three-point
+        // circle through such points is not reliable: it can come out as a huge circle, or the long way round.
         if (Math.Abs(sweep) < Math.PI)
         {
             double sagitta = radius * (1 - Math.Cos(Math.Abs(sweep) / 2));
-            if (sagitta < FlatArc || sagitta < FlatArcMissFactor * Vec2.Distance(to, At(1)))
+            double magnitude = Math.Max(1, Math.Max(Math.Max(Math.Abs(from.X), Math.Abs(from.Y)), Math.Max(Math.Max(Math.Abs(to.X), Math.Abs(to.Y)), Math.Max(Math.Abs(center.X), Math.Abs(center.Y)))));
+            if (sagitta < FlatArc || sagitta < FlatArcNoise * magnitude)
             {
                 b.LineTo(to);
                 return;

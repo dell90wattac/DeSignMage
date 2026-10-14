@@ -38,8 +38,13 @@ public sealed record ShadowSettings
     /// <summary>OAT in degrees (corners sharper than this are rounded when <see cref="Corners"/> is Auto).</summary>
     public double Oat { get; init; } = 70;
 
-    /// <summary>The shadow's fill. Null = the object's own fill and stroke (a copy).</summary>
-    public DocColor? Color { get; init; }
+    /// <summary>The shadow's fill: black unless another is chosen. Null = the object's own fill and stroke (a copy).</summary>
+    public DocColor? Color { get; init; } = DocColor.Black;
+
+    /// <summary>
+    /// Perspective: the point the far end shrinks toward (the vanishing point), in document coordinates. Null = the center of each object's bounds.
+    /// </summary>
+    public Vec2? Pivot { get; init; }
 
     public bool HasShift => ShiftX != 0 || ShiftY != 0;
 
@@ -78,7 +83,7 @@ public static class ShadowGeometry
         // about the center), and a plane between every edge of A and its partner on B; the union of all of it is the sweep.
         var a = Grow(s.Type == ShadowType.Relief ? s.Outline / 2 : s.Outline);
         var m = s.Form == ShadowForm.Perspective
-            ? Affine2.Scale(s.DepthPercent / 100, s.DepthPercent / 100, bounds.Center) * Affine2.Translation(s.ShiftX, s.ShiftY)
+            ? Affine2.Scale(s.DepthPercent / 100, s.DepthPercent / 100, s.Pivot ?? bounds.Center) * Affine2.Translation(s.ShiftX, s.ShiftY)
             : Affine2.Translation(s.ShiftX, s.ShiftY);
         var b = a.Transform(m);
         ct.ThrowIfCancellationRequested();

@@ -224,7 +224,7 @@ public abstract class PathEditToolBase : Tool
     /// <summary>Statistics of the open graphic: vectors, kinds, and short ("small") vectors under a quarter inch.</summary>
     public VectorStats Stats()
     {
-        double small = Units.FromInches(0.25);
+        double small = SmallVectors.ThresholdPoints;
         return PathEditing.Stats(_pieces.SelectMany(p => p.Loops.Select(l => (l, p.World.AverageScale))), small);
     }
 
@@ -237,6 +237,6 @@ public abstract class PathEditToolBase : Tool
         var (x, y) = Units.ToUser(new Vec2(b.Left, b.Bottom), Session.Document.Page);
         return string.Create(CultureInfo.InvariantCulture,
             $"Graphic  {s.Vectors} Vectors  ({x:0.0000}, {y:0.0000})  {Units.ToInches(b.Width):0.0000} x {Units.ToInches(b.Height):0.0000}  " +
-            $"{s.Lines} lines  {s.Arcs} arcs  {s.Beziers} beziers  {s.SmallVectors} small vecs (< 0.25in)");
+            $"{s.Lines} lines  {s.Arcs} arcs  {s.Beziers} beziers  {s.SmallVectors} small vecs (< {SmallVectors.ThresholdInches:0.####}in)");
     }
 }

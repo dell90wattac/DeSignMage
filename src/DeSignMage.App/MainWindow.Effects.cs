@@ -53,6 +53,10 @@ public partial class MainWindow
         Add("effects.easyBevel", "Easy _Bevel...", () => _session.BeginBevel(), () => _session.CanBevel,
             () => _session.ActiveTool is BevelTool || (_session.ActiveTool is not BevelTool && _session.HasBevel));
 
+        // Text on Path: one text (or a text and a shape to follow) selected; the tool opens on the path. The check mark shows when the text already follows one (no shortcut).
+        Add("effects.textOnPath", "Text on _Path...", () => _session.BeginTextOnPath(), () => _session.CanTextOnPath,
+            () => _session.ActiveTool is TextPathTool || (_session.ActiveTool is not TextPathTool && _session.HasTextOnPath));
+
         Add("effects.gradientBlend", "_Gradient Blend...", () => _session.BeginGradient(), () => _session.CanGradient, () => _session.ActiveTool is GradientTool);
     }
 

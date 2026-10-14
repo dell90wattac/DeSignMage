@@ -117,7 +117,7 @@ public static class HitTesting
             }
             case TextObject text:
                 // Live text is picked anywhere in its line box, not only on the glyph shapes.
-                return PathGeometry.Rectangle(text.GetPickFrame()).Transform(o.GetWorldTransform() * outer).Contains(p, flat);
+                return text.GetPickGeometry().Transform(o.GetWorldTransform() * outer).Contains(p, flat);
         }
 
         if (outer.IsIdentity && !o.GetWorldBounds().Contains(p)) return false;   // cached bounds first, see OutlineDistance
@@ -203,7 +203,7 @@ public static class HitTesting
         if (o is TextObject text)
         {
             // Live text is picked anywhere in its line box, not only on the glyph shapes (small letters are hard to hit).
-            return HitsPath(PathGeometry.Rectangle(text.GetPickFrame()).Transform(world), o.Style, solid: true, p, tolerance);
+            return HitsPath(text.GetPickGeometry().Transform(world), o.Style, solid: true, p, tolerance);
         }
         var local = o.GetLocalGeometry();
         if (local is null) return false;

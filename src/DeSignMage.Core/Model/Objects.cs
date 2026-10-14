@@ -68,7 +68,7 @@ public sealed class GroupObject : DocObject, IObjectContainer
     public override string KindName => "Group";
 
     /// <summary>Puts a member in a group that is not in a document yet (copies, objects being built). In a document use <see cref="Document"/>.</summary>
-    internal void AddDetached(DocObject member)
+    public void AddDetached(DocObject member)
     {
         if (member.Parent is not null) throw new InvalidOperationException($"{member} already has a parent.");
         member.Parent = this;

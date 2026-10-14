@@ -215,6 +215,9 @@ public sealed class LytObject
     public LytStyle? Style { get; init; }
     public LytNode[] Nodes { get; init; } = [];
 
+    /// <summary>The path of a "text on a path" effect stored with this text record (null for every other record).</summary>
+    public LytTextOnPath? TextOnPath { get; init; }
+
     /// <summary>Reasons parts of this object were skipped.</summary>
     public List<string> Notes { get; } = [];
 
@@ -252,3 +255,9 @@ public sealed class LytFile
     /// <summary>Everything that was skipped or looked wrong while reading.</summary>
     public List<string> Warnings { get; } = [];
 }
+
+/// <summary>
+/// A text-on-a-path effect record: the path as nodes (in the text record's own node space, not yet y-negated; the last node carries the "last" flag,
+/// which here does NOT close anything) and the curve compensation fraction.
+/// </summary>
+public sealed record LytTextOnPath(IReadOnlyList<LytNode> Nodes, double CurveCompensation);

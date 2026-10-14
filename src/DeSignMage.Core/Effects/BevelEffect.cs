@@ -32,6 +32,14 @@ public sealed record BevelSettings
     /// <summary>Opacity of the shadow crescent (default 0.8).</summary>
     public double Shadow { get; init; } = 0.8;
 
+    /// <summary>
+    /// Where the light comes from, in degrees counter-clockwise from the right (90 = from above, 135 = from the upper left, the default). It is the direction as seen
+    /// when the object is not turned: a turned object keeps the same light on itself, so the rim stays on the same edges when it is rotated.
+    /// </summary>
+    public double LightAngle { get; init; } = DefaultLightAngle;
+
+    public const double DefaultLightAngle = 135;
+
     public DocColor HighlightColor { get; init; } = DocColor.White;
     public DocColor ShadowColor { get; init; } = DocColor.Black;
 
@@ -42,6 +50,7 @@ public sealed record BevelSettings
         Softness = Math.Clamp(Softness, 0, 1),
         Highlight = Math.Clamp(Highlight, 0, 1),
         Shadow = Math.Clamp(Shadow, 0, 1),
+        LightAngle = double.IsFinite(LightAngle) ? (LightAngle % 360 + 360) % 360 : DefaultLightAngle,
     };
 
     /// <summary>The color the highlight is drawn in (white when Neutral).</summary>
@@ -156,8 +165,11 @@ public static class BevelEffect
         var none = new BevelPieces(null, ObjectStyle.None, null, ObjectStyle.None);
         if (shape.IsEmpty || d < 1e-9) return none;
 
-        // The light direction: the highlight's cutter moves toward the lower right (document y points down), turned with the object.
-        var shift = Affine2.Rotation(src.Angle).TransformVector(new Vec2(d, d));
+        // The light direction: the highlight's cutter moves away from the light (toward the lower right for the default 135 degrees; document y points
+        // down), turned with the object. The longer axis of the move is always d, so an edge that faces the light head on gets a rim d wide at the
+        // default and at any multiple of 90 degrees, and (d, d) at the default as it always was.
+        var away = AwayFromLight(s.LightAngle);
+        var shift = Affine2.Rotation(src.Angle).TransformVector(away * (d / Math.Max(Math.Abs(away.X), Math.Abs(away.Y))));
         var options = new BooleanOptions { MinLoopArea = 1e-4 };
         var highlight = booleans.Difference(shape, shape.Transform(Affine2.Translation(shift)), options);
         ct.ThrowIfCancellationRequested();
@@ -168,6 +180,13 @@ public static class BevelEffect
         return new BevelPieces(
             highlight.IsEmpty ? null : highlight, CrescentStyle(s.EffectiveHighlightColor, s.Highlight, s.Softness),
             shadow is { IsEmpty: false } ? shadow : null, CrescentStyle(s.EffectiveShadowColor, s.Shadow, s.Softness));
+    }
+
+    /// <summary>The unit direction, in document coordinates (y down) before the object's own turn, that points away from a light at <paramref name="lightAngle"/> degrees (counter-clockwise from the right).</summary>
+    public static Vec2 AwayFromLight(double lightAngle)
+    {
+        double a = lightAngle * Math.PI / 180;
+        return new Vec2(-Math.Cos(a), Math.Sin(a));
     }
 
     /// <summary>A crescent's paint: the color at the given opacity, with a feather of the softness (none at 0).</summary>

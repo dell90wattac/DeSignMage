@@ -19,10 +19,12 @@ public static class OutlineView
     /// <summary>Objects whose vectors can be edited: shapes, paths and combined objects (not groups, text or images).</summary>
     public static bool IsEditable(DocObject o) => o switch
     {
-        PathObject or RectangleObject or EllipseObject => true,
-        CombinedObject c => c.Parts.Any(p => p is PathObject or RectangleObject or EllipseObject),
-        _ => false,
+        CombinedObject c => c.Parts.Any(HasShape),
+        _ => HasShape(o),
     };
+
+    /// <summary>Objects that are a vector shape of their own: paths, rectangles, ellipses, polygons and arrows.</summary>
+    public static bool HasShape(DocObject o) => o is PathObject or RectangleObject or EllipseObject or PolygonObject or ArrowObject;
 
     /// <summary>Editable pieces of <paramref name="o"/> (one for a simple object, one per shape part of a combined object).</summary>
     public static List<VectorPiece> Pieces(DocObject o, Affine2 outer)
@@ -32,10 +34,10 @@ public static class OutlineView
         if (o is CombinedObject c)
         {
             for (int i = 0; i < c.Parts.Count; i++)
-                if (c.Parts[i] is PathObject or RectangleObject or EllipseObject && c.Parts[i].GetLocalGeometry() is { } g)
+                if (HasShape(c.Parts[i]) && c.Parts[i].GetLocalGeometry() is { } g)
                     list.Add(new VectorPiece(i, c.Parts[i].Transform * world, PathEditing.ToLoops(g), g.FillRule));
         }
-        else if (o is PathObject or RectangleObject or EllipseObject && o.GetLocalGeometry() is { } g)
+        else if (HasShape(o) && o.GetLocalGeometry() is { } g)
         {
             list.Add(new VectorPiece(-1, world, PathEditing.ToLoops(g), g.FillRule));
         }

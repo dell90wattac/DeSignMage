@@ -243,17 +243,21 @@ public class VectorToolTests
     {
         var r = AddRect(100, 100);
         DoubleClick(150, 150);
-        Drag(150, 150, 300, 300);   // drag inside the fill: a node box, not a move
+        Drag(150, 150, 300, 300);   // drag inside the fill: a box, not a move
         Assert.Equal(new Rect2(100, 100, 200, 200), Assert.Single(L.Children).GetWorldBounds());
-        Assert.Equal(1, Tool.SelectedNodeCount);   // the box caught the bottom-right node only
+        Assert.Equal(0, Tool.SelectedNodeCount);   // a box never selects nodes
     }
 
     [Fact]
-    public void Box_selected_nodes_move_together()
+    public void Shift_clicked_nodes_move_together_and_a_box_does_not_select_them()
     {
         AddRect(100, 100);
         DoubleClick(150, 150);
-        Drag(180, 50, 260, 250);    // catches the two right-hand nodes
+        Drag(180, 50, 260, 250);    // a box over the two right-hand (big) nodes: nothing is selected, nothing is deleted
+        Assert.Equal(0, Tool.SelectedNodeCount);
+        Assert.Equal(new Rect2(100, 100, 200, 200), Assert.Single(L.Children).GetWorldBounds());
+        _s.PointerDown(At(200, 100, PointerButton.Left)); _s.PointerUp(At(200, 100, PointerButton.Left));
+        _s.PointerDown(At(200, 200, PointerButton.Left, ModifierKeys.Shift)); _s.PointerUp(At(200, 200, PointerButton.Left, ModifierKeys.Shift));
         Assert.Equal(2, Tool.SelectedNodeCount);
         Drag(200, 100, 250, 100);   // drag one of them: both move
         Assert.Equal(new Rect2(100, 100, 250, 200), Assert.Single(L.Children).GetWorldBounds());

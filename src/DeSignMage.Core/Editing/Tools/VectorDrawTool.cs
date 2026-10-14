@@ -185,7 +185,7 @@ public sealed class VectorDrawTool : Tool
         if (layer.Locked) return;
 
         var obj = new PathObject(PathEditing.FromLoops([loop], FillRule.NonZero)) { Style = Session.DefaultStyle };
-        Session.History.Execute(new AddObjectCommand(layer, obj));
+        Session.History.Execute(new AddObjectCommand(layer, obj, Stacking.NewItemIndex));   // a new shape goes to the bottom of the layer
         Session.Selection.Set(obj);
     }
 

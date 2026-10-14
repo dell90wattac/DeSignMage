@@ -1,4 +1,4 @@
-﻿using System.Xml.Linq;
+using System.Xml.Linq;
 using DeSignMage.Core.Commands;
 using DeSignMage.Core.Geometry;
 using DeSignMage.Core.Model;
@@ -469,6 +469,26 @@ public class InsertCommandTests
         Assert.Equal(4, doc.ObjectCount);
     }
 
+    [Fact]
+    public void A_vectorize_result_is_a_new_item_and_goes_to_the_bottom_of_the_layer()
+    {
+        var doc = new Document(PageSetup.FromInches(8, 6));
+        var history = new CommandHistory(doc);
+        var before = new RectangleObject(10, 10);
+        history.Execute(new AddObjectCommand(doc.ActiveLayer, before));
+        var result = Vectorizer.Trace(TestImages.SquareAndDisc(), TestImages.Small());
+
+        var cmd = new InsertVectorGroupCommand(doc.ActiveLayer, result, Affine2.Identity);
+        history.Execute(cmd);
+        Assert.Equal(4, doc.ActiveLayer.Children.Count);
+        Assert.Equal(cmd.Group.Children, doc.ActiveLayer.Children.Take(3));   // the parts are the lowest objects
+        Assert.Same(before, doc.ActiveLayer.Children[3]);                     // what was there before stays above, unmoved
+
+        history.Undo();
+        Assert.Equal([before], doc.ActiveLayer.Children);
+        history.Redo();
+        Assert.Equal(cmd.Group.Children, doc.ActiveLayer.Children.Take(3));
+    }
     [Fact]
     public void Outline_results_become_unfilled_stroked_objects()
     {

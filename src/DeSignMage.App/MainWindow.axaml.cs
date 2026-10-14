@@ -29,10 +29,11 @@ public partial class MainWindow : Window
             MenuNode.Menu("Loops", "loop.reverse", "loop.open", "loop.close", "loop.toCircle", "loop.breakOut", "-", "loop.reorder", "loop.delete")),
         MenuNode.Menu("_View", "view.zoomIn", "view.zoomOut", "view.zoomPage", "view.zoomAll", "view.zoomSelection", "-", "view.fillColors", "view.loopDirection", "view.jobPalette", "view.rulers", "view.guides", "view.snapGuides", "-",
             MenuNode.Menu("Interface Text _Size", TextSizeMenuIds.Cast<object>().ToArray()), "-", "view.darkMenus", "view.darkCanvas"),
-        MenuNode.Menu("_Layout", MenuNode.Menu("Shapes", "tool.rectangle", "tool.ellipse")),
-        MenuNode.Menu("_Arrange", MenuNode.Menu("Group", "arrange.ungroup", "arrange.group"), "arrange.combine", "arrange.breakApart", "arrange.breakIntoLoops", "text.toCurves", "-",
+        MenuNode.Menu("_Layout", MenuNode.Menu("_Guides", GuideMenuCommandIds.Cast<object>().ToArray()), MenuNode.Menu("Shapes", "tool.rectangle", "tool.roundedRectangle", "tool.ellipse", "tool.square", "tool.circle", "tool.polygon", "tool.arrow", "-", "shape.convertRounded"), "-", "layout.properties", "layout.sizeToFit"),
+        MenuNode.Menu("_Arrange", MenuNode.Menu("Alig_n", AlignMenu.Cast<object>().ToArray()), "-", MenuNode.Menu("Group", "arrange.ungroup", "arrange.group", "arrange.groupAll", "arrange.groupByColor"), "arrange.combine", "arrange.breakApart", "arrange.breakIntoLoops", "arrange.breakIntoOuterLoops", "arrange.closeAllLoops", "arrange.removeInnerLoops", "text.toCurves", "-",
+            "arrange.lock", "arrange.unlockAll", "-", "arrange.mirrorH", "arrange.mirrorV", "-",
             MenuNode.Menu("Z Order", "arrange.toTop", "arrange.oneUp", "arrange.oneDown", "arrange.toBottom")),
-        MenuNode.Menu("_Text", "tool.text", "-", "text.toCurves"),
+        MenuNode.Menu("_Text", "tool.text", "text.changeFont", "-", "text.toCurves", "effects.textOnPath"),
         MenuNode.Menu("_Paragraph"),
         // Image menu: what is not built yet is shown disabled.
         MenuNode.Menu("_Image", "image.vectorize", "image.crop", "image.rasterize", "image.resample", "-",
@@ -44,7 +45,7 @@ public partial class MainWindow : Window
         MenuNode.Menu("Effe_cts", "effects.outline", "effects.inline", "effects.knife", "effects.weld", "effects.commonWeld", "effects.cookieCutter", "-",
             "effects.shadow", "effects.shadowExtruded", "effects.shadowPerspective", "effects.shadowCast", "-",
             "effects.softShadow", "effects.glow", "effects.feather", "-",
-            "effects.gradientBlend", "effects.easyBevel"),
+            "effects.gradientBlend", "effects.easyBevel", "-", "effects.textOnPath"),
         MenuNode.Menu("_Tools", "tool.select", "tool.vector", "tool.vectorDraw", "tool.loop", "tools.showTransparency", "-", "tools.options", "-", "debug.stress"),
         MenuNode.Menu("_Help", "help.feedback", "-", "help.about"),
     ];
@@ -227,11 +228,19 @@ public partial class MainWindow : Window
         Add("tool.select", "_Select Tool", () => _session.SetTool("select"));
         Add("tool.rectangle", "_Rectangle", () => _session.SetTool("rectangle"));
         Add("tool.ellipse", "_Ellipse", () => _session.SetTool("ellipse"));
+        // Layout > Shapes: no shortcuts (the user approves keys first).
+        Add("tool.roundedRectangle", "Rounded Rectan_gle", () => _session.SetTool("roundedRectangle"));
+        Add("tool.square", "_Square", () => _session.SetTool("square"));
+        Add("tool.circle", "_Circle", () => _session.SetTool("circle"));
+        Add("tool.polygon", "_Polygon / Star", () => _session.SetTool("polygon"));
+        Add("tool.arrow", "_Arrow", () => _session.SetTool("arrow"));
+        Add("shape.convertRounded", "Convert to Rounded Rectangle", () => _session.BeginConvertToRoundedRectangle(), can: () => _session.CanConvertToRoundedRectangle);
         Add("tool.vector", "_Vector Edit Tool", () => _session.SetTool("vector"));
         Add("tool.vectorDraw", "Vector _Draw Tool", () => _session.SetTool("vectordraw"));   // no shortcut until the user chooses one
         Add("tool.loop", "_Loop Edit Tool", () => _session.SetTool("loop"));   // not bound until the user agrees
         Add("tool.text", "_Text Tool", () => _session.SetTool("text"));   // not bound until the shortcut map is agreed
         Add("text.toCurves", "Convert to _Curves", () => _session.ConvertSelectionToCurves(), can: () => _session.CanConvertToCurves);
+        Add("text.changeFont", "Change _Font...", () => _ = ChangeFontAsync(), can: () => _session.CanChangeFont);   // no shortcut until the user chooses one
         // "Show Job Color Palette" (R9). No shortcut.
         Add("view.jobPalette", "Show _Job Color Palette", () => _colorState!.ShowJobPalette = !_colorState.ShowJobPalette, isChecked: () => _colorState?.ShowJobPalette ?? true);
         Add("view.fillColors","Show _Fill Colors", () => _session.ShowFillColors = !_session.ShowFillColors, glyph: "\uE790", isChecked: () => _session.ShowFillColors);
@@ -271,10 +280,15 @@ public partial class MainWindow : Window
         Add("arrange.toBottom", "To _Bottom", () => Reorder(0, absolute: true), can: HasSelection);
         Add("arrange.group", "_Make Group", () => _session.GroupSelection(), can: () => _session.CanGroup);
         Add("arrange.ungroup", "_Ungroup", () => _session.UngroupSelection(), can: () => _session.CanUngroup);
+        Add("arrange.groupAll", "Group _All", () => _session.GroupAll(), can: () => _session.CanGroupAll);
+        Add("arrange.groupByColor", "Group By _Color", () => _session.GroupByColor(), can: () => _session.CanGroupByColor);
         Add("arrange.combine", "_Combine", () => _session.CombineSelection(), can: () => _session.CanCombine);
         Add("arrange.breakApart", "_Break Apart", () => _session.BreakApartSelection(), can: () => _session.CanBreakApart);
         // No shortcut on purpose: the user approves shortcuts before they are wired (see KeyMap).
         Add("arrange.breakIntoLoops", "Break Into _Loops", () => _session.BreakIntoLoopsSelection(), can: () => _session.CanBreakIntoLoops);
+        Add("arrange.breakIntoOuterLoops", "Break Into _Outer Loops", () => _session.BreakIntoOuterLoopsSelection(), can: () => _session.CanBreakIntoOuterLoops);
+        Add("arrange.closeAllLoops", "Close All Loop_s", () => _session.CloseAllLoops(), can: () => _session.CanCloseAllLoops);
+        Add("arrange.removeInnerLoops", "Remove All _Inner Loops", () => _session.RemoveAllInnerLoops(), can: () => _session.CanRemoveInnerLoops);
 
         Add("debug.stress", "Debug: Add 5,000 Test Shapes", () => DemoContent.AddStress(_session, 5000, Environment.TickCount));
         Add("image.vectorize", "_Vectorize...", () => _ = Shell.VectorizeFlow.RunAsync(this, _session));   // not bound until the shortcut map is agreed
@@ -283,9 +297,11 @@ public partial class MainWindow : Window
 
         RegisterImageCommands();   // file.import and the Image menu (MainWindow.Images.cs)
         RegisterEffectCommands();   // the Effects menu (MainWindow.Effects.cs)
+        RegisterArrangeCommands();   // Arrange > Align, Mirror, Locked (MainWindow.Arrange.cs)
         RegisterOptionsCommands();   // Tools > Options, View > Interface Text Size (MainWindow.Options.cs)
         RegisterThemeCommands();   // View > Dark Menus / Dark Canvas (MainWindow.Theme.cs)
         RegisterTransparencyCommand();   // Tools > Show Transparency (MainWindow.Theme.cs)
+        RegisterLayoutCommands();   // Layout > Guides, Layout Properties, Size to Fit (MainWindow.Layout.cs)
 
         KeyMap.Apply(_commands, KeyMap.Default);
     }
@@ -561,7 +577,7 @@ public partial class MainWindow : Window
             ? pathTool.InfoLine()
             : string.Create(CultureInfo.InvariantCulture,
             $"{(b.IsEmpty ? "" : $"{Units.ToInches(b.Width):0.0000} x {Units.ToInches(b.Height):0.0000}    ")}" +
-            $"{doc.ObjectCount} Objects    {groups} Groups    Bitmaps: {bitmapBytes / 1048576.0:0.00} MB total{pictureInfo}");
+            $"{doc.ObjectCount - groups} Objects    {groups} Groups    Bitmaps: {bitmapBytes / 1048576.0:0.00} MB total{pictureInfo}");
         ZoomText.Text = $"{_session.Viewport.ZoomPercent:0.#}%";
         Title = $"{_documentTitle}{(_session.History.IsModified ? " *" : "")} - DeSign Mage";
 
@@ -612,7 +628,7 @@ public partial class MainWindow : Window
             {
                 var o = layer.Children[i];
                 rows.Add(o);
-                text.Add("    " + o.KindName + GroupNote(o));
+                text.Add("    " + o.KindName + GroupNote(o) + (o.TopLevel.Locked ? "   · Locked" : ""));   // a locked object (or a member of a locked group) is marked
             }
         }
 

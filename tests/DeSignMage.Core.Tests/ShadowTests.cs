@@ -96,7 +96,7 @@ public class ShadowTests
         Assert.False(shadow.Geometry.Contains(new Vec2(105, 5)));
         Assert.False(shadow.Geometry.Contains(new Vec2(5, 105)));
         Assert.Equal(new Rect2(0, 0, 100, 100), a.GetWorldBounds());                 // ...and the source is untouched
-        Assert.Equal(Red, shadow.Style);                                              // copy of the source's color by default
+        Assert.Equal(ObjectStyle.FillOnly(DocColor.Black), shadow.Style);                // black by default (the user's choice), not the source's color
 
         _s.History.Undo();
         Assert.Equal([below, a, above], L.Children);
@@ -363,7 +363,11 @@ public class ShadowTests
         var a = AddRect(0, 0, 100, 100, stroked);
         _s.Selection.Set(a);
         _s.Shadow(Drop(10, 10));
-        Assert.Equal(stroked, ShadowOf(a).Style);                                     // default: a copy, stroke and all
+        Assert.Equal(ObjectStyle.FillOnly(DocColor.Black), ShadowOf(a).Style);        // default: black
+        _s.History.Undo();
+        _s.Selection.Set(a);
+        _s.Shadow(Drop(10, 10) with { Color = null });
+        Assert.Equal(stroked, ShadowOf(a).Style);                                     // "Same as object": a copy, stroke and all
         _s.History.Undo();
         _s.Selection.Set(a);
         _s.Shadow(Drop(10, 10) with { Color = DocColor.FromHex("#404040") });
@@ -401,7 +405,6 @@ public class ShadowTests
         var a = AddRect(0, 0, 100, 200);
         _s.Selection.Set(a);
         var tool = _s.GetTool<ShadowTool>();
-        tool.PreviewDelay = TimeSpan.Zero;
         Assert.True(_s.BeginShadow(ShadowForm.Flat));
         Assert.Equal("shadow", _s.ActiveTool.Id);
         Assert.Equal(6, tool.Settings.ShiftX, 6);                                      // 3 % of the 200 pt height, to the lower right
@@ -423,7 +426,6 @@ public class ShadowTests
         var a = AddRect(200, 200, 100, 100);
         _s.Selection.Set(a);
         var tool = _s.GetTool<ShadowTool>();
-        tool.PreviewDelay = TimeSpan.Zero;
         _s.BeginShadow(ShadowForm.Flat);
         double h0 = tool.Settings.ShiftX;
 
@@ -460,7 +462,6 @@ public class ShadowTests
         var a = AddRect(200, 200, 100, 100);
         _s.Selection.Set(a);
         var tool = _s.GetTool<ShadowTool>();
-        tool.PreviewDelay = TimeSpan.Zero;
         _s.BeginShadow(ShadowForm.Flat);
         tool.Update(s => s with { ShiftX = 0, ShiftY = 0 });
         Assert.False(tool.CanApply);
@@ -481,12 +482,143 @@ public class ShadowTests
         var a = AddRect(200, 200, 100, 100);
         _s.Selection.Set(a);
         var tool = _s.GetTool<ShadowTool>();
-        tool.PreviewDelay = TimeSpan.Zero;
         _s.BeginShadow(ShadowForm.Flat);
         tool.Update(s => s with { ShiftX = 10, ShiftY = 10 });
         _s.NudgeSelection(new Vec2(50, 0));
         Assert.True(await tool.Apply());
         var shadow = ShadowOf(a);
         AssertRect(new Rect2(250, 200, 360, 310), shadow.GetWorldBounds());
+    }
+
+    // ---- The draggable points (Perspective vanishing point, Cast top edge) and the default color ----
+
+    [Fact]
+    public async Task The_color_starts_black_and_the_last_choice_is_remembered_for_the_session_but_not_the_vanishing_point()
+    {
+        var a = AddRect(200, 200, 100, 100);
+        _s.Selection.Set(a);
+        var tool = _s.GetTool<ShadowTool>();
+        _s.BeginShadow(ShadowForm.Flat);
+        Assert.Equal(DocColor.Black, tool.Settings.Color);
+        tool.Update(s => s with { Color = DocColor.FromHex("#808080"), Form = ShadowForm.Perspective });
+        tool.SetHandle(new Vec2(210, 210));
+        Assert.Equal(new Vec2(210, 210), tool.Settings.Pivot);
+        Assert.True(await tool.Apply());
+
+        _s.Selection.Set(a);
+        _s.BeginShadow(ShadowForm.Perspective);
+        Assert.Equal(DocColor.FromHex("#808080"), tool.Settings.Color);                // the last color stays
+        Assert.Null(tool.Settings.Pivot);                                              // a vanishing point belongs to the objects it was set on
+    }
+
+    [Fact]
+    public async Task Dragging_the_cast_point_sets_the_slant_and_the_height_live_and_apply_makes_that_shadow()
+    {
+        var a = AddRect(200, 200, 100, 100);
+        _s.Selection.Set(a);
+        var tool = _s.GetTool<ShadowTool>();
+        _s.BeginShadow(ShadowForm.Cast);
+        var handle = tool.HandlePosition!.Value;
+        Assert.Equal(250 + tool.Settings.ShiftX, handle.X, 6);                         // the top edge of the cast shadow, centered on the object
+        Assert.Equal(200 + tool.Settings.ShiftY, handle.Y, 6);
+        int steps = UndoSteps;
+
+        _s.PointerDown(At(handle.X, handle.Y, PointerButton.Left));
+        _s.PointerMove(At(270, 160));                                                  // 20 right of the center, 40 above the top
+        Assert.Equal(20, tool.Settings.ShiftX, 6);                                     // Hs: the top is pushed 20 sideways
+        Assert.Equal(-40, tool.Settings.ShiftY, 6);                                    // Vs = +40: the shadow is 140 high
+        _s.PointerMove(At(280, 150));
+        _s.PointerUp(At(280, 150, PointerButton.Left));
+        Assert.Equal(30, tool.Settings.ShiftX, 6);
+        Assert.Equal(50, tool.Settings.Vs, 6);
+        Assert.Equal(new Vec2(280, 150), tool.HandlePosition!.Value);
+        await tool.PreviewSettled;
+        var preview = tool.PreviewPaths.Aggregate(Rect2.Empty, (r, g) => r.Union(g.GetBounds()));
+        AssertRect(new Rect2(200, 150, 330, 300), preview);                            // the drop shadow: 150 high, slanted 30 at the top, joined to the object
+        Assert.Equal(steps, UndoSteps);                                                // dragging makes no undo step
+
+        Assert.True(await tool.Apply());
+        AssertRect(new Rect2(200, 150, 330, 300), ShadowOf(a).GetWorldBounds());
+        Assert.Equal(steps + 1, UndoSteps);
+        _s.History.Undo();
+        Assert.Equal([a], L.Children);
+    }
+
+    [Fact]
+    public void Escape_during_a_point_drag_puts_the_cast_shadow_back_and_a_miss_drags_the_whole_shadow()
+    {
+        var a = AddRect(200, 200, 100, 100);
+        _s.Selection.Set(a);
+        var tool = _s.GetTool<ShadowTool>();
+        _s.BeginShadow(ShadowForm.Cast);
+        var before = tool.Settings;
+        var handle = tool.HandlePosition!.Value;
+        _s.PointerDown(At(handle.X + 2, handle.Y - 2, PointerButton.Left));            // grabbing near the point does not make it jump
+        _s.PointerMove(At(handle.X + 42, handle.Y + 18));
+        Assert.Equal(before.ShiftX + 40, tool.Settings.ShiftX, 6);
+        _s.KeyDown(EditorKey.Escape, ModifierKeys.None);
+        Assert.Equal(before.ShiftX, tool.Settings.ShiftX, 6);
+        Assert.Equal(before.ShiftY, tool.Settings.ShiftY, 6);
+
+        _s.PointerDown(At(220, 280, PointerButton.Left));                              // far from the point: the usual move of the shadow
+        _s.PointerMove(At(230, 290));
+        _s.PointerUp(At(230, 290, PointerButton.Left));
+        Assert.Equal(before.ShiftX + 10, tool.Settings.ShiftX, 6);
+    }
+
+    [Fact]
+    public async Task The_vanishing_point_of_a_perspective_shadow_is_where_the_far_end_shrinks_toward()
+    {
+        var a = AddRect(200, 200, 100, 100);
+        _s.Selection.Set(a);
+        // pure geometry: scaled about the top-left corner, the far copy keeps its top edge level with the object's (about the center it would start 25 lower, and (330, 205) is outside)
+        _s.Shadow(new ShadowSettings { Form = ShadowForm.Perspective, ShiftX = 100, ShiftY = 0, DepthPercent = 50, Pivot = new Vec2(200, 200) });
+        var corner = ShadowOf(a);
+        Assert.True(corner.Geometry.Contains(new Vec2(330, 205)));
+        _s.History.Undo();
+        _s.Selection.Set(a);
+        _s.Shadow(new ShadowSettings { Form = ShadowForm.Perspective, ShiftX = 100, ShiftY = 0, DepthPercent = 50 });
+        Assert.False(ShadowOf(a).Geometry.Contains(new Vec2(330, 205)));
+        _s.History.Undo();
+
+        // the tool: the point starts at the center of the selection and dragging it moves the vanishing point
+        _s.Selection.Set(a);
+        var tool = _s.GetTool<ShadowTool>();
+        _s.BeginShadow(ShadowForm.Perspective);
+        tool.Update(s => s with { ShiftX = 100, ShiftY = 0, DepthPercent = 50, Outline = 0 });
+        Assert.Equal(new Vec2(250, 250), tool.HandlePosition!.Value);
+        Assert.Null(tool.Settings.Pivot);
+        await tool.PreviewSettled;
+        var centerPreview = tool.PreviewPaths.Aggregate(Rect2.Empty, (r, g) => r.Union(g.GetBounds()));
+        _s.PointerDown(At(250, 250, PointerButton.Left));
+        _s.PointerMove(At(220, 210));
+        _s.PointerUp(At(220, 210, PointerButton.Left));
+        Assert.Equal(new Vec2(220, 210), tool.Settings.Pivot);
+        await tool.PreviewSettled;
+        var movedPreview = tool.PreviewPaths.Aggregate(Rect2.Empty, (r, g) => r.Union(g.GetBounds()));
+        Assert.Equal(375, centerPreview.Right, 1);                                      // about the center: 225..275, moved by 100, 375 at most
+        Assert.Equal(360, movedPreview.Right, 1);                                       // about (220, 210): 210..260, moved by 100, so the shadow ends earlier                   // the shadow changed with the point
+        tool.ResetVanishingPoint();
+        Assert.Null(tool.Settings.Pivot);
+        Assert.Equal(new Vec2(250, 250), tool.VanishingPoint);
+    }
+
+    [Fact]
+    public void Flat_and_extruded_shadows_have_no_draggable_point_and_the_point_needs_a_selection()
+    {
+        var a = AddRect(200, 200, 100, 100);
+        _s.Selection.Set(a);
+        var tool = _s.GetTool<ShadowTool>();
+        _s.BeginShadow(ShadowForm.Flat);
+        Assert.Null(tool.HandlePosition);
+        tool.SetForm(ShadowForm.Extruded);
+        Assert.Null(tool.HandlePosition);
+        tool.SetForm(ShadowForm.Cast);
+        Assert.NotNull(tool.HandlePosition);
+        var items = new List<OverlayItem>();
+        tool.BuildOverlay(items);
+        var overlay = Assert.Single(items.OfType<PointHandlesOverlay>());
+        Assert.Single(overlay.Points);
+        Assert.Single(overlay.Lines);                                                    // from the fixed bottom edge to the point
     }
 }

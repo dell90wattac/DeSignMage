@@ -78,6 +78,77 @@ public sealed class TextLayout
     public required double Descent { get; init; }
     /// <summary>Distance between baselines of consecutive lines (also where a new line below this text would start).</summary>
     public required double LineHeight { get; init; }
+    /// <summary>The text's alignment (where the lines sit relative to the origin).</summary>
+    public Model.TextAlignment Alignment { get; init; }
+
+    /// <summary>
+    /// Text on a path only: where each letter went, as the matrix from the straight text's coordinates (what <see cref="Letters"/>' X / Baseline,
+    /// <see cref="Lines"/>, <see cref="CaretPosition"/> and <see cref="GapPoint"/> speak) to the object's local space (what <see cref="Outline"/> and the letters'
+    /// outlines are in). Null for ordinary text, where the two are the same space. Line breaks have the identity.
+    /// </summary>
+    public IReadOnlyList<Affine2>? Placements { get; init; }
+    public bool IsOnPath => Placements is not null;
+    /// <summary>On a path: the advance box of the straight text (<see cref="Frame"/> is then the box around the placed letters).</summary>
+    public Rect2? StraightFrame { get; init; }
+
+    /// <summary>Where letter <paramref name="letter"/> went (identity for ordinary text).</summary>
+    public Affine2 PlacementOf(int letter) =>
+        Placements is { } p && letter >= 0 && letter < p.Count ? p[letter] : Affine2.Identity;
+
+    /// <summary>A point of the straight text, as seen on the letter it belongs to (the same point for ordinary text).</summary>
+    public Vec2 Place(int letter, Vec2 straightPoint) => PlacementOf(letter).Transform(straightPoint);
+
+    /// <summary>The straight-text point that <paramref name="local"/> corresponds to on letter <paramref name="letter"/> (the inverse of <see cref="Place"/>).</summary>
+    public Vec2 ToStraight(int letter, Vec2 local)
+    {
+        var m = PlacementOf(letter);
+        return m.IsInvertible ? m.Invert().Transform(local) : local;
+    }
+
+    /// <summary>The letter whose placement stands for the end of the text (the last letter that is not a line break); -1 when there is none.</summary>
+    public int LastPlacedLetter()
+    {
+        for (int i = Letters.Count - 1; i >= 0; i--) if (!Letters[i].IsBreak) return i;
+        return -1;
+    }
+
+    /// <summary>The letter's advance box (ascent above its baseline to the descent below) as four corners in local space, placed on the path if there is one.</summary>
+    public Vec2[] LetterQuad(int letter)
+    {
+        var l = Letters[letter];
+        return
+        [
+            Place(letter, new Vec2(l.X, l.Baseline - Ascent)), Place(letter, new Vec2(l.X + l.Advance, l.Baseline - Ascent)),
+            Place(letter, new Vec2(l.X + l.Advance, l.Baseline + Descent)), Place(letter, new Vec2(l.X, l.Baseline + Descent)),
+        ];
+    }
+
+    /// <summary>The dots, placed on the path if there is one: (gap, local position).</summary>
+    public IEnumerable<(int Gap, Vec2 Point)> PlacedGapPoints()
+    {
+        foreach (var (gap, point) in GapPoints()) yield return (gap, Place(gap + 1, point));
+    }
+
+    /// <summary>The caret before letter <paramref name="index"/> as a vertical line (ascent above the baseline to the descent below), placed on the path if there is one.</summary>
+    public (Vec2 Top, Vec2 Bottom) CaretLine(int index)
+    {
+        index = Math.Clamp(index, 0, Letters.Count);
+        int letter = index;
+        double x, baseline;
+        if (index < Letters.Count && !Letters[index].IsBreak) { x = Letters[index].X; baseline = Letters[index].Baseline; }
+        else
+        {
+            letter = index - 1;
+            while (letter >= 0 && Letters[letter].IsBreak) letter--;
+            if (letter < 0)
+            {
+                var c = CaretPosition(index);   // no letter before it (empty text, or only breaks): the straight caret
+                (letter, x, baseline) = (0, c.X, c.Y);
+            }
+            else { x = Letters[letter].X + Letters[letter].Advance; baseline = Letters[letter].Baseline; }
+        }
+        return (Place(letter, new Vec2(x, baseline - Ascent)), Place(letter, new Vec2(x, baseline + Descent)));
+    }
 
     /// <summary>Number of letters, line breaks included. Caret positions run 0..LetterCount.</summary>
     public int LetterCount => Letters.Count;
@@ -115,9 +186,10 @@ public sealed class TextLayout
         return new Vec2(last.Left + last.Width, last.Baseline);
     }
 
-    /// <summary>The caret index closest to a point in local coordinates.</summary>
+    /// <summary>The caret index closest to a point in local coordinates (on a path: the nearest letter, before or after it by which half of it the point is on).</summary>
     public int IndexAt(Vec2 local)
     {
+        if (Placements is not null) return IndexAtOnPath(local);
         var line = Lines[0];
         double bestDy = double.PositiveInfinity;
         foreach (var l in Lines)
@@ -135,6 +207,22 @@ public sealed class TextLayout
             if (dx < bestDx) { bestDx = dx; best = idx; }
         }
         return best;
+    }
+
+    private int IndexAtOnPath(Vec2 local)
+    {
+        int best = -1;
+        double bestD = double.PositiveInfinity;
+        for (int i = 0; i < Letters.Count; i++)
+        {
+            if (Letters[i].IsBreak) continue;
+            var center = Place(i, new Vec2(Letters[i].X + Letters[i].Advance / 2, Letters[i].Baseline - (Ascent - Descent) / 2));
+            double d = Vec2.Distance(center, local);
+            if (d < bestD) { bestD = d; best = i; }
+        }
+        if (best < 0) return 0;
+        var s = ToStraight(best, local);
+        return s.X < Letters[best].X + Letters[best].Advance / 2 ? best : best + 1;
     }
 }
 
@@ -232,7 +320,7 @@ public static class TextEngine
         return new TextLayout
         {
             Letters = letters, Lines = lines, Outline = Join(outlines), Frame = frame,
-            ResolvedFamily = font.Family, FontMissing = font.Missing, Ascent = ascent, Descent = descent, LineHeight = lineHeight,
+            ResolvedFamily = font.Family, FontMissing = font.Missing, Ascent = ascent, Descent = descent, LineHeight = lineHeight, Alignment = r.Alignment,
         };
     }
 
@@ -255,8 +343,8 @@ public static class TextEngine
     }
 
     /// <summary>
-    /// Height of a capital letter (a capital H) in ems for the font that would actually be used: what sign lettering is measured by.
-    /// 0.7 when the font gives no usable H.
+    /// Height of a capital letter (a capital H) in ems for the font that would actually be used. 0.7 when the font gives no usable H.
+    /// (Not used by the text tool's size box, which is the full font size; used where a cap height is needed, e.g. legacy files.)
     /// </summary>
     public static double CapHeightEm(string family, int weight, bool italic)
     {

@@ -75,11 +75,10 @@ public class TextShellTests
         w.KeyTextInput("Sign");
         Key(w, Avalonia.Input.Key.Escape);
 
-        var texts = s.Document.ActiveLayer.Children.Cast<TextObject>().ToList();
+        var texts = s.Document.ActiveLayer.Children.Cast<TextObject>().Reverse().ToList();   // new text goes under the older, so this is creation order
         Assert.Equal(["HAT", "Sign"], texts.Select(x => x.Text));
         double box = 80 / s.Viewport.Zoom;                              // the dragged height in document units
-        double capHeight = new TextObject("H", texts[0].FontFamily, texts[0].FontSize).Layout.Outline.GetBounds().Height;
-        Assert.Equal(box, capHeight, 0);
+        Assert.Equal(box, texts[0].FontSize, 1);                         // the box height is the font size
         Assert.Equal(texts[0].FontSize, texts[1].FontSize, 6);          // the second line has the same size
         Assert.Empty(s.Document.AllObjects().OfType<GroupObject>());   // and is a separate, ungrouped object
         w.Close();
@@ -266,7 +265,7 @@ public class TextShellTests
         Key(w, Avalonia.Input.Key.Enter);
         w.KeyTextInput("Two");
         Key(w, Avalonia.Input.Key.Escape);
-        var texts = s.Document.ActiveLayer.Children.Cast<TextObject>().ToList();
+        var texts = s.Document.ActiveLayer.Children.Cast<TextObject>().Reverse().ToList();   // new text goes under the older, so this is creation order
         Assert.Equal(["One", "Two"], texts.Select(x => x.Text));
         Assert.True(texts[1].Transform.OffsetY > texts[0].Transform.OffsetY);
         w.Close();

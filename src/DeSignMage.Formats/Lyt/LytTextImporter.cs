@@ -68,6 +68,7 @@ internal static class LytTextImporter
     {
         text = null;
         var s = o.Style!;
+        if (o.TextOnPath is { } onPath) return TryCreateOnPath(o, onPath, style, pageHeightPoints, out text);
         var groups = GlyphGroups(o);
         if (groups.Count == 0) return LytTextKeptAs.ConvertedToVectors;
         if (FamilyOf(s.FontFile) is not { } family) return LytTextKeptAs.SignFont;
@@ -118,6 +119,47 @@ internal static class LytTextImporter
                     * Affine2.Translation(o.OrgX * Units.PointsPerInch, pageHeightPoints - o.OrgY * Units.PointsPerInch);
         text = t;
         return LytTextKeptAs.None;
+    }
+
+    /// <summary>
+    /// A text record that carries a text-on-a-path effect: live text that follows the stored path. The stored outlines are the letters already flowed along the
+    /// path, so nothing is read from their markers: the legacy program re-flows the text from its string, font and size every time, and so does <see cref="TextOnPath"/>.
+    /// A legacy <c>.FNT</c> font is not installed, so its name is kept and the text is drawn in the fallback font until that font is supported (the same thing
+    /// every missing font does).
+    /// <para>The path is in the record's own node space, which is also the live text's own space (its baseline-left origin is the record's origin), so
+    /// it only needs the node-to-point scale and the y flip.</para>
+    /// </summary>
+    private static LytTextKeptAs TryCreateOnPath(LytObject o, LytTextOnPath onPath, ObjectStyle style, double pageHeightPoints, out TextObject? text)
+    {
+        text = null;
+        var s = o.Style!;
+        string? family = FamilyOf(s.FontFile) ?? SignFontName(s.FontFile);
+        bool fillOk = s.Fill is null || s.Fill.Type == 0;
+        bool geometryOk = o.Scale > 0 && o.XScale > 0 && double.IsFinite(o.Scale + o.XScale + o.Rotation + o.OrgX + o.OrgY);
+        if (family is null || !fillOk || !geometryOk || o.Shear != 0 || o.Name.Contains('\n') || o.Name.Contains('\r')) return LytTextKeptAs.Unmappable;
+
+        double k = o.Scale * Units.PointsPerInch;                       // points per node unit
+        var fonts = TextEngine.Fonts;
+        double cap = CapHeightOf(fonts, fonts.Resolve(family, 400, false));
+        var t = new TextObject(o.Name, family, CapHeightUnits / cap * k)
+        {
+            Style = style,
+            Alignment = s.Align switch { 1 => TextAlignment.Center, 2 => TextAlignment.Right, _ => TextAlignment.Left },
+        };
+        var path = LytImporter.BuildPath(onPath.Nodes).Transform(Affine2.Scale(k, k));   // y is negated by BuildPath; the node space has y up
+        t.OnPath = new TextOnPath(path) { CurveCompensation = onPath.CurveCompensation };
+        t.Transform = Affine2.Scale(o.XScale, 1) * Affine2.Rotation(-o.Rotation) * Affine2.Translation(o.OrgX * Units.PointsPerInch, pageHeightPoints - o.OrgY * Units.PointsPerInch);
+        text = t;
+        return LytTextKeptAs.None;
+    }
+
+    /// <summary>The name a legacy <c>.FNT</c> font file is known by (<c>UNV67.FNT</c> becomes <c>UNV67</c>), or null for anything else.</summary>
+    public static string? SignFontName(string fontFile)
+    {
+        var f = fontFile.Trim();
+        if (!f.EndsWith(".fnt", StringComparison.OrdinalIgnoreCase)) return null;
+        f = f[..^4].Trim();
+        return f.Length == 0 ? null : f;
     }
 
     /// <summary>Height of a capital H in ems, for the font actually used (a fallback's own, if the font is missing).</summary>

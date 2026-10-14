@@ -275,6 +275,7 @@ public static class LytParser
             OrgX = orgX, OrgY = orgY, SizeW = sizeW, SizeH = sizeH, Scale = scale, XScale = xScale, Rotation = rotation,
             Italic = italic, Shear = shear, Type = type, Type2 = type2, ParentGroup = parent,
             Style = style, Nodes = nodes,
+            TextOnPath = style is { FontFile.Length: > 0 } ? LytTextOnPathReader.Find(data, r.Position, bodyEnd) : null,
         };
         obj.Notes.AddRange(notes);
         if (style?.NotDecoded is { } nd) obj.Notes.Add(nd);

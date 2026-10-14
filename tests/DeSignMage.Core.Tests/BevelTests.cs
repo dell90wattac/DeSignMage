@@ -43,6 +43,9 @@ public class BevelTests
 
     private int UndoSteps => _s.History.UndoList.Count;
 
+    private static PointerInput At(double x, double y, PointerButton b = PointerButton.None, ModifierKeys m = ModifierKeys.None) =>
+        new(new Vec2(x, y), new Vec2(x, y), b, m);
+
     private static PathObject Highlight(DocObject source) => Crescent(source, BevelEffect.HighlightName);
     private static PathObject Shadow(DocObject source) => Crescent(source, BevelEffect.ShadowName);
 
@@ -409,7 +412,6 @@ public class BevelTests
         var a = AddRect(0, 0, 200, 100);
         _s.Selection.Set(a);
         var tool = _s.GetTool<BevelTool>();
-        tool.Delay = TimeSpan.Zero;
         int steps = UndoSteps;
 
         Assert.True(_s.BeginBevel());
@@ -448,7 +450,6 @@ public class BevelTests
         var a = AddRect(0, 0, 200, 100);
         _s.Selection.Set(a);
         var tool = _s.GetTool<BevelTool>();
-        tool.Delay = TimeSpan.Zero;
         _s.BeginBevel();
         await tool.Settled;
         Assert.Equal(3, L.Children.Count);
@@ -478,7 +479,6 @@ public class BevelTests
         var b = AddRect(400, 0, 100, 100);
         _s.Selection.Set(a);
         var tool = _s.GetTool<BevelTool>();
-        tool.Delay = TimeSpan.Zero;
         _s.BeginBevel();
         await tool.Settled;
         Assert.Equal(4, L.Children.Count);                                               // only a is beveled: [a, highlight, shadow, b]
@@ -486,5 +486,97 @@ public class BevelTests
         _s.Selection.Clear();
         Assert.Equal("select", _s.ActiveTool.Id);                                        // nothing selected: the tool ends, the bevel stays
         Assert.Equal(4, L.Children.Count);
+    }
+
+    // ---- The light direction ----
+
+    [Fact]
+    public void The_light_angle_decides_which_edges_get_the_highlight_and_the_default_is_the_upper_left()
+    {
+        Assert.Equal(135, new BevelSettings().LightAngle);
+        var a = AddRect(0, 0, 200, 100);
+        _s.Selection.Set(a);
+        _s.ApplyBevel(new BevelSettings { LightAngle = 0 });                               // from the right
+        Assert.True(Highlight(a).Geometry.Contains(new Vec2(198, 50)));
+        Assert.False(Highlight(a).Geometry.Contains(new Vec2(2, 50)));
+        Assert.True(Shadow(a).Geometry.Contains(new Vec2(2, 50)));
+        Assert.True(Highlight(a).Geometry.Contains(new Vec2(197.1, 50)));                  // 2 wide, as for the upper left
+        Assert.False(Highlight(a).Geometry.Contains(new Vec2(196.8, 50)));
+        _s.History.Undo();
+
+        _s.Selection.Set(a);
+        _s.ApplyBevel(new BevelSettings { LightAngle = 90 });                              // from above
+        Assert.True(Highlight(a).Geometry.Contains(new Vec2(100, 2)));
+        Assert.False(Highlight(a).Geometry.Contains(new Vec2(2, 50)));
+        Assert.True(Shadow(a).Geometry.Contains(new Vec2(100, 98)));
+        _s.History.Undo();
+
+        _s.Selection.Set(a);
+        _s.ApplyBevel(new BevelSettings { LightAngle = 495 });                             // 495 is 135 again
+        Assert.True(Highlight(a).Geometry.Contains(new Vec2(2, 50)));
+        Assert.True(Highlight(a).Geometry.Contains(new Vec2(100, 2)));
+    }
+
+    [Fact]
+    public async Task Dragging_the_light_point_turns_the_light_live_in_one_undo_step_and_the_bar_angle_follows()
+    {
+        var a = AddRect(0, 0, 200, 100);
+        _s.Selection.Set(a);
+        var tool = _s.GetTool<BevelTool>();
+        int steps = UndoSteps;
+        _s.BeginBevel();
+        await tool.Settled;
+        var start = tool.LightPoint!.Value;
+        Assert.True(start.X < 100 && start.Y < 50);                                          // on the dial, toward the upper left of the center (100, 50)
+        Assert.Equal(135, tool.Settings.LightAngle);
+
+        _s.PointerDown(At(start.X, start.Y, PointerButton.Left));                            // grab the round point
+        _s.PointerMove(At(100, -200));                                                       // straight above the center
+        Assert.Equal(90, tool.Settings.LightAngle, 1);
+        await tool.Settled;
+        Assert.True(Highlight(a).Geometry.Contains(new Vec2(100, 2)));                       // the bevel followed while the pointer was still down
+        Assert.False(Highlight(a).Geometry.Contains(new Vec2(2, 50)));
+        _s.PointerMove(At(400, 50));                                                         // to the right
+        _s.PointerUp(At(400, 50, PointerButton.Left));
+        Assert.Equal(0, tool.Settings.LightAngle, 1);
+        await tool.Settled;
+        Assert.True(Highlight(a).Geometry.Contains(new Vec2(198, 50)));
+        Assert.Equal(steps + 1, UndoSteps);                                                  // the whole session is one step
+
+        _s.PointerDown(At(150, 50, PointerButton.Left));                                     // inside the object, away from the dial: nothing happens
+        _s.PointerMove(At(100, 0));
+        _s.PointerUp(At(100, 0, PointerButton.Left));
+        Assert.Equal(0, tool.Settings.LightAngle, 1);
+
+        tool.Update(s => s with { LightAngle = 270 });                                       // the bar's field
+        await tool.Settled;
+        Assert.True(Highlight(a).Geometry.Contains(new Vec2(100, 98)));                      // from below
+        var items = new List<OverlayItem>();
+        tool.BuildOverlay(items);
+        var dial = Assert.Single(items.OfType<PointHandlesOverlay>());
+        Assert.NotNull(dial.Ring);
+        Assert.Equal(tool.LightPoint!.Value, dial.Points[0].Position);
+
+        _s.History.Undo();
+        Assert.Equal([a], L.Children);
+    }
+
+    [Fact]
+    public async Task The_light_turns_with_a_turned_object_and_the_point_stays_on_the_side_the_light_comes_from()
+    {
+        var a = AddRect(0, 0, 200, 100);
+        a.Transform = Affine2.Rotation(Math.PI / 2, new Vec2(100, 50));                      // turned a quarter turn (clockwise on the page)
+        _s.Selection.Set(a);
+        var tool = _s.GetTool<BevelTool>();
+        _s.BeginBevel();
+        await tool.Settled;
+        var center = _s.Selection.GetBounds().Center;
+        var p = tool.LightPoint!.Value;
+        // for the object the light is at its upper left; a quarter turn clockwise puts that at the upper right of the page
+        Assert.True(p.X > center.X && p.Y < center.Y);
+        _s.PointerDown(At(p.X, p.Y, PointerButton.Left));
+        _s.PointerMove(At(p.X + 1, p.Y - 1));
+        _s.PointerUp(At(p.X + 1, p.Y - 1, PointerButton.Left));
+        Assert.Equal(135, tool.Settings.LightAngle, 0);                                       // still the object's upper left
     }
 }

@@ -6,28 +6,38 @@ namespace DeSignMage.Core.Editing.Tools;
 
 /// <summary>
 /// Effects ▸ Shadow, Extruded Shadow, Perspective Shadow, Cast Shadow: one tool, the form is a field of its Context Bar. The selection is the
-/// source. Drag on the canvas to move the shadow; Shift+drag from an edge to set the outline; or type the values. A live preview of the shadow's
-/// outline is computed after a short pause on a worker thread. Apply (or Enter) makes the shadow object, grouped with its source.
+/// source. Drag on the canvas to move the shadow; Shift+drag from an edge to set the outline; or type the values. Two forms have a draggable point:
+/// Perspective has its vanishing point (where the far end shrinks toward, the center of the object until moved) and Cast has the top edge of the shadow
+/// (it sets how far the top is pushed sideways and how tall the shadow is). The live preview of the shadow's outline follows every move on a worker
+/// thread (the newest request wins). Apply (or Enter) makes the shadow object, grouped with its source.
 /// </summary>
 public sealed class ShadowTool : Tool
 {
     private ShadowSettings _remembered = new();
     private ShadowSnapshot? _snapshot;
+    private Rect2 _bounds;
     private EdgeProbe? _probe;
-    private PreviewRunner? _runner;
+    private LatestWinsRunner? _live;
     private IReadOnlyList<PathGeometry> _previewPaths = [];
     private bool _applying;
 
-    private enum Drag { None, Shift, Outline }
+    private enum Drag { None, Shift, Outline, Point }
     private Drag _drag;
     private Vec2 _dragStart;
+    private Vec2 _grabOffset;
     private (double X, double Y) _shiftAtPress;
+    private Vec2? _pivotAtPress;
 
     public override string Id => "shadow";
     public override string DisplayName => ShadowEffect.NameOf(Settings.Form);
     public override CursorKind Cursor => CursorKind.Cross;
 
-    public override string Hint => "SHADOW: Drag to move the shadow, Shift+drag from an edge to set the outline. Enter or the check mark applies, Esc cancels   To ZOOM: Press right button";
+    public override string Hint => Settings.Form switch
+    {
+        ShadowForm.Cast => "CAST SHADOW: Drag the round point to set slant and height, or drag to move. Enter applies, Esc cancels   To ZOOM: Press right button",
+        ShadowForm.Perspective => "PERSPECTIVE SHADOW: Drag the round point to move the vanishing point, or drag to move. Enter applies, Esc cancels   To ZOOM: Press right button",
+        _ => "SHADOW: Drag to move the shadow, Shift+drag from an edge to set the outline. Enter or the check mark applies, Esc cancels   To ZOOM: Press right button",
+    };
 
     /// <summary>The fields. Change them with <see cref="Update"/>.</summary>
     public ShadowSettings Settings { get; private set; } = new();
@@ -39,7 +49,7 @@ public sealed class ShadowTool : Tool
     public IReadOnlyList<PathGeometry> PreviewPaths => _previewPaths;
 
     /// <summary>Awaitable end of the newest preview computation (tests).</summary>
-    public Task PreviewSettled => _runner?.Settled ?? Task.CompletedTask;
+    public Task PreviewSettled => _live?.Idle ?? Task.CompletedTask;
 
     /// <summary>Height of the selection in points: 100 % of the Outline "%" field.</summary>
     public double Height => _snapshot?.Height ?? 0;
@@ -52,7 +62,31 @@ public sealed class ShadowTool : Tool
 
     public event EventHandler? Changed;
 
-    public TimeSpan PreviewDelay { get; set; } = TimeSpan.FromMilliseconds(150);
+    // ---- The draggable point ----
+
+    /// <summary>True when the current form has a point to drag (Perspective: the vanishing point; Cast: the top edge).</summary>
+    public bool HasHandle => _snapshot is { IsEmpty: false } && Settings.Form is ShadowForm.Cast or ShadowForm.Perspective;
+
+    /// <summary>The Perspective vanishing point as the bar shows it: the point that was set, else the center of the selection.</summary>
+    public Vec2 VanishingPoint => Settings.Pivot ?? _bounds.Center;
+
+    /// <summary>Where the draggable point is (document coordinates). Cast: top-center of the shadow, which is where the object's top-center goes.</summary>
+    public Vec2? HandlePosition => !HasHandle ? null
+        : Settings.Form == ShadowForm.Cast ? new Vec2(_bounds.Center.X + Settings.ShiftX, _bounds.Top + Settings.ShiftY)
+        : VanishingPoint;
+
+    /// <summary>Puts the draggable point at <paramref name="doc"/> (what dragging it does; the preview follows). Cast: Hs and Vs follow; Perspective: the vanishing point.</summary>
+    public void SetHandle(Vec2 doc)
+    {
+        if (!HasHandle) return;
+        if (Settings.Form == ShadowForm.Cast)
+            Update(s => s with { ShiftX = doc.X - _bounds.Center.X, ShiftY = doc.Y - _bounds.Top });   // the bottom edge stays; the top edge goes to the point
+        else
+            Update(s => s with { Pivot = doc });
+    }
+
+    /// <summary>Perspective: the vanishing point goes back to the center of each object.</summary>
+    public void ResetVanishingPoint() => Update(s => s with { Pivot = null });
 
     // ---- Starting and stopping ----
 
@@ -60,7 +94,7 @@ public sealed class ShadowTool : Tool
     public void Begin(ShadowForm form)
     {
         if (_snapshot is not null) Remember();
-        Settings = _remembered with { Form = form };
+        Settings = _remembered with { Form = form, Pivot = null };
         Retarget();
         // First start (or a shift that was cleared): 3 % of the height to the lower right.
         if (!Settings.HasShift && HasPercent) Settings = Settings with { ShiftX = 0.03 * Height, ShiftY = 0.03 * Height };
@@ -73,6 +107,7 @@ public sealed class ShadowTool : Tool
     private void Retarget()
     {
         _snapshot = ShadowEffect.Snapshot(Session);
+        _bounds = Session.Selection.GetBounds();
         _probe = _snapshot is null ? null : new EdgeProbe(_snapshot.Geometries);
         _previewPaths = [];
         SchedulePreview();
@@ -82,8 +117,7 @@ public sealed class ShadowTool : Tool
 
     public override void Activate()
     {
-        _runner = Session.NewPreviewRunner();
-        _runner.Debounce = PreviewDelay;
+        _live = Session.NewLiveRunner();
         Session.Selection.Changed += OnSelectionChanged;
         Session.Document.Changed += OnDocumentChanged;
     }
@@ -92,7 +126,7 @@ public sealed class ShadowTool : Tool
     {
         Session.Selection.Changed -= OnSelectionChanged;
         Session.Document.Changed -= OnDocumentChanged;
-        _runner?.Cancel();
+        _live?.Cancel();
         if (_snapshot is not null) Remember();
         _snapshot = null;
         _probe = null;
@@ -101,7 +135,7 @@ public sealed class ShadowTool : Tool
         Redraw();
     }
 
-    private void Remember() => _remembered = Settings;
+    private void Remember() => _remembered = Settings with { Pivot = null };   // a vanishing point belongs to the objects it was set on
 
     // The object was nudged, undone, edited...: what the tool snapshotted is out of date.
     private void OnDocumentChanged(object? sender, DocumentChangedEventArgs e) => OnSelectionChanged(sender, EventArgs.Empty);
@@ -123,6 +157,7 @@ public sealed class ShadowTool : Tool
         Settings = next;
         SchedulePreview();
         Changed?.Invoke(this, EventArgs.Empty);
+        Redraw();
     }
 
     /// <summary>Switches the form without leaving the tool (an extruded form gets its 1 % outline when it has none).</summary>
@@ -144,19 +179,19 @@ public sealed class ShadowTool : Tool
         Changed?.Invoke(this, EventArgs.Empty);
     }
 
+    /// <summary>Asks for a new preview of the current fields. It never waits: one preview is worked out at a time on a worker thread and only the newest request waits behind it, so a drag is followed as fast as the worker can go.</summary>
     private void SchedulePreview()
     {
-        _runner?.Cancel();
-        if (_runner is null) return;
+        if (_live is null) return;
         if (!PreviewEnabled || !Settings.HasShift || _snapshot is not { IsEmpty: false } snapshot ||
             Session.BooleanService is not { } booleans || Session.OffsetService is not { } offsets)
         {
+            _live.Cancel();
             if (_previewPaths.Count > 0) { _previewPaths = []; Redraw(); }
             return;
         }
         var settings = Settings;
-        _runner.Debounce = PreviewDelay;
-        _runner.Schedule(
+        _live.Submit(
             ct => ShadowEffect.Compute(booleans, offsets, snapshot, settings, ct).Select(x => x.Shadow).ToList(),
             paths =>
             {
@@ -176,7 +211,7 @@ public sealed class ShadowTool : Tool
         var plan = ShadowEffect.Plan(Session, Settings, _snapshot);
         if (plan is null) return false;
         _applying = true;
-        _runner?.Cancel();
+        _live?.Cancel();
         try
         {
             var outcome = await Session.RunEffectAsync(plan);
@@ -197,6 +232,14 @@ public sealed class ShadowTool : Tool
     {
         _dragStart = e.Doc;
         _shiftAtPress = (Settings.ShiftX, Settings.ShiftY);
+        _pivotAtPress = Settings.Pivot;
+        if (HandlePosition is { } handle && Vec2.Distance(Session.Viewport.ToScreen(handle), e.Screen) <= Session.HandleRadiusPx + 2)
+        {
+            _drag = Drag.Point;
+            _grabOffset = handle - e.Doc;   // grabbing the point does not make it jump to the pointer
+            Redraw();
+            return;
+        }
         if (e.Shift)
         {
             // Shift+drag only starts on an edge; a miss does nothing.
@@ -217,6 +260,7 @@ public sealed class ShadowTool : Tool
         {
             case Drag.Shift: ShiftFromPointer(e.Doc); break;
             case Drag.Outline: OutlineFromPointer(e.Doc); break;
+            case Drag.Point: SetHandle(e.Doc + _grabOffset); break;
         }
     }
 
@@ -224,6 +268,7 @@ public sealed class ShadowTool : Tool
     {
         PointerMove(e);
         _drag = Drag.None;
+        Redraw();
     }
 
     private void ShiftFromPointer(Vec2 doc)
@@ -247,9 +292,9 @@ public sealed class ShadowTool : Tool
 
     public override void Cancel()
     {
-        if (_drag != Drag.None)
+        if (_drag is Drag.Shift or Drag.Point)
         {
-            Settings = Settings with { ShiftX = _shiftAtPress.X, ShiftY = _shiftAtPress.Y };   // an abandoned drag puts the shadow back
+            Settings = Settings with { ShiftX = _shiftAtPress.X, ShiftY = _shiftAtPress.Y, Pivot = _pivotAtPress };   // an abandoned drag puts the shadow back
             SchedulePreview();
             Changed?.Invoke(this, EventArgs.Empty);
         }
@@ -261,5 +306,11 @@ public sealed class ShadowTool : Tool
     {
         base.BuildOverlay(items);
         foreach (var p in _previewPaths) items.Add(new OutlineOverlay(p));
+        if (HandlePosition is { } handle)
+        {
+            // Cast: a line from the fixed bottom edge up to the top edge, which is the point. Perspective: just the vanishing point.
+            var lines = Settings.Form == ShadowForm.Cast ? new[] { (new Vec2(_bounds.Center.X, _bounds.Bottom), handle) } : [];
+            items.Add(new PointHandlesOverlay(null, lines, [new PointHandleMark(handle, _drag == Drag.Point)]));
+        }
     }
 }

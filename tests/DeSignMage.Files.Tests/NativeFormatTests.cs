@@ -38,6 +38,28 @@ public class NativeFormatTests(ITestOutputHelper output)
     }
 
     [Fact]
+    public void Polygons_stars_and_arrows_keep_their_settings_and_geometry_through_a_save()
+    {
+        var doc = new Document(PageSetup.FromInches(8, 6));
+        var star = new PolygonObject(9, 42.5, 0.35, 0.123) { Transform = Affine2.Translation(100, 100) };
+        var poly = new PolygonObject(3, 10);
+        var arrow = new ArrowObject(222, 66, 0.3, 0.45) { Transform = Affine2.Rotation(1.1) * Affine2.Translation(5, 6) };
+        foreach (var o in new DocObject[] { star, poly, arrow }) doc.Insert(doc.ActiveLayer, -1, o);
+
+        var loaded = RoundTrip(doc).Document.ActiveLayer.Children;
+        var s2 = Assert.IsType<PolygonObject>(loaded[0]);
+        Assert.Equal((9, 42.5, 0.35, 0.123), (s2.Sides, s2.Radius, s2.InnerRatio, s2.StartAngle));
+        Assert.Equal(star.GetLocalGeometry().Points, s2.GetLocalGeometry().Points);
+        var p2 = Assert.IsType<PolygonObject>(loaded[1]);
+        Assert.False(p2.IsStar);
+        Assert.Equal(-Math.PI / 2, p2.StartAngle);
+        var a2 = Assert.IsType<ArrowObject>(loaded[2]);
+        Assert.Equal((222.0, 66.0, 0.3, 0.45), (a2.Length, a2.HeadWidth, a2.HeadFraction, a2.ShaftFraction));
+        Assert.Equal(arrow.Transform, a2.Transform);
+        Assert.Equal(arrow.GetLocalGeometry().Points, a2.GetLocalGeometry().Points);
+    }
+
+    [Fact]
     public void The_round_trip_comparison_really_compares_things()
     {
         // Guard for the guard: a changed property must show up as a difference.

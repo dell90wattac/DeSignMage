@@ -49,6 +49,7 @@ internal sealed partial class LytWriteSession
     {
         reason = "";
         if (!options.LiveText) { reason = "live text was switched off"; return null; }
+        if (t.IsOnPath) { reason = "it follows a path"; return null; }   // the letters are written as they flow along the path (the legacy path effect is not written yet)
         if (style.Fill is not SolidPaint { Color.A: > 0 } fill) { reason = "its fill is not a plain color"; return null; }
         string text = t.Text, family = t.FontFamily.Trim();
         if (text.Length == 0 || text.Contains('\n') || text.Contains('\r')) { reason = "only single-line text can stay live"; return null; }

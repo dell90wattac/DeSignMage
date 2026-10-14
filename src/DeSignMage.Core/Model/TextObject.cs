@@ -32,6 +32,7 @@ public sealed class TextObject : DocObject
     private IReadOnlyList<double> _kerning = [];
     private TextAlignment _alignment;
     private double _lineSpacing = 1;
+    private TextOnPath? _onPath;
 
     private sealed record LayoutCache(int Stamp, int Generation, TextLayout Layout);
     private LayoutCache? _layout;
@@ -78,6 +79,14 @@ public sealed class TextObject : DocObject
     /// <summary>Line distance as a multiple of the font's natural line height (multi-line text only).</summary>
     public double LineSpacing { get => _lineSpacing; set { _lineSpacing = value; TouchLayout(); } }
 
+    /// <summary>
+    /// Text on a Path (null = ordinary straight text): the text follows this path, still live (retyping or a font change re-flows it).
+    /// See <see cref="TextOnPath"/>. The path is in this object's own coordinate space.
+    /// </summary>
+    public TextOnPath? OnPath { get => _onPath; set { _onPath = value; TouchLayout(); } }
+
+    public bool IsOnPath => _onPath is not null;
+
     public double KerningAt(int gap) => TextEngine.KerningAt(_kerning, gap);
 
     /// <summary>A kerning list with <paramref name="gap"/> set to <paramref name="value"/> ems (does not change the object).</summary>
@@ -110,6 +119,7 @@ public sealed class TextObject : DocObject
             int stamp = _layoutStamp, generation = TextEngine.Generation;
             if (_layout is { } cached && cached.Stamp == stamp && cached.Generation == generation) return cached.Layout;
             var layout = TextEngine.Layout(ToLayoutRequest());
+            if (_onPath is { } onPath) layout = TextPathPlacer.Place(layout, onPath);
             _layout = new LayoutCache(stamp, generation, layout);   // one reference: worker threads (export, save) may race the UI thread here
             return layout;
         }
@@ -124,7 +134,7 @@ public sealed class TextObject : DocObject
     protected override DocObject CloneCore() => new TextObject(_text, _fontFamily, _fontSize)
     {
         _fontWeight = _fontWeight, _italic = _italic, _tracking = _tracking, _kerning = _kerning,
-        _alignment = _alignment, _lineSpacing = _lineSpacing,
+        _alignment = _alignment, _lineSpacing = _lineSpacing, _onPath = _onPath,
     };
 
     /// <summary>The glyph outlines in local coordinates (what is filled and stroked). Empty for blank text.</summary>
@@ -135,6 +145,25 @@ public sealed class TextObject : DocObject
     {
         var f = Layout.Frame;
         return f.Width < 2 ? new Rect2(f.Left - 1, f.Top, f.Right + 1, f.Bottom) : f;
+    }
+
+    /// <summary>
+    /// What a click on this text hits, in local coordinates: its advance box, or for text on a path the boxes of the placed letters
+    /// (so a click between two letters on a curve still picks the text, and a click far from the curve does not).
+    /// </summary>
+    public PathGeometry GetPickGeometry()
+    {
+        var layout = Layout;
+        if (layout.Placements is null) return PathGeometry.Rectangle(GetPickFrame());
+        var b = new PathBuilder { FillRule = FillRule.NonZero };
+        for (int i = 0; i < layout.Letters.Count; i++)
+        {
+            if (layout.Letters[i].IsBreak) continue;
+            var q = layout.LetterQuad(i);
+            b.MoveTo(q[0]).LineTo(q[1]).LineTo(q[2]).LineTo(q[3]).Close();
+        }
+        var g = b.Build();
+        return g.IsEmpty ? PathGeometry.Rectangle(GetPickFrame()) : g;
     }
 
     /// <summary>Tight bounds of the glyphs; the pick frame for text that draws nothing (empty or only spaces).</summary>

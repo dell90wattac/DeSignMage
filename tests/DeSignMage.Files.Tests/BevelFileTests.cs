@@ -147,4 +147,27 @@ public class BevelFileTests
         Assert.True(rimOnBlue.Blue > 220 && rimOnBlue.Red < rimOnRed.Red);                              // a lighter blue
         Assert.NotEqual(rimOnRed, rimOnBlue);                                                           // the rim carries the color under it
     }
+
+    [Fact]
+    public void A_bevel_with_the_light_turned_comes_back_with_the_rims_on_the_same_edges()
+    {
+        var s = NewSession(24, 12);
+        var a = Add(s, 100, 100, 200, 100, DocColor.FromHex("#CC2222"));
+        s.ApplyBevel(new BevelSettings { LightAngle = 45 });                          // from the upper right
+        var b = Add(s, 100, 400, 200, 100, DocColor.FromHex("#2222CC"));
+        s.ApplyBevel(new BevelSettings { LightAngle = 270 });                         // from below
+
+        var loaded = Reload(s.Document);
+
+        var hlA = loaded.Layers[0].Children.OfType<PathObject>().First(p => p.Name == "Bevel Highlight");
+        Assert.True(hlA.Geometry.Contains(new Vec2(298, 150)));                       // the right edge of the first object
+        Assert.True(hlA.Geometry.Contains(new Vec2(200, 102)));                       // and its top edge
+        Assert.False(hlA.Geometry.Contains(new Vec2(102, 150)));
+        var hlB = loaded.Layers[0].Children.OfType<PathObject>().Last(p => p.Name == "Bevel Highlight");
+        Assert.True(hlB.Geometry.Contains(new Vec2(200, 498)));                       // the bottom edge of the second
+        Assert.False(hlB.Geometry.Contains(new Vec2(200, 402)));
+        var before = s.Document.Layers[0].Children;
+        var after = loaded.Layers[0].Children;
+        for (int i = 0; i < before.Count; i++) Assert.Equal(before[i].GetWorldBounds(), after[i].GetWorldBounds());
+    }
 }

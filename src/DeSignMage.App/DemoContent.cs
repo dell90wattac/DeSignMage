@@ -10,7 +10,14 @@ internal static class DemoContent
 {
     private static readonly DocColor Gold = DocColor.FromHex("#F2B705");
 
-    public static Document NewDocument() => new(PageSetup.FromInches(24, 12));
+    /// <summary>A new design: 24 x 12 inches, or the size chosen with Layout Properties ▸ "Use this size for new layouts".</summary>
+    public static Document NewDocument()
+    {
+        var (w, h) = MainWindow.DefaultLayoutInches();
+        double min = Units.ToInches(DeSignMage.Core.Editing.PageBorder.MinSize), max = Units.ToInches(DeSignMage.Core.Editing.PageBorder.MaxSize);
+        if (!(w >= min && w <= max && h >= min && h <= max)) (w, h) = (24, 12);   // a damaged setting never makes an unusable page
+        return new(PageSetup.FromInches(w, h));
+    }
 
     /// <summary>Adds a small sign layout through the command system (so it is undoable like anything else).</summary>
     public static void AddSample(EditorSession s)

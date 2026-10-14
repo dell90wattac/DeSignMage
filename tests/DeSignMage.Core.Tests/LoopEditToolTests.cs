@@ -227,7 +227,7 @@ public class LoopEditToolTests
 
         _s.Paste();
         Click(200, 200);   // the paste hangs on the cursor; a click at the loop's center puts it down in place
-        var pasted = Assert.IsType<PathObject>(L.Children[^1]);
+        var pasted = Assert.IsType<PathObject>(L.Children[0]);   // a paste is a new item: bottom of the layer
         Assert.Equal(new Rect2(150, 150, 250, 250), pasted.GetWorldBounds());
     }
 

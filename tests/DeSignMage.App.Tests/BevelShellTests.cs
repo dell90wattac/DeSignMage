@@ -65,7 +65,6 @@ public class BevelShellTests
         s.Selection.Set(a);
         Assert.True(EffectsItem(w, "Easy Bevel...").IsEnabled);
         var tool = s.GetTool<BevelTool>();
-        tool.Delay = TimeSpan.Zero;
 
         Click(EffectsItem(w, "Easy Bevel..."));
         Assert.Equal("bevel", s.ActiveTool.Id);
@@ -105,6 +104,48 @@ public class BevelShellTests
     }
 
     [AvaloniaFact]
+    public async Task The_Light_field_and_the_round_point_on_the_page_turn_the_light_together()
+    {
+        var w = Open();
+        var s = w.Session;
+        var a = AddRect(w, 200, 200, 300, 150);
+        s.Selection.Set(a);
+        var tool = s.GetTool<BevelTool>();
+        Click(EffectsItem(w, "Easy Bevel..."));
+        await Settle(w);
+        var bar = Bar(w);
+        Assert.Equal("135", bar.LightBox.Text);                                      // upper left to begin with
+
+        bar.LightBox.Focus();
+        bar.LightBox.Text = "90";                                                    // typed, no Enter: live
+        await Task.Delay(EffectBarParts.Field.LiveDelayMs * 3);
+        Dispatcher.UIThread.RunJobs();
+        Assert.Equal(90, tool.Settings.LightAngle, 6);
+        await Settle(w);
+        var layer = s.Document.ActiveLayer;
+        var hl = layer.Children.OfType<PathObject>().First(p => p.Name == "Bevel Highlight");
+        Assert.True(hl.Geometry.Contains(new Vec2(350, 202)));                       // from above: the top edge is lit
+        Assert.False(hl.Geometry.Contains(new Vec2(202, 275)));
+
+        // dragging the round point: the field follows
+        w.FindControl<DesignCanvas>("Surface")!.Focus();                             // the pointer is on the page now, not in the box
+        var point = tool.LightPoint!.Value;
+        PointerInput At(Vec2 d, PointerButton b) => new(s.Viewport.ToScreen(d), d, b, ModifierKeys.None);
+        s.PointerDown(At(point, PointerButton.Left));
+        var to = new Vec2(350 + 500, 275);                                           // far to the right of the center
+        s.PointerMove(At(to, PointerButton.Left));
+        s.PointerUp(At(to, PointerButton.Left));
+        Assert.Equal(0, tool.Settings.LightAngle, 1);
+        Assert.Equal("0", bar.LightBox.Text);
+        await Settle(w);
+        hl = layer.Children.OfType<PathObject>().First(p => p.Name == "Bevel Highlight");
+        Assert.True(hl.Geometry.Contains(new Vec2(498, 275)));                       // from the right: the right edge is lit
+
+        s.Undo();
+        Assert.Equal([a], layer.Children);                                           // one undo step for the whole session
+        w.Close();
+    }
+    [AvaloniaFact]
     public async Task Reopening_on_a_beveled_object_offers_Remove_and_the_strip_has_a_button()
     {
         var w = Open();
@@ -113,7 +154,6 @@ public class BevelShellTests
         s.Selection.Set(a);
         s.ApplyBevel(new BevelSettings());
         var tool = s.GetTool<BevelTool>();
-        tool.Delay = TimeSpan.Zero;
         Assert.True(EffectsItem(w, "Easy Bevel...").IsChecked || s.HasBevel);       // the check mark: this already has one
         var strip = w.GetVisualDescendants().OfType<MenuStrip>().First();
         Assert.Contains("Bevel", strip.LabelsOf("Effects"));
@@ -154,7 +194,6 @@ public class BevelShellTests
         s.Selection.Set(plate);
         s.BeginBevel();
         var tool = s.GetTool<BevelTool>();
-        tool.Delay = TimeSpan.Zero;
         await tool.Settled;
         tool.Update(b => b with { Width = 0.07, Softness = 0.12 });
         await tool.Settled;
@@ -179,6 +218,7 @@ public class BevelShellTests
         Crop("heavy-soft", 700, 380, 200, 130);
         Crop("badge", 975, 380, 140, 130);
         Crop("tool-on-plate", 205, 605, 520, 120);
+        Crop("light-dial", 180, 380, 580, 350);
         Crop("context-bar", 40, 36, 700, 78);
     }
 }

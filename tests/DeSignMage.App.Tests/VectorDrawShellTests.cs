@@ -105,7 +105,7 @@ public class VectorDrawShellTests
         Click(w, At(w, c, 600, 200));
         Dispatcher.UIThread.RunJobs();
         Assert.Equal(2, w.Session.Document.ActiveLayer.Children.Count);
-        var closed = Assert.IsType<PathObject>(w.Session.Document.ActiveLayer.Children[1]);
+        var closed = Assert.IsType<PathObject>(w.Session.Document.ActiveLayer.Children[0]);   // a new shape goes to the bottom of the layer
         Assert.True(Assert.Single(PathEditing.ToLoops(closed.Geometry)).Closed);
 
         w.KeyPress(Key.Z, RawInputModifiers.Control, PhysicalKey.Z, "z");     // one undo step per drawing

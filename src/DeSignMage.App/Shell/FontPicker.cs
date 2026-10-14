@@ -31,6 +31,7 @@ public sealed class FontPicker : Grid
     private FontItem? _selected;
     private string? _sample;
     private double _listSize;
+    private readonly bool _inline;
 
     /// <summary>Raised after the user picked a row (not when the program sets <see cref="SelectedItem"/>).</summary>
     public event EventHandler? SelectionChanged;
@@ -38,9 +39,14 @@ public sealed class FontPicker : Grid
     /// <summary>Gives the text to show in each row (the selected text), or null for "show the font names". Asked each time the list opens.</summary>
     public Func<string?>? SampleProvider { get; set; }
 
-    public FontPicker()
+    /// <param name="inline">
+    /// Shows the list (with its size slider) directly in the control instead of behind the drop-down box, for dialogs such as
+    /// Text ▸ Change Font. Call <see cref="Open"/> once to fill it; picking a row raises <see cref="SelectionChanged"/> and nothing closes.
+    /// </param>
+    public FontPicker(bool inline = false)
     {
-        this.ScaledWidth(210);
+        _inline = inline;
+        if (!inline) this.ScaledWidth(210);
         _button.ScaledMinHeight(22);
         _button.HorizontalAlignment = HorizontalAlignment.Stretch;
         var arrow = new TextBlock { Text = "▾", VerticalAlignment = VerticalAlignment.Center, Margin = new Thickness(6, 0, 0, 0), Foreground = AppTheme.Brush("Ui.Muted") };
@@ -92,12 +98,19 @@ public sealed class FontPicker : Grid
 
         _popup = new Popup
         {
-            PlacementTarget = _button, Placement = PlacementMode.BottomEdgeAlignedLeft, IsLightDismissEnabled = true, Child = root,
+            PlacementTarget = _button, Placement = PlacementMode.BottomEdgeAlignedLeft, IsLightDismissEnabled = true, Child = inline ? null : root,
         };
         _popup.Closed += (_, _) => ContextBars.FocusCanvas?.Invoke();
 
-        Children.Add(_button);
-        Children.Add(_popup);
+        if (inline)
+        {
+            Children.Add(root);
+        }
+        else
+        {
+            Children.Add(_button);
+            Children.Add(_popup);
+        }
         ShowCurrent();
         ApplyRowSize();
         UiScale.Changed += OnScaleChanged;
@@ -105,7 +118,7 @@ public sealed class FontPicker : Grid
         AttachedToVisualTree += (_, _) => { UiScale.Changed -= OnScaleChanged; UiScale.Changed += OnScaleChanged; };
     }
 
-    private void OnScaleChanged() { if (_popup.IsOpen) ApplyRowSize(); }
+    private void OnScaleChanged() { if (_popup.IsOpen || _inline) ApplyRowSize(); }
 
     // ---- Public surface (what the text bar and the tests use) ----
 
@@ -142,7 +155,7 @@ public sealed class FontPicker : Grid
         IReadOnlyList<FontItem> items = _selected is { } s && !FontCatalog.IsListed(s.Name) ? [s, .. installed] : installed;
         _list.ItemsSource = items;
         ApplyRowSize();
-        _popup.IsOpen = true;
+        if (!_inline) _popup.IsOpen = true;
         var current = items.FirstOrDefault(f => string.Equals(f.Name, _selected?.Name, StringComparison.OrdinalIgnoreCase));
         _list.SelectedItem = current;
         if (current is not null)

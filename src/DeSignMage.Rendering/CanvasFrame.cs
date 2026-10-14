@@ -446,6 +446,7 @@ public sealed class OverlayRenderer : IDisposable
         IsAntialias = false, Style = SKPaintStyle.Stroke, StrokeWidth = 1, Color = SKColors.Black,
         PathEffect = SKPathEffect.CreateDash([4, 3], 0),
     };
+    private readonly SKPaint _deleteFill = new() { Style = SKPaintStyle.Fill, Color = new SKColor(0xE5, 0x39, 0x35, 0x28) };
     private readonly SKPaint _zoomDash = new()
     {
         IsAntialias = false, Style = SKPaintStyle.Stroke, StrokeWidth = 1, Color = SKColors.Red,
@@ -511,7 +512,8 @@ public sealed class OverlayRenderer : IDisposable
                     var r = Snap(mq.Bounds.Transform(m).ToSK());
                     // The zoom window is drawn as a red dotted rectangle.
                     if (mq.Kind == MarqueeKind.Select) c.DrawRect(r, _marqueeFill);
-                    c.DrawRect(r, mq.Kind == MarqueeKind.Zoom ? _zoomDash : _dash);
+                    else if (mq.Kind == MarqueeKind.Delete) c.DrawRect(r, _deleteFill);   // a box that deletes what it holds: red, with a faint red tint
+                    c.DrawRect(r, mq.Kind is MarqueeKind.Zoom or MarqueeKind.Delete ? _zoomDash : _dash);
                     break;
                 }
                 case OutlineOverlay o:
@@ -540,6 +542,9 @@ public sealed class OverlayRenderer : IDisposable
                     break;
                 case GradientOverlay gradient:
                     DrawGradientControls(c, gradient, view);
+                    break;
+                case PointHandlesOverlay handles:
+                    DrawPointHandles(c, handles, view);
                     break;
                 case TrackingHandleOverlay th:
                 {
@@ -608,10 +613,12 @@ public sealed class OverlayRenderer : IDisposable
         {
             var p = view.ToScreen(n.Position);
             float x = MathF.Floor((float)p.X) + 0.5f, y = MathF.Floor((float)p.Y) + 0.5f;
-            float half = n.Start ? 3.5f : 2.5f;
+            // Nodes that start or end a small vector are drawn about half the size of the others, so noise stands out from real corners.
+            float half = n.Small ? (n.Start ? 2f : 1.5f) : (n.Start ? 3.5f : 2.5f);
             if (n.Selected)
             {
-                c.DrawRect(SKRect.Create(x - 4, y - 4, 8, 8), nodeFill);
+                float s = n.Small ? 3 : 4;
+                c.DrawRect(SKRect.Create(x - s, y - s, s * 2, s * 2), nodeFill);
             }
             else if (n.Corner)
             {
@@ -619,8 +626,9 @@ public sealed class OverlayRenderer : IDisposable
             }
             else
             {
-                cross.MoveTo(x - 3, y); cross.LineTo(x + 4, y);
-                cross.MoveTo(x, y - 3); cross.LineTo(x, y + 4);
+                float a = n.Small ? 1.5f : 3, b = n.Small ? 2.5f : 4;
+                cross.MoveTo(x - a, y); cross.LineTo(x + b, y);
+                cross.MoveTo(x, y - a); cross.LineTo(x, y + b);
             }
         }
         c.DrawPath(cross, _centerMark);   // one path, so crossing pixels aren't inverted twice
@@ -795,6 +803,38 @@ public sealed class OverlayRenderer : IDisposable
         }
     }
 
+    /// <summary>Effect points (bevel light, shadow vanishing/cast point): white over black lines and dashed ring so they show on any art, round handles that fill white while dragged.</summary>
+    private void DrawPointHandles(SKCanvas c, PointHandlesOverlay h, Viewport view)
+    {
+        using var casing = new SKPaint { IsAntialias = true, Style = SKPaintStyle.Stroke, StrokeWidth = 3, Color = SKColors.Black.WithAlpha(0xB0) };
+        using var inner = new SKPaint { IsAntialias = true, Style = SKPaintStyle.Stroke, StrokeWidth = 1, Color = SKColors.White };
+        using var dashed = new SKPaint { IsAntialias = true, Style = SKPaintStyle.Stroke, StrokeWidth = 1, Color = SKColors.White, PathEffect = SKPathEffect.CreateDash([4, 3], 0) };
+        if (h.Ring is { } ring)
+        {
+            using var outline = ring.Transform(view.DocToScreen).ToSKPath();
+            c.DrawPath(outline, casing);
+            c.DrawPath(outline, dashed);
+        }
+        foreach (var (from, to) in h.Lines)
+        {
+            var a = view.ToScreen(from).ToSK();
+            var b = view.ToScreen(to).ToSK();
+            c.DrawLine(a, b, casing);
+            c.DrawLine(a, b, inner);
+        }
+        using var fill = new SKPaint { IsAntialias = true, Style = SKPaintStyle.Fill };
+        using var edge = new SKPaint { IsAntialias = true, Style = SKPaintStyle.Stroke, StrokeWidth = 1, Color = SKColors.Black };
+        foreach (var mark in h.Points)
+        {
+            var p = view.ToScreen(mark.Position).ToSK();
+            float r = mark.Active ? 7 : 6;
+            fill.Color = mark.Active ? SKColors.White : Accent;
+            c.DrawCircle(p, r + 1, inner);
+            c.DrawCircle(p, r, fill);
+            c.DrawCircle(p, r, edge);
+        }
+    }
+
     /// <summary>Live-text marks: a small dot (half its former size, <see cref="LetterDotsOverlay.RadiusPx"/>) in every gap between letters; the one being dragged is filled.</summary>
     private void DrawLetterDots(SKCanvas c, LetterDotsOverlay d, Viewport view)
     {
@@ -843,6 +883,7 @@ public sealed class OverlayRenderer : IDisposable
         _line.Dispose();
         _dash.Dispose();
         _zoomDash.Dispose();
+        _deleteFill.Dispose();
         _guide.Dispose();
         _guideSelected.Dispose();
         _handleFill.Dispose();

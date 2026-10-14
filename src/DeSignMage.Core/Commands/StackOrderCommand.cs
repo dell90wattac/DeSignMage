@@ -6,17 +6,17 @@ namespace DeSignMage.Core.Commands;
 public enum StackMove { ToFront, ToBack, Forward, Backward }
 
 /// <summary>
-/// How the drawing order changes when the selection is moved up or down (Arrange ▸ To Front, To Back, Forward, Backward). One place, so what
-/// the reference behavior turns out to be can be put in here (R22).
-/// <para>
-/// <b>Open (R22), waiting for the user's tests of the reference behavior:</b> what each command does to a group whose members are not next to each
-/// other in the drawing order. Today, which is what these commands always did for a group whose members were next to each other:
-/// </para>
+/// How the drawing order changes when the selection is moved (Arrange ▸ To Top, One Up, One Down, To Bottom). One place for the rules (R22).
 /// <list type="bullet">
-/// <item><b>To Front / To Back</b>: every member of the selected objects moves to the top / bottom, keeping their order among themselves.</item>
-/// <item><b>Forward / Backward</b>: every drawn object of the selection hops over the next <i>item</i> above / below it. An item is a run of drawn
-/// objects next to each other that belong to the same top-level object, so a whole group that lies together counts as one item, and a plain
-/// object is one. A group whose members are apart is several items, each hopped over on its own.</item>
+/// <item><b>To Front / To Back</b>: every drawn object of the selection moves to the top / bottom, keeping their order among themselves.
+/// (Unchanged; the reference program has no such command, only the one-step ones below.)</item>
+/// <item><b>Forward / Backward</b> (the reference program's Page Up / Page Down: one step, tested by the user 2026-10-13). Every drawn object of
+/// the selection that has a non-selected object next to it in that direction <b>hops past that neighbour</b>, all of them <b>at the same time</b>:
+/// who hops is decided on the order before the step, nothing cascades. A selected object whose neighbour is also selected stays put (a group's
+/// members never hop over their group mates, so a group does not travel as a block). The neighbour is an <i>item</i>: a loose object, or the whole
+/// run of members of one group that the hopper meets next to each other, so a loose object hops over a group in one step, and where a group is
+/// interleaved it hops over the run it meets. Checked against the four observed steps (yellow and green grouped, black loose between):
+/// Y B G, group Down → Y G B; group Up → Y B G; black Down → B Y G; black Up → Y G B.</item>
 /// </list>
 /// </summary>
 public static class StackOrder
@@ -32,35 +32,35 @@ public static class StackOrder
                 return [.. order.Where(moving.Contains), .. order.Where(o => !moving.Contains(o))];
         }
 
-        var list = order.ToList();
-        int n = list.Count;
-        if (move == StackMove.Forward)
+        int n = order.Count;
+        bool up = move == StackMove.Forward;
+        // Where each hopper lands: after the last object of the item it hops over (up), before the first one (down).
+        var landing = new List<DocObject>?[n];
+        var hoppers = new HashSet<DocObject>();
+        for (int i = 0; i < n; i++)
         {
-            for (int i = n - 2; i >= 0; i--)
+            int next = up ? i + 1 : i - 1;
+            if (!moving.Contains(order[i]) || next < 0 || next >= n || moving.Contains(order[next])) continue;
+            var item = order[next].TopLevel;
+            int edge = next;
+            while (true)
             {
-                if (!moving.Contains(list[i]) || moving.Contains(list[i + 1])) continue;
-                var item = list[i + 1].TopLevel;
-                int j = i + 1;
-                while (j + 1 < n && !moving.Contains(list[j + 1]) && ReferenceEquals(list[j + 1].TopLevel, item)) j++;
-                var o = list[i];
-                list.RemoveAt(i);
-                list.Insert(j, o);   // the item now fills i..j-1
+                int beyond = up ? edge + 1 : edge - 1;
+                if (beyond < 0 || beyond >= n || moving.Contains(order[beyond]) || !ReferenceEquals(order[beyond].TopLevel, item)) break;
+                edge = beyond;
             }
+            (landing[edge] ??= []).Add(order[i]);
+            hoppers.Add(order[i]);
         }
-        else
+
+        var result = new List<DocObject>(n);
+        for (int k = 0; k < n; k++)
         {
-            for (int i = 1; i < n; i++)
-            {
-                if (!moving.Contains(list[i]) || moving.Contains(list[i - 1])) continue;
-                var item = list[i - 1].TopLevel;
-                int j = i - 1;
-                while (j - 1 >= 0 && !moving.Contains(list[j - 1]) && ReferenceEquals(list[j - 1].TopLevel, item)) j--;
-                var o = list[i];
-                list.RemoveAt(i);
-                list.Insert(j, o);
-            }
+            if (!up && landing[k] is { } before) result.AddRange(before);
+            if (!hoppers.Contains(order[k])) result.Add(order[k]);
+            if (up && landing[k] is { } after) result.AddRange(after);
         }
-        return list;
+        return result;
     }
 }
 

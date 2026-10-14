@@ -44,6 +44,7 @@ public sealed class SelectTool : Tool
     // Letter-spacing dot drag (live text): the object being kerned, the gap, and where the drag started.
     private TextObject? _dotText;
     private int _dotGap;
+    private Affine2 _dotPlacementInverse = Affine2.Identity, _trackPlacementInverse = Affine2.Identity;   // text on a path: the start placement of the letter being dragged, kept so the drag has a steady axis
     private double _dotStartKerning, _dotStartLocalX;
     private IReadOnlyList<double> _dotOriginalKerning = [];
 
@@ -91,7 +92,7 @@ public sealed class SelectTool : Tool
 
         if (e.ClickCount < 2 && (TryBeginTracking(e) || TryBeginDot(e))) return;
 
-        if (!sel.IsEmpty &&
+        if (!sel.IsEmpty && !Session.SelectionLocked &&   // a locked selection has no handles
             SelectionHandles.HitTest(Session.Viewport, sel.GetBounds(), e.Screen, Session.HandleRadiusPx) is { } h)
         {
             _mode = Mode.Handle;
@@ -306,9 +307,9 @@ public sealed class SelectTool : Tool
         {
             var b = Session.Selection.GetBounds();
             if (Session.Preview is { Copy: false } p) b = b.Transform(p.WorldDelta);
-            items.Add(new SelectionOverlay(b, Handles: _mode is Mode.None or Mode.PendingMove));
+            items.Add(new SelectionOverlay(b, Handles: _mode is Mode.None or Mode.PendingMove && !Session.SelectionLocked));
             if (_mode is Mode.None or Mode.PendingMove or Mode.Dot && SelectedText() is { } text)
-                items.Add(new LetterDotsOverlay(text.Layout.GapPoints().Select(g => text.GetWorldTransform().Transform(g.Point)).ToArray(),
+                items.Add(new LetterDotsOverlay(text.Layout.PlacedGapPoints().Select(g => text.GetWorldTransform().Transform(g.Point)).ToArray(),
                     _mode == Mode.Dot ? DotIndex(text, _dotGap) : -1));
             if (_mode is Mode.None or Mode.PendingMove or Mode.Tracking && SelectedText() is { } tt && TrackingHandleDoc(tt) is { } handle)
                 items.Add(new TrackingHandleOverlay(handle, _mode == Mode.Tracking));
@@ -396,7 +397,13 @@ public sealed class SelectTool : Tool
     // ---- Letter dots (live text, R6) ----
 
     /// <summary>The selected object when it is exactly one live text: only then are the letter dots shown.</summary>
-    private TextObject? SelectedText() => Session.Selection is { Count: 1 } s && s.Items[0] is TextObject t ? t : null;
+    private TextObject? SelectedText() => Session.Selection is { Count: 1 } s && s.Items[0] is TextObject { Locked: false } t ? t : null;
+
+    private static Affine2 Inverse(Affine2 m) => m.IsInvertible ? m.Invert() : Affine2.Identity;
+
+    /// <summary>The pointer's position along the straight text: the document point taken into the text's space, then back off the letter's placement on a path (identity for ordinary text).</summary>
+    private static double StraightX(TextObject t, Affine2 placementInverse, Vec2 doc) =>
+        placementInverse.Transform(t.GetWorldTransform().Invert().Transform(doc)).X;
 
     private static int DotIndex(TextObject t, int gap) => t.Layout.GapPoints().TakeWhile(g => g.Gap != gap).Count();
 
@@ -406,7 +413,7 @@ public sealed class SelectTool : Tool
         var w = t.GetWorldTransform();
         int best = -1;
         double bestD = Session.HandleRadiusPx;
-        foreach (var (gap, point) in t.Layout.GapPoints())
+        foreach (var (gap, point) in t.Layout.PlacedGapPoints())   // on a path the dots sit on the letters' placed positions
         {
             double d = Vec2.Distance(Session.Viewport.ToScreen(w.Transform(point)), screen);
             if (d <= bestD) { bestD = d; best = gap; }
@@ -424,9 +431,11 @@ public sealed class SelectTool : Tool
     {
         if (TrackingLine(t) is not { } line) return null;
         var w = t.GetWorldTransform();
-        var dir = w.TransformVector(new Vec2(1, 0));
+        var layout = t.Layout;
+        var place = layout.PlacementOf(line.FirstLetter + line.LetterCount - 1);   // on a path: the last letter, so the handle sits past the end of the text along the curve
+        var dir = w.TransformVector(place.TransformVector(new Vec2(1, 0)));
         if (dir.Length < 1e-9) return null;
-        var end = w.Transform(new Vec2(line.Left + line.Width, line.Baseline - t.Layout.Ascent * 0.4));
+        var end = w.Transform(place.Transform(new Vec2(line.Left + line.Width, line.Baseline - layout.Ascent * 0.4)));
         return end + dir / dir.Length * Session.Viewport.ToDocLength(TrackingHandleOffsetPx);
     }
 
@@ -441,8 +450,10 @@ public sealed class SelectTool : Tool
         _mode = Mode.Tracking;
         _trackText = t;
         _trackStart = t.Tracking;
-        _trackGaps = TrackingLine(t)!.LetterCount - 1;
-        _trackStartLocalX = t.GetWorldTransform().Invert().Transform(e.Doc).X;
+        var line = TrackingLine(t)!;
+        _trackGaps = line.LetterCount - 1;
+        _trackPlacementInverse = Inverse(t.Layout.PlacementOf(line.FirstLetter + line.LetterCount - 1));
+        _trackStartLocalX = StraightX(t, _trackPlacementInverse, e.Doc);
         return true;
     }
 
@@ -453,7 +464,7 @@ public sealed class SelectTool : Tool
     private void DragTracking(PointerInput e)
     {
         var t = _trackText!;
-        double x = t.GetWorldTransform().Invert().Transform(e.Doc).X;
+        double x = StraightX(t, _trackPlacementInverse, e.Doc);
         t.Tracking = _trackStart + (x - _trackStartLocalX) / Math.Max(t.FontSize, 0.001) / _trackGaps;
         Session.Document.NotifyChanged();
     }
@@ -478,7 +489,8 @@ public sealed class SelectTool : Tool
         _dotGap = gap;
         _dotOriginalKerning = t.Kerning;
         _dotStartKerning = t.KerningAt(gap);
-        _dotStartLocalX = t.GetWorldTransform().Invert().Transform(e.Doc).X;
+        _dotPlacementInverse = Inverse(t.Layout.PlacementOf(gap + 1));
+        _dotStartLocalX = StraightX(t, _dotPlacementInverse, e.Doc);
         return true;
     }
 
@@ -490,7 +502,7 @@ public sealed class SelectTool : Tool
     private void DragDot(PointerInput e)
     {
         var t = _dotText!;
-        double x = t.GetWorldTransform().Invert().Transform(e.Doc).X;
+        double x = StraightX(t, _dotPlacementInverse, e.Doc);
         t.Kerning = t.KerningWith(_dotGap, _dotStartKerning + (x - _dotStartLocalX) / Math.Max(t.FontSize, 0.001));
         Session.Document.NotifyChanged();
     }
@@ -524,7 +536,7 @@ public sealed class SelectTool : Tool
         var sel = Session.Selection;
         if (SelectedText() is { } text && (DotAt(text, e.Screen) >= 0 || OnTrackingHandle(text, e.Screen)))
             _hoverCursor = CursorKind.SizeWE;
-        else if (!sel.IsEmpty && SelectionHandles.HitTest(Session.Viewport, sel.GetBounds(), e.Screen, Session.HandleRadiusPx) is { } h)
+        else if (!sel.IsEmpty && !Session.SelectionLocked && SelectionHandles.HitTest(Session.Viewport, sel.GetBounds(), e.Screen, Session.HandleRadiusPx) is { } h)
             _hoverCursor = SelectionHandles.Cursor(h, e.Control);
         else if (Session.HitTestAt(e.Doc) is not null)
             _hoverCursor = CursorKind.SelectHit;   // R10 item 7: arrow with a crosshair at its tip = "a click here selects something"

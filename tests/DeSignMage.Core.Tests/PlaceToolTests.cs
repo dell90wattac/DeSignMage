@@ -125,7 +125,7 @@ public class PlaceToolTests
         Assert.Single(_layer.Children);
         _s.Redo();
         Assert.Equal(2, _layer.Children.Count);
-        Assert.Equal(420, _layer.Children[1].GetWorldBounds().Center.X, 6);
+        Assert.Equal(420, _layer.Children[0].GetWorldBounds().Center.X, 6);   // a paste is a new item: it goes to the bottom of the layer
     }
 
     [Fact]
@@ -153,7 +153,7 @@ public class PlaceToolTests
     {
         _s.Paste();
         LeftClick(250, 250);
-        Assert.Equal(250, _layer.Children[1].GetWorldBounds().Center.X, 6);
+        Assert.Equal(250, _layer.Children[0].GetWorldBounds().Center.X, 6);
     }
 
     [Fact]
@@ -175,8 +175,8 @@ public class PlaceToolTests
 
         LeftClick(397, 300);
 
-        Assert.Equal(400, _layer.Children[1].GetWorldBounds().Center.X, 6);
-        Assert.Equal(300, _layer.Children[1].GetWorldBounds().Center.Y, 6);
+        Assert.Equal(400, _layer.Children[0].GetWorldBounds().Center.X, 6);
+        Assert.Equal(300, _layer.Children[0].GetWorldBounds().Center.Y, 6);
         Assert.Null(_s.SelectedGuide);                        // the click was not taken as a click on the guide
     }
 
@@ -186,7 +186,7 @@ public class PlaceToolTests
         _s.History.Execute(new AddGuideCommand(Guide.Vertical(400)));
         _s.Paste();
         LeftClick(430, 300);
-        Assert.Equal(430, _layer.Children[1].GetWorldBounds().Center.X, 6);
+        Assert.Equal(430, _layer.Children[0].GetWorldBounds().Center.X, 6);
     }
 
     // ---- cancelling ----
@@ -291,7 +291,7 @@ public class PlaceToolTests
 
         LeftClick(350, 250);                                  // and now a left click places it, in the zoomed view
         Assert.Equal(2, _layer.Children.Count);
-        Assert.Equal(_s.Viewport.ToDoc(new Vec2(350, 250)).X, _layer.Children[1].GetWorldBounds().Center.X, 6);
+        Assert.Equal(_s.Viewport.ToDoc(new Vec2(350, 250)).X, _layer.Children[0].GetWorldBounds().Center.X, 6);
     }
 
     [Fact]

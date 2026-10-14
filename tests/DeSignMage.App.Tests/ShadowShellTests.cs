@@ -68,10 +68,11 @@ public class ShadowShellTests
         Assert.Equal("shadow", s.ActiveTool.Id);
         var bar = Bar(w);
         var tool = s.GetTool<ShadowTool>();
-        tool.PreviewDelay = TimeSpan.Zero;
         Assert.True(bar.Apply.IsVisible);                                          // a first start has the 3 % shift, so there is something to apply
         Assert.False(bar.DepthGroup.IsVisible);                                    // 3D % belongs to Perspective
         Assert.True(bar.OutlinePercentGroup.IsVisible);
+        Assert.Equal(0, bar.Color.SelectedIndex);                                  // the color list starts with Black, which is the default
+        Assert.Equal(DocColor.Black, tool.Settings.Color);
 
         bar.Form.SelectedIndex = (int)ShadowForm.Perspective;                      // another form from the Form list
         Assert.Equal(ShadowForm.Perspective, tool.Settings.Form);
@@ -85,7 +86,9 @@ public class ShadowShellTests
         bar.Hs.Focus(); bar.Hs.Text = "0.2"; w.KeyPress(Key.Enter, RawInputModifiers.None, PhysicalKey.Enter, null);
         Assert.Equal(14.4, tool.Settings.ShiftX, 6);
         Assert.True(bar.Apply.IsVisible);
-        bar.Color.SelectedIndex = 1;                                               // Black
+        bar.Color.SelectedIndex = 1;                                               // Gray, second in the list
+        Assert.Equal(DocColor.FromHex("#808080"), tool.Settings.Color);
+        bar.Color.SelectedIndex = 0;
         Assert.Equal(DocColor.Black, tool.Settings.Color);
 
         await tool.PreviewSettled;
@@ -110,6 +113,52 @@ public class ShadowShellTests
         Assert.Equal([a], layer.Children);
         w.Close();
     }
+
+    [AvaloniaFact]
+    public async Task The_vanishing_point_fields_show_for_Perspective_only_and_follow_the_round_point_on_the_page()
+    {
+        var w = Open();
+        var s = w.Session;
+        var a = AddRect(w, 200, 200, 100, "#CC2222");
+        s.Selection.Set(a);
+        Click(EffectsItem(w, "Shadow..."));
+        var bar = Bar(w);
+        var tool = s.GetTool<ShadowTool>();
+        Assert.False(bar.VanishingGroup.IsVisible);                                // a flat shadow has no vanishing point
+
+        Click(EffectsItem(w, "Perspective Shadow..."));
+        Assert.True(bar.VanishingGroup.IsVisible);
+        Assert.False(bar.VanishingCenter.IsVisible);                               // nothing to put back yet
+        Assert.Equal(ContextBars.Fmt(Units.ToInches(250)), bar.VanishingX.Text);   // the center of the object
+        Assert.Equal(ContextBars.Fmt(Units.ToInches(250)), bar.VanishingY.Text);
+
+        bar.VanishingX.Focus();
+        bar.VanishingX.Text = "3";                                                 // typed, no Enter: live
+        await Task.Delay(EffectBarParts.Field.LiveDelayMs * 3);
+        Dispatcher.UIThread.RunJobs();
+        Assert.Equal(new Vec2(216, 250), tool.Settings.Pivot);
+        Assert.True(bar.VanishingCenter.IsVisible);
+
+        w.FindControl<DesignCanvas>("Surface")!.Focus();                           // the pointer is on the page now, not in the box
+        tool.SetHandle(new Vec2(230, 240));                                        // what dragging the round point does
+        Assert.Equal(ContextBars.Fmt(Units.ToInches(230)), bar.VanishingX.Text);
+        Assert.Equal(ContextBars.Fmt(Units.ToInches(240)), bar.VanishingY.Text);
+        Press(bar.VanishingCenter);
+        Assert.Null(tool.Settings.Pivot);
+        Assert.Equal(ContextBars.Fmt(Units.ToInches(250)), bar.VanishingX.Text);
+
+        Click(EffectsItem(w, "Cast Shadow..."));
+        Assert.False(bar.VanishingGroup.IsVisible);
+        Assert.NotNull(tool.HandlePosition);                                       // the cast shadow has its own point; Hs and Vs are its fields
+        var before = tool.Settings.ShiftX;
+        tool.SetHandle(new Vec2(250 + 36, 150));
+        Assert.Equal(36, tool.Settings.ShiftX, 6);
+        Assert.Equal(ContextBars.Fmt(Units.ToInches(36)), bar.Hs.Text);
+        Assert.NotEqual(before, tool.Settings.ShiftX);
+        w.Close();
+    }
+
+    private static void Press(Button b) => b.RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
 
     [AvaloniaFact]
     public void The_Effects_strip_has_a_button_for_each_shadow_and_the_forms_open_the_tool()
@@ -165,13 +214,25 @@ public class ShadowShellTests
         s.Selection.Set(box);
         s.BeginShadow(ShadowForm.Perspective);
         var tool = s.GetTool<ShadowTool>();
-        tool.PreviewDelay = TimeSpan.Zero;
         tool.Update(o => o with { ShiftX = 90, ShiftY = 50, Color = DocColor.FromHex("#303030") });
         await tool.PreviewSettled;
         Dispatcher.UIThread.RunJobs();
 #pragma warning disable CS0618 // the replacement overload's options type is not needed for a plain PNG
         var all = Path.Combine(dir, "effect-shadow-all.png");
         w.CaptureRenderedFrame()!.Save(all);
+
+        // the same object with the Cast form open: its draggable point (the top edge of the shadow) and, after that, Perspective with its vanishing point moved
+        s.BeginShadow(ShadowForm.Cast);
+        tool.SetHandle(new Vec2(790, 520));
+        await tool.PreviewSettled;
+        Dispatcher.UIThread.RunJobs();
+        w.CaptureRenderedFrame()!.Save(Path.Combine(dir, "effect-shadow-points-cast-all.png"));
+        s.BeginShadow(ShadowForm.Perspective);
+        tool.Update(o => o with { ShiftX = 90, ShiftY = 50, Color = DocColor.FromHex("#303030") });
+        tool.SetHandle(new Vec2(720, 620));
+        await tool.PreviewSettled;
+        Dispatcher.UIThread.RunJobs();
+        w.CaptureRenderedFrame()!.Save(Path.Combine(dir, "effect-shadow-points-perspective-all.png"));
 #pragma warning restore CS0618
         w.Close();
 
@@ -191,5 +252,21 @@ public class ShadowShellTests
         Crop("perspective", 960, 385, 200, 135);
         Crop("cast", 175, 545, 240, 170);
         Crop("context-bar", 40, 36, 700, 78);
+
+        // the draggable points: close-ups of the object with the Cast form (top edge of the shadow) and the Perspective form (vanishing point), and the Perspective bar
+        foreach (var (file, name, x, y, width, height) in new[]
+                 {
+                     ("effect-shadow-points-cast-all.png", "cast-point", 570, 585, 220, 190),
+                     ("effect-shadow-points-perspective-all.png", "perspective-point", 570, 635, 220, 160),
+                     ("effect-shadow-points-perspective-all.png", "perspective-context-bar", 40, 36, 700, 78),
+                 })
+        {
+            using var frame = SkiaSharp.SKBitmap.Decode(Path.Combine(dir, file));
+            using var part = new SkiaSharp.SKBitmap();
+            Assert.True(frame.ExtractSubset(part, new SkiaSharp.SKRectI(x, y, x + width, y + height)));
+            using var image = SkiaSharp.SKImage.FromBitmap(part);
+            using var data = image.Encode(SkiaSharp.SKEncodedImageFormat.Png, 100);
+            File.WriteAllBytes(Path.Combine(dir, $"effect-shadow-{name}.png"), data.ToArray());
+        }
     }
 }

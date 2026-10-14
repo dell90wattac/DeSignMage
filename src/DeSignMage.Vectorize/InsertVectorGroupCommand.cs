@@ -41,13 +41,17 @@ public sealed class InsertVectorGroupCommand : IDocumentCommand, IUndoMemory
 
     public void Do(Document doc)
     {
+        if (_container is Layer layer)
+        {
+            // A Vectorize result is a new item: it goes to the bottom of the layer (R22, the user's rule for new items), in one step.
+            if (_group.Children.Count == 0)
+                foreach (var p in _parts) _group.AddDetached(p);
+            doc.Insert(new Slot(layer, Stacking.NewItemIndex), _group);
+            return;
+        }
         doc.Insert(_container, -1, _group);
         foreach (var p in _parts) doc.Insert(_group, -1, p);
     }
 
-    public void Undo(Document doc)
-    {
-        for (int i = _parts.Length - 1; i >= 0; i--) doc.Remove(_parts[i]);
-        doc.Remove(_group);
-    }
+    public void Undo(Document doc) => doc.Remove(_group);   // takes its parts with it
 }
