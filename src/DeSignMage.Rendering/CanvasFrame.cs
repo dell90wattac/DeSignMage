@@ -447,6 +447,7 @@ public sealed class OverlayRenderer : IDisposable
         PathEffect = SKPathEffect.CreateDash([4, 3], 0),
     };
     private readonly SKPaint _deleteFill = new() { Style = SKPaintStyle.Fill, Color = new SKColor(0xE5, 0x39, 0x35, 0x28) };
+    private readonly SKPaint _smallMark = new() { Style = SKPaintStyle.Fill, Color = new SKColor(255, 0, 0) };
     private readonly SKPaint _zoomDash = new()
     {
         IsAntialias = false, Style = SKPaintStyle.Stroke, StrokeWidth = 1, Color = SKColors.Red,
@@ -531,6 +532,16 @@ public sealed class OverlayRenderer : IDisposable
                 case VectorEditOverlay v:
                     DrawVectors(c, v, view);
                     break;
+                case SmallVectorMarksOverlay sv:
+                {
+                    // View > Highlight Small Vectors: a red 5 x 5 square at the end of each small vector.
+                    foreach (var end in sv.Ends)
+                    {
+                        var q = view.ToScreen(end);
+                        c.DrawRect(SKRect.Create(MathF.Floor((float)q.X) - 2, MathF.Floor((float)q.Y) - 2, 5, 5), _smallMark);
+                    }
+                    break;
+                }
                 case LoopEditOverlay lo:
                     DrawLoops(c, lo, view);
                     break;
@@ -562,17 +573,47 @@ public sealed class OverlayRenderer : IDisposable
     }
 
     /// <summary>
-    /// Vector mode: loops in colors (border blue, interior red, broken black), the vector under the cursor
-    /// dashed, handles, and the nodes: big filled squares for corners, small crosses for smooth nodes.
+    /// Vector mode: the nodes as solid black squares (small crosses for smooth nodes), then the loops across them, one pixel wide and inverting\n    /// what is under them (border blue, interior red, broken black on white), the vector under the cursor dashed, and handles.
     /// </summary>
     private void DrawVectors(SKCanvas c, VectorEditOverlay v, Viewport view)
     {
         var m = view.DocToScreen;
-        using var loopPaint = new SKPaint { IsAntialias = true, Style = SKPaintStyle.Stroke, StrokeWidth = 1 };
+        // The nodes go down first, solid black, so the outline drawn after them runs across them (which is why the small ones look lighter
+        // in the middle). Same pixel size at any zoom: a loop's start/end point is the big 10 px square, an ordinary node a 6 px square, a
+        // node exactly where an earlier one was drawn a 4 px square (inside the first one's, so no different to look at), a node where the
+        // two vectors meet tangentially a small cross (arms 4 px), a selected node an 8 px square.
+        using var nodeFill = new SKPaint { Style = SKPaintStyle.Fill, Color = SKColors.Black };
+        using var cross = new SKPath();
+        foreach (var n in v.Nodes)
+        {
+            var p = view.ToScreen(n.Position);
+            float ix = MathF.Floor((float)p.X), iy = MathF.Floor((float)p.Y);
+            float x = ix + 0.5f, y = iy + 0.5f;
+            if (n.Selected)
+                c.DrawRect(SKRect.Create(ix - 4, iy - 4, 8, 8), nodeFill);
+            else if (n.Start)
+                c.DrawRect(SKRect.Create(ix - 5, iy - 5, 10, 10), nodeFill);
+            else if (!n.Corner)
+            {
+                cross.MoveTo(x - 4, y); cross.LineTo(x + 5, y);
+                cross.MoveTo(x, y - 4); cross.LineTo(x, y + 5);
+            }
+            else if (n.Coincident)
+                c.DrawRect(SKRect.Create(ix - 2, iy - 2, 4, 4), nodeFill);
+            else
+                c.DrawRect(SKRect.Create(ix - 3, iy - 3, 6, 6), nodeFill);
+        }
+        using (var crossPaint = new SKPaint { IsAntialias = false, Style = SKPaintStyle.Stroke, StrokeWidth = 1, Color = SKColors.Black })
+            c.DrawPath(cross, crossPaint);   // one path, so crossing pixels are not drawn twice
+        // The outline inverts what is under it, one pixel wide and not smoothed (border loops come out blue on white, interior loops red,
+        // broken ones black), so it stays visible on any background and over the black node marks.
+        using var loopPaint = new SKPaint { IsAntialias = false, Style = SKPaintStyle.Stroke, StrokeWidth = 1, BlendMode = SKBlendMode.Difference };
         foreach (var loop in v.Loops)
         {
-            loopPaint.Color = _theme.ColorOf(loop.Kind);
+            var shown = CanvasTheme.Light.ColorOf(loop.Kind);
+            loopPaint.Color = new SKColor((byte)(255 - shown.Red), (byte)(255 - shown.Green), (byte)(255 - shown.Blue));
             using var path = loop.Path.Transform(m).ToSKPath();
+            path.Transform(SKMatrix.CreateTranslation(0.5f, 0.5f));   // a point lands on the pixel that contains it
             c.DrawPath(path, loopPaint);
         }
         if (v.Highlight is { } hl)
@@ -605,35 +646,7 @@ public sealed class OverlayRenderer : IDisposable
             c.DrawLine(a, b, handleLine);
             c.DrawCircle(b, 3.5f, handleDot);
         }
-        // Nodes: corners are small solid squares (a loop's start point a little bigger), smooth nodes are crosses.
-        // Unselected marks invert what is under them like the selection handles do; selected nodes are filled with the accent color.
-        using var nodeFill = new SKPaint { Style = SKPaintStyle.Fill, Color = Accent };
-        using var cross = new SKPath();
-        foreach (var n in v.Nodes)
-        {
-            var p = view.ToScreen(n.Position);
-            float x = MathF.Floor((float)p.X) + 0.5f, y = MathF.Floor((float)p.Y) + 0.5f;
-            // Nodes that start or end a small vector are drawn about half the size of the others, so noise stands out from real corners.
-            float half = n.Small ? (n.Start ? 2f : 1.5f) : (n.Start ? 3.5f : 2.5f);
-            if (n.Selected)
-            {
-                float s = n.Small ? 3 : 4;
-                c.DrawRect(SKRect.Create(x - s, y - s, s * 2, s * 2), nodeFill);
-            }
-            else if (n.Corner)
-            {
-                c.DrawRect(SKRect.Create(x - half, y - half, half * 2 + 1, half * 2 + 1), _handleFill);
-            }
-            else
-            {
-                float a = n.Small ? 1.5f : 3, b = n.Small ? 2.5f : 4;
-                cross.MoveTo(x - a, y); cross.LineTo(x + b, y);
-                cross.MoveTo(x, y - a); cross.LineTo(x, y + b);
-            }
-        }
-        c.DrawPath(cross, _centerMark);   // one path, so crossing pixels aren't inverted twice
     }
-
     /// <summary>
     /// Loop Edit tool: loops in colors, the selected ones dotted red, a black square at each loop's start/end point,
     /// optional loop numbers, and the dotted red preview of a loop being copied.
@@ -884,6 +897,7 @@ public sealed class OverlayRenderer : IDisposable
         _dash.Dispose();
         _zoomDash.Dispose();
         _deleteFill.Dispose();
+        _smallMark.Dispose();
         _guide.Dispose();
         _guideSelected.Dispose();
         _handleFill.Dispose();

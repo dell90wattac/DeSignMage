@@ -4,10 +4,11 @@ using DeSignMage.Core.Model;
 namespace DeSignMage.Core.Editing;
 
 /// <summary>
-/// What counts as a "small vector": one shorter than a threshold, measured on the page (so it follows the object's scale). Small vectors are
-/// usually noise from tracing or importing; the Vector Edit tool draws the nodes that touch them small, counts them in the Info Line, and
-/// lets a box drawn over small nodes delete them. The threshold is one setting for the whole program (Tools ▸ Options ▸ Vector editing);
-/// the shell loads it at startup and writes it when it changes.
+/// What counts as a "small vector": a vector whose two end points are closer than a threshold, measured on the page (so it follows the
+/// object's scale). The distance is the straight chord from the previous node to the node, whatever the vector's kind (a long, tight arc or
+/// curve with close end points is small). Small vectors are not drawn differently in Vector Edit; they appear only in the Info Line's count
+/// and in View ▸ Highlight Small Vectors, which marks the end of each one. The threshold is one setting for the whole program (Tools ▸
+/// Options ▸ Vector editing); the shell loads it at startup and writes it when it changes.
 /// </summary>
 public static class SmallVectors
 {
@@ -17,7 +18,7 @@ public static class SmallVectors
     /// <summary>The smallest and largest threshold the setting accepts, in inches.</summary>
     public const double MinInches = 0.01, MaxInches = 5;
 
-    /// <summary>A vector shorter than this many points (on the page) is small.</summary>
+    /// <summary>A vector whose chord is shorter than this many points (on the page) is small.</summary>
     public static double ThresholdPoints { get; set; } = DefaultPoints;
 
     public static double ThresholdInches => Units.ToInches(ThresholdPoints);
@@ -30,31 +31,53 @@ public static class SmallVectors
         return clamped;
     }
 
+    /// <summary>The straight distance between the two ends of vector <paramref name="segment"/>, in points on the page.</summary>
+    public static double Chord(Loop loop, int segment, double scale) =>
+        Vec2.Distance(loop.SegmentStart(segment), loop.Segments[segment].End) * scale;
+
     /// <summary>True if vector <paramref name="segment"/> of <paramref name="loop"/> is small when the loop's space is scaled by <paramref name="scale"/> on the page.</summary>
-    public static bool IsSmall(Loop loop, int segment, double scale) => loop.SegmentLength(segment) * scale < ThresholdPoints;
+    public static bool IsSmall(Loop loop, int segment, double scale) => Chord(loop, segment, scale) < ThresholdPoints;
 
-    /// <summary>True if node <paramref name="node"/> is small. <b>Provisional rule:</b> it starts or ends a small vector (either side). This
-    /// is the only place that decides it; change it here if the rule turns out to be different.</summary>
-    public static bool IsSmallNode(Loop loop, int node, double scale)
+    /// <summary>How many vectors of the loop are small.</summary>
+    public static int Count(Loop loop, double scale)
     {
-        int a = loop.Incoming(node), b = loop.Outgoing(node);
-        return Rule(a >= 0 && IsSmall(loop, a, scale), b >= 0 && IsSmall(loop, b, scale));
+        int n = 0;
+        for (int i = 0; i < loop.Segments.Count; i++)
+            if (IsSmall(loop, i, scale)) n++;
+        return n;
     }
 
-    /// <summary>The rule itself: what makes a node small, given whether the vector before it and the vector after it are small.</summary>
-    private static bool Rule(bool incomingSmall, bool outgoingSmall) => incomingSmall || outgoingSmall;
-
-    /// <summary>Which nodes of <paramref name="loop"/> are small (index = node number).</summary>
-    public static bool[] SmallNodes(Loop loop, double scale)
+    /// <summary>The end point of every small vector of the loop, in the loop's own space (what the highlight marks).</summary>
+    public static IEnumerable<Vec2> SmallEnds(Loop loop, double scale)
     {
-        var small = new bool[loop.NodeCount];
-        var vector = new bool?[loop.Segments.Count];   // each vector measured once
-        bool V(int i) => vector[i] ??= IsSmall(loop, i, scale);
-        for (int k = 0; k < small.Length; k++)
-        {
-            int a = loop.Incoming(k), b = loop.Outgoing(k);
-            small[k] = Rule(a >= 0 && V(a), b >= 0 && V(b));
-        }
-        return small;
+        for (int i = 0; i < loop.Segments.Count; i++)
+            if (IsSmall(loop, i, scale)) yield return loop.Segments[i].End;
     }
+}
+
+/// <summary>
+/// Vector Edit's remaining choices (Tools ▸ Options ▸ Vector editing, View menu), one set for the program. The shell loads them at startup and
+/// saves them when they change.
+/// </summary>
+public static class VectorEditOptions
+{
+    /// <summary>
+    /// "Marquee with Shift selects vectors" (on by default). On: a plain box drawn in Vector Edit deletes the nodes inside it and Shift+box
+    /// selects them. Off: the two are swapped.
+    /// </summary>
+    public static bool MarqueeShiftSelects { get; set; } = true;
+
+    /// <summary>The Tangency setting: a node where the two vectors differ in direction by less than this many degrees is drawn as a small cross.</summary>
+    public const double DefaultTangencyDegrees = 2, MaxTangencyDegrees = 45;
+
+    public static double TangencyDegrees { get; set; } = DefaultTangencyDegrees;
+
+    public static double SetTangencyDegrees(double degrees)
+    {
+        TangencyDegrees = Math.Clamp(double.IsFinite(degrees) ? degrees : DefaultTangencyDegrees, 0, MaxTangencyDegrees);
+        return TangencyDegrees;
+    }
+
+    /// <summary>View ▸ Highlight Small Vectors: a red square at the end of every small vector, in every object. Off by default.</summary>
+    public static bool HighlightSmallVectors { get; set; }
 }

@@ -47,7 +47,7 @@ public sealed class VectorEditTool : PathEditToolBase
             Mode.Nodes => "Move node: Ctrl = no snap, Shift = join to an end point nearby",
             Mode.Line => "Move line: Ctrl = bend it into an arc",
             Mode.Handle => _dragHint,
-            Mode.Marquee => BoxDeletesSmallNodes ? "Box: small nodes inside are deleted when you let go (the box turns red); big nodes are left alone" : "",
+            Mode.Marquee => BoxDeletes(_boxShift) ? "Box: the nodes inside are deleted when you let go (the box turns red). Not if it holds a start/end point. Shift: select instead" : "Box: the nodes inside get selected. Without Shift: delete instead",
             _ => "To MOVE NODES: Drag (Shift: add)   To EDIT a vector: Double-click it   To LAYOUT: Pick the Layout tool (1)",
         };
 
@@ -80,7 +80,6 @@ public sealed class VectorEditTool : PathEditToolBase
         if (_menu is { } m && !Valid(m)) _menu = null;
         if (_hover is { } h && !Valid(h)) _hover = null;
         _work = null;
-        _smallCache = null;
         if (!HasTarget) { _selected.Clear(); _selSeg = _menu = _hover = null; }
     }
 
@@ -179,8 +178,10 @@ public sealed class VectorEditTool : PathEditToolBase
             return;
         }
 
-        if (!e.Shift) { _selected.Clear(); _selSeg = null; }
+        _selected.Clear();   // pressing on empty canvas always lets go of the selection, so a box can start
+        _selSeg = null;
         _mode = Mode.Marquee;
+        _boxShift = e.Shift;
         _marquee = Rect2.FromPoints(e.Doc, e.Doc);
         Redraw();
     }
@@ -216,6 +217,7 @@ public sealed class VectorEditTool : PathEditToolBase
                 else PathEditing.MoveLine(ll, ls.Seg, ToLocalVector(lp, e.Doc - _startDoc));
                 break;
             case Mode.Marquee:
+                _boxShift = e.Shift;
                 _marquee = Rect2.FromPoints(_startDoc, e.Doc);
                 break;
         }
@@ -256,7 +258,7 @@ public sealed class VectorEditTool : PathEditToolBase
                 Apply(_work, e.Control ? "Bend Line" : "Move Line", keepNodes: false, keepSegment: true);
                 break;
             case Mode.Marquee when _moved:
-                EndBox();
+                EndBox(e.Shift);
                 break;
         }
         _mode = Mode.None;
@@ -264,72 +266,78 @@ public sealed class VectorEditTool : PathEditToolBase
         Redraw();
     }
 
-    // ---- Box over nodes: deletes the small ones (a box never selects) ----
+    // ---- Box over nodes: delete them, or (with Shift) select them ----
 
-    /// <summary>
-    /// True (the default): a box drawn over <b>small nodes</b> (see <see cref="SmallVectors"/>) deletes them when it is released. Big nodes in
-    /// the box are left alone, neither deleted nor selected: a box never selects nodes (click a node, or Shift+click, to select). False: a box
-    /// does nothing.
-    /// </summary>
-    public bool BoxDeletesSmallNodes { get; set; } = true;
-
-    private IEnumerable<NodeRef> NodesIn(Rect2 box)
+    private IEnumerable<NodeRef> NodesIn(Rect2 box, bool strictly)
     {
         for (int pi = 0; pi < Pieces.Count; pi++)
             for (int li = 0; li < Pieces[pi].Loops.Count; li++)
                 for (int k = 0; k < Pieces[pi].Loops[li].NodeCount; k++)
-                    if (box.Contains(Pieces[pi].World.Transform(Pieces[pi].Loops[li].Node(k))))
-                        yield return new NodeRef(pi, li, k);
+                {
+                    var p = Pieces[pi].World.Transform(Pieces[pi].Loops[li].Node(k));
+                    bool inside = strictly ? p.X > box.Left && p.X < box.Right && p.Y > box.Top && p.Y < box.Bottom : box.Contains(p);
+                    if (inside) yield return new NodeRef(pi, li, k);
+                }
     }
 
-    /// <summary>The nodes inside <paramref name="box"/> that are small.</summary>
-    private List<NodeRef> SmallNodesIn(Rect2 box) => NodesIn(box).Where(IsSmall).ToList();
+    /// <summary>
+    /// What a box does with the current Shift state: with "Marquee with Shift selects vectors" on (the default) a plain box deletes the nodes
+    /// inside and Shift+box selects them; with it off the two are swapped (<see cref="VectorEditOptions.MarqueeShiftSelects"/>).
+    /// </summary>
+    public static bool BoxDeletes(bool shift) => VectorEditOptions.MarqueeShiftSelects ? !shift : shift;
 
-    /// <summary>How many small nodes a box over <paramref name="box"/> (document coordinates) would delete.</summary>
-    public int SmallNodeCountIn(Rect2 box) => SmallNodesIn(box).Count;
+    private bool _boxShift;
 
-    private bool IsSmall(NodeRef n) => SmallNodeSet().Contains(n);
-
-    private HashSet<NodeRef>? _smallCache;
-    private double _smallCacheThreshold;
-
-    /// <summary>The small nodes of the open graphic as it is stored (cached until it changes or the threshold does).</summary>
-    private HashSet<NodeRef> SmallNodeSet()
+    /// <summary>
+    /// The box was released. Delete: every node inside goes (one undo step, "Delete Vectors"; the neighbors merge, loops stay closed) and the
+    /// node after the last one deleted becomes selected. But if a loop's start/end point (the big square) is inside, nothing is deleted and
+    /// the system beep sounds. Select: the nodes strictly inside, start points too, become selected. A box with no width or height, or with no
+    /// node inside, does nothing.
+    /// </summary>
+    private void EndBox(bool shift)
     {
-        if (_smallCache is null || _smallCacheThreshold != SmallVectors.ThresholdPoints)
+        if (_marquee.Width <= 0 || _marquee.Height <= 0) return;
+        if (!BoxDeletes(shift))
         {
-            _smallCache = SmallNodesOf(Pieces.Select(p => p.Loops).ToList());
-            _smallCacheThreshold = SmallVectors.ThresholdPoints;
+            foreach (var n in NodesIn(_marquee, strictly: true)) _selected.Add(n);
+            return;
         }
-        return _smallCache;
-    }
-
-    /// <summary>Which nodes are small, by <see cref="SmallVectors"/>'s rule (the only place that decides it).</summary>
-    private HashSet<NodeRef> SmallNodesOf(IReadOnlyList<List<Loop>> loopsPerPiece)
-    {
-        var set = new HashSet<NodeRef>();
-        for (int pi = 0; pi < loopsPerPiece.Count; pi++)
+        var inside = NodesIn(_marquee, strictly: false).ToList();
+        if (inside.Count == 0) return;
+        if (inside.Any(n => n.Node == 0))
         {
-            double scale = Pieces[pi].World.AverageScale;
-            for (int li = 0; li < loopsPerPiece[pi].Count; li++)
-            {
-                var small = SmallVectors.SmallNodes(loopsPerPiece[pi][li], scale);
-                for (int k = 0; k < small.Length; k++)
-                    if (small[k]) set.Add(new NodeRef(pi, li, k));
-            }
+            Session.Beep();
+            return;
         }
-        return set;
-    }
-
-    /// <summary>The box was released: small nodes inside it are deleted as one undo step. Nothing else happens (no node is selected by a box).</summary>
-    private void EndBox()
-    {
-        if (!BoxDeletesSmallNodes) return;
-        var small = SmallNodesIn(_marquee);
-        if (small.Count == 0) return;
+        var deleted = inside.ToHashSet();
+        var after = NodeAfterLastDeleted(deleted);
         var work = Clones();
-        DeleteNodes(work, small);
-        Apply(work, "Delete Small Vectors", keepNodes: false, keepSegment: false);
+        DeleteNodes(work, inside);
+        Apply(work, "Delete Vectors", keepNodes: false, keepSegment: false);
+        if (after is { } at)   // the node that followed the last deleted one now has a new number: find it by where it is
+            for (int pi = 0; pi < Pieces.Count; pi++)
+                for (int li = 0; li < Pieces[pi].Loops.Count; li++)
+                    for (int k = 0; k < Pieces[pi].Loops[li].NodeCount; k++)
+                        if (Vec2.Distance(Pieces[pi].World.Transform(Pieces[pi].Loops[li].Node(k)), at) < 1e-6) { _selected.Add(new NodeRef(pi, li, k)); return; }
+    }
+
+    /// <summary>Where the first node that is not being deleted lies after the last deleted node (document coordinates), if there is one.</summary>
+    private Vec2? NodeAfterLastDeleted(HashSet<NodeRef> deleted)
+    {
+        var last = deleted.OrderBy(n => n.Piece).ThenBy(n => n.Loop).ThenBy(n => n.Node).Last();
+        var piece = Pieces[last.Piece];
+        var loop = piece.Loops[last.Loop];
+        for (int step = 1; step < loop.NodeCount; step++)
+        {
+            int k = last.Node + step;
+            if (k >= loop.NodeCount)
+            {
+                if (!loop.Closed) return null;
+                k %= loop.NodeCount;
+            }
+            if (!deleted.Contains(new NodeRef(last.Piece, last.Loop, k))) return piece.World.Transform(loop.Node(k));
+        }
+        return null;
     }
     /// <summary>Deletes nodes from the working copies: the two vectors at each merge into one, so a closed loop stays closed.</summary>
     private static void DeleteNodes(List<List<Loop>> work, IEnumerable<NodeRef> nodes)
@@ -695,16 +703,18 @@ public sealed class VectorEditTool : PathEditToolBase
         {
             var loopsPerPiece = _work ?? Pieces.Select(p => p.Loops).ToList();
             var pieces = Pieces.Select((p, i) => new VectorPiece(p.PartIndex, p.World, loopsPerPiece[i], p.FillRule)).ToList();
-            var small = _work is null ? SmallNodeSet() : SmallNodesOf(_work);   // while dragging the lengths change, so measure the copies
             var nodes = new List<VectorNodeMark>();
+            var drawn = new HashSet<(double, double)>();   // where a node mark was already drawn: a later node at exactly that spot is marked as coincident
+            double tangent = VectorEditOptions.TangencyDegrees * Math.PI / 180;
             for (int pi = 0; pi < pieces.Count; pi++)
                 for (int li = 0; li < pieces[pi].Loops.Count; li++)
                 {
                     var l = pieces[pi].Loops[li];
                     for (int k = 0; k < l.NodeCount; k++)
                     {
-                        var node = new NodeRef(pi, li, k);
-                        nodes.Add(new VectorNodeMark(pieces[pi].World.Transform(l.Node(k)), l.IsCorner(k), _selected.Contains(node), k == 0, small.Contains(node)));
+                        var at = pieces[pi].World.Transform(l.Node(k));
+                        bool coincident = !drawn.Add((at.X, at.Y));
+                        nodes.Add(new VectorNodeMark(at, l.IsCorner(k, tangent), _selected.Contains(new NodeRef(pi, li, k)), k == 0, coincident));
                     }
                 }
             var handles = VisibleHandles(loopsPerPiece)
@@ -719,8 +729,8 @@ public sealed class VectorEditTool : PathEditToolBase
         }
         if (_mode == Mode.Marquee && _moved)
         {
-            // A box that will delete small nodes looks different from one that only selects, so releasing it is never a surprise.
-            bool deletes = BoxDeletesSmallNodes && HasTarget && SmallNodesIn(_marquee).Count > 0;
+            // A box that deletes looks different from one that selects, so letting go is never a surprise.
+            bool deletes = HasTarget && BoxDeletes(_boxShift);
             items.Add(new MarqueeOverlay(_marquee, deletes ? MarqueeKind.Delete : MarqueeKind.Select));
         }
     }

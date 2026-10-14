@@ -242,7 +242,7 @@ public static partial class PathEditing
                     case SegmentKind.Arc: arcs++; break;
                     default: beziers++; break;
                 }
-                if (l.SegmentLength(i) * scale < smallLength) small++;
+                if (Vec2.Distance(l.SegmentStart(i), l.Segments[i].End) * scale < smallLength) small++;   // the straight chord, whatever the vector's kind
             }
         }
         return new VectorStats(n, segs, lines, arcs, beziers, small);

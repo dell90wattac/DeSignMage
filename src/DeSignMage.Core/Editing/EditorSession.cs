@@ -326,6 +326,7 @@ public sealed partial class EditorSession
         var items = new List<OverlayItem>();
         AddGuideOverlays(items);
         _activeTool.BuildOverlay(items);
+        AddSmallVectorMarks(items);   // last, so the red squares are not hidden under the black node squares
         if (_nav == NavMode.ZoomMarquee && Vec2.Distance(_navStart, _navLast) >= ClickThresholdPx)
             items.Add(new MarqueeOverlay(Rect2.FromPoints(Viewport.ToDoc(_navStart), Viewport.ToDoc(_navLast)), MarqueeKind.Zoom));
         return items;

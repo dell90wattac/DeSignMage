@@ -49,10 +49,15 @@ public sealed record ContextMenuRequest(Model.DocObject Target, Vec2 Screen, Men
 public enum MenuKind { Object, Vector, Loop }
 
 /// <summary>
-/// A node mark in vector mode: a square for a corner, a cross for a smooth node. <paramref name="Small"/> nodes (they start or end a vector
-/// shorter than the small-vector threshold, see <see cref="SmallVectors"/>) are drawn smaller than the rest.
+/// A node mark in vector mode, at a fixed pixel size at any zoom: a loop's <paramref name="Start"/> point is the big square (10 px), an
+/// ordinary corner a 6 px square, a node that is not a <paramref name="Corner"/> (the two vectors meet within the Tangency setting) a small
+/// cross, a selected node an 8 px square. A <paramref name="Coincident"/> node sits exactly where an earlier node was drawn; it is a 4 px
+/// square drawn over the earlier one, which with the inverting look leaves a hollow square.
 /// </summary>
-public readonly record struct VectorNodeMark(Vec2 Position, bool Corner, bool Selected, bool Start = false, bool Small = false);
+public readonly record struct VectorNodeMark(Vec2 Position, bool Corner, bool Selected, bool Start = false, bool Coincident = false);
+
+/// <summary>View ▸ Highlight Small Vectors: the end point of every small vector (document coordinates); each is drawn as a small red square.</summary>
+public sealed record SmallVectorMarksOverlay(IReadOnlyList<Vec2> Ends) : OverlayItem;
 
 /// <summary>A loop drawn in vector mode / outline view: blue on the border, red inside, black when broken.</summary>
 public readonly record struct OutlineLoop(PathGeometry Path, LoopKind Kind);

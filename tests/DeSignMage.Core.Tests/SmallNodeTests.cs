@@ -7,36 +7,45 @@ using static DeSignMage.Core.Tests.DocumentTests;
 
 namespace DeSignMage.Core.Tests;
 
-/// <summary>Small vectors: two node sizes in Vector Edit, a box that deletes small nodes, and the threshold setting.</summary>
+/// <summary>
+/// Vector Edit's node marks (start, ordinary, coincident, tangent, selected), the box that deletes or (with Shift) selects nodes, and the
+/// small-vector count and highlight.
+/// </summary>
 public class SmallNodeTests : IDisposable
 {
     private readonly EditorSession _s;
+    private int _beeps;
     private Layer L => _s.Document.ActiveLayer;
     private VectorEditTool Tool => _s.GetTool<VectorEditTool>();
 
     public SmallNodeTests()
     {
-        SmallVectors.ThresholdPoints = SmallVectors.DefaultPoints;
-        _s = new EditorSession(NewDoc());
+        Reset();
+        _s = new EditorSession(NewDoc()) { Beep = () => _beeps++ };
         _s.Viewport.SetViewSize(new Vec2(1000, 800));
         _s.Viewport.Set(1, Vec2.Zero);
     }
 
-    public void Dispose() => SmallVectors.ThresholdPoints = SmallVectors.DefaultPoints;
+    public void Dispose() => Reset();
 
-    /// <summary>
-    /// A 400 x 400 square whose top edge carries tracing noise: the nodes at x = 100, 104 and 108 are only 4 points apart, so all three touch a
-    /// small vector (the default threshold is 18 points). Local nodes: (0,0) (100,0) (104,0) (108,0) (200,0) (400,0) (400,400) (0,400).
-    /// </summary>
-    private PathObject AddNoisySquare(Affine2? transform = null)
+    private static void Reset()
+    {
+        SmallVectors.ThresholdPoints = SmallVectors.DefaultPoints;
+        VectorEditOptions.MarqueeShiftSelects = true;
+        VectorEditOptions.TangencyDegrees = VectorEditOptions.DefaultTangencyDegrees;
+        VectorEditOptions.HighlightSmallVectors = false;
+    }
+
+    /// <summary>A 400 x 400 square whose top edge has more nodes. Local nodes: (0,0) start, (100,0) (104,0) (108,0) (200,0) (400,0) (400,400) (0,400); world = local + 200.</summary>
+    private PathObject AddSquare(bool edit = true)
     {
         var loop = new Loop { Start = new Vec2(0, 0), Closed = true };
         foreach (var p in new[] { (100.0, 0.0), (104, 0), (108, 0), (200, 0), (400, 0), (400, 400), (0, 400) })
             loop.Segments.Add(Segment.Line(new Vec2(p.Item1, p.Item2)));
         loop.Segments.Add(Segment.Line(new Vec2(0, 0)));
-        var path = new PathObject(PathEditing.FromLoops([loop], FillRule.NonZero)) { Transform = transform ?? Affine2.Translation(200, 200), Style = ObjectStyle.FillOnly(DocColor.Black) };
+        var path = new PathObject(PathEditing.FromLoops([loop], FillRule.NonZero)) { Transform = Affine2.Translation(200, 200), Style = ObjectStyle.FillOnly(DocColor.Black) };
         _s.History.Execute(new AddObjectCommand(L, path));
-        _s.EditVectors(path);
+        if (edit) _s.EditVectors(path);
         return path;
     }
 
@@ -55,67 +64,94 @@ public class SmallNodeTests : IDisposable
 
     private static List<Loop> LoopsOf(DocObject o) => PathEditing.ToLoops(o.GetLocalGeometry()!);
 
-    // ---- Two node sizes ----
+    // ---- Node marks ----
+
+    /// <summary>
+    /// Local nodes: 0 (0,0) the start; 1 (200,0) an ordinary corner; 2 (200,0) again, at exactly the same place; 3 (300,100) where two curves
+    /// meet along one line (tangent, unless a small error is asked for); 4 (300,200) and 5 (0,200) ordinary corners.
+    /// </summary>
+    private PathObject AddMarkerShape(double tangentErrorDegrees = 0)
+    {
+        double a = tangentErrorDegrees * Math.PI / 180;
+        var loop = new Loop
+        {
+            Start = new Vec2(0, 0),
+            Closed = true,
+            Segments =
+            [
+                Segment.Line(new Vec2(200, 0)),
+                Segment.Line(new Vec2(200, 0)),
+                Segment.Cubic(new Vec2(240, 0), new Vec2(270, 100), new Vec2(300, 100)),
+                Segment.Cubic(new Vec2(300 + 30 * Math.Cos(a), 100 + 30 * Math.Sin(a)), new Vec2(330, 160), new Vec2(300, 200)),
+                Segment.Line(new Vec2(0, 200)),
+                Segment.Line(new Vec2(0, 0)),
+            ],
+        };
+        var path = new PathObject(PathEditing.FromLoops([loop], FillRule.NonZero)) { Transform = Affine2.Translation(200, 200), Style = ObjectStyle.FillOnly(DocColor.Black) };
+        _s.History.Execute(new AddObjectCommand(L, path));
+        _s.EditVectors(path);
+        return path;
+    }
 
     [Fact]
-    public void Nodes_that_start_or_end_a_small_vector_are_marked_small_and_the_rest_big()
+    public void Marks_tell_apart_the_start_point_ordinary_corners_coincident_nodes_and_tangent_nodes()
     {
-        AddNoisySquare();
+        AddMarkerShape();
         var marks = Overlay().Nodes;
-        Assert.Equal(8, marks.Count);
-        // Local x = 100, 104, 108 are small; world = local + 200.
-        var small = marks.Where(m => m.Small).Select(m => m.Position.X).OrderBy(x => x).ToList();
-        Assert.Equal([300.0, 304.0, 308.0], small);
-        Assert.Equal(5, marks.Count(m => !m.Small));
+        Assert.Equal(6, marks.Count);
+        Assert.True(marks[0].Start);                                              // the loop's start/end point: the big square
+        Assert.False(marks[1].Start || marks[1].Coincident || !marks[1].Corner);  // an ordinary node
+        Assert.True(marks[2].Coincident);                                         // exactly where node 1 was drawn
+        Assert.False(marks[3].Corner);                                            // the two curves leave it along one line: a cross, not a square
+        Assert.True(marks[4].Corner && !marks[4].Coincident);
+        Assert.DoesNotContain(marks.Skip(1), m => m.Start);                       // only node 0 is a start
+        Assert.Single(marks, m => m.Coincident);
     }
 
     [Fact]
-    public void Small_is_measured_on_the_page_so_a_big_scale_means_nothing_is_small()
+    public void A_node_is_tangent_only_within_the_Tangency_setting()
     {
-        AddNoisySquare(Affine2.Scale(10, 10));                                   // 4 points become 40 on the page
-        Assert.DoesNotContain(Overlay().Nodes, m => m.Small);
+        AddMarkerShape(tangentErrorDegrees: 3);
+        Assert.True(Overlay().Nodes[3].Corner);                                   // 3 degrees off, the setting is 2: a square
+        VectorEditOptions.SetTangencyDegrees(4);
+        Assert.False(Overlay().Nodes[3].Corner);                                  // now within the setting: a cross
+        Assert.Equal(VectorEditOptions.MaxTangencyDegrees, VectorEditOptions.SetTangencyDegrees(900));
+        Assert.Equal(0, VectorEditOptions.SetTangencyDegrees(-5));
+        Assert.Equal(VectorEditOptions.DefaultTangencyDegrees, VectorEditOptions.SetTangencyDegrees(double.NaN));
     }
 
     [Fact]
-    public void A_shrunk_object_has_small_nodes_where_a_full_size_one_did_not()
+    public void A_selected_node_is_marked_selected_and_marks_do_not_depend_on_vector_length_or_zoom()
     {
-        AddNoisySquare(Affine2.Scale(0.05, 0.05) * Affine2.Translation(200, 200));   // the whole square is 20 points wide
-        Assert.True(Overlay().Nodes.Count(m => m.Small) >= 6);
+        AddSquare();                                                              // nodes only 4 points apart: still ordinary nodes
+        _s.PointerDown(At(304, 200, PointerButton.Left)); _s.PointerUp(At(304, 200, PointerButton.Left));
+        var marks = Overlay().Nodes;
+        Assert.Single(marks, m => m.Selected);
+        Assert.DoesNotContain(marks, m => m.Coincident);
+        Assert.Single(marks, m => m.Start);
+        _s.Viewport.Set(4, new Vec2(-500, -500));
+        Assert.Equal(marks.Select(m => (m.Start, m.Corner, m.Coincident)), Overlay().Nodes.Select(m => (m.Start, m.Corner, m.Coincident)));
     }
 
-    [Fact]
-    public void The_marks_follow_the_vectors_while_a_node_is_dragged()
-    {
-        AddNoisySquare();
-        // Drag the node at local 200 left next to the noise: the vector 108 -> 200 shrinks below the threshold, so the nodes touching it become small.
-        _s.PointerDown(At(400, 200, PointerButton.Left));
-        _s.PointerMove(At(380, 200));
-        _s.PointerMove(At(318, 200));
-        var live = Overlay().Nodes.Where(m => m.Small).Select(m => m.Position.X).OrderBy(x => x).ToList();
-        Assert.Contains(318.0, live);
-        _s.PointerUp(At(318, 200, PointerButton.Left));
-        Assert.Contains(Overlay().Nodes, m => m.Small && m.Position.X == 318);
-    }
-
-    // ---- The delete box ----
+    // ---- The box ----
 
     [Fact]
-    public void A_box_over_small_nodes_deletes_them_as_one_undo_step_and_the_shape_stays_closed()
+    public void A_plain_box_deletes_every_node_inside_as_one_step_keeps_the_loop_closed_and_leaves_the_start_where_it_was()
     {
-        var path = AddNoisySquare();
+        var path = AddSquare();
         var before = path.GetWorldBounds();
         int steps = _s.History.UndoList.Count;
 
-        Box(290, 150, 320, 250);                                                  // covers the three small nodes only
+        Box(290, 150, 320, 250);                                                  // nodes at local x = 100, 104, 108
         Assert.Equal(steps + 1, _s.History.UndoList.Count);
-        Assert.Equal("Delete Small Vectors", _s.History.UndoDescription);
+        Assert.Equal("Delete Vectors", _s.History.UndoDescription);
         var loop = Assert.Single(LoopsOf(path));
         Assert.True(loop.Closed);
-        Assert.Equal(5, loop.NodeCount);                                          // 8 - 3
+        Assert.Equal(5, loop.NodeCount);
+        Assert.Equal(new Vec2(0, 0), loop.Start);                                 // the big square did not move
         Assert.Equal(loop.Start, loop.Segments[^1].End);
-        Assert.Equal(before, path.GetWorldBounds());                              // the outline is the same square
-        Assert.Equal(new[] { 0.0, 200, 400 }, Enumerable.Range(0, loop.NodeCount).Select(loop.Node).Where(n => n.Y == 0).Select(n => n.X).OrderBy(x => x));
-        Assert.Equal(0, Tool.SelectedNodeCount);
+        Assert.Equal(before, path.GetWorldBounds());
+        Assert.Equal(0, _beeps);
 
         _s.Undo();
         Assert.Equal(8, Assert.Single(LoopsOf(path)).NodeCount);
@@ -124,110 +160,189 @@ public class SmallNodeTests : IDisposable
     }
 
     [Fact]
-    public void Big_nodes_in_the_same_box_are_left_alone_neither_deleted_nor_selected()
+    public void The_node_after_the_last_deleted_one_becomes_selected()
     {
-        var path = AddNoisySquare();
-        Box(290, 150, 420, 250);                                                  // the three small nodes and the big one at local x = 200
-        var loop = Assert.Single(LoopsOf(path));
-        Assert.Equal(5, loop.NodeCount);                                          // only the small ones went
-        Assert.Contains(Enumerable.Range(0, loop.NodeCount).Select(loop.Node), n => n == new Vec2(200, 0));   // the big node is still there
-        Assert.Equal(0, Tool.SelectedNodeCount);                                  // and a box never selects
-    }
-
-    [Fact]
-    public void A_box_over_big_nodes_only_does_nothing_at_all()
-    {
-        var path = AddNoisySquare();
-        int steps = _s.History.UndoList.Count;
-        Box(580, 180, 620, 220);                                                  // the corner at local (400, 0)
-        Assert.Equal(steps, _s.History.UndoList.Count);                           // no undo step
-        Assert.Equal(0, Tool.SelectedNodeCount);
-        Assert.Equal(8, Assert.Single(LoopsOf(path)).NodeCount);
-    }
-
-    [Fact]
-    public void Clicking_and_shift_clicking_still_select_nodes()
-    {
-        AddNoisySquare();
-        _s.PointerDown(At(600, 200, PointerButton.Left)); _s.PointerUp(At(600, 200, PointerButton.Left));
-        _s.PointerDown(At(600, 600, PointerButton.Left, ModifierKeys.Shift)); _s.PointerUp(At(600, 600, PointerButton.Left, ModifierKeys.Shift));
-        Assert.Equal(2, Tool.SelectedNodeCount);
-    }
-
-    [Fact]
-    public void With_the_delete_switch_off_a_box_does_nothing()
-    {
-        var path = AddNoisySquare();
-        Tool.BoxDeletesSmallNodes = false;
-        int steps = _s.History.UndoList.Count;
+        AddSquare();
         Box(290, 150, 320, 250);
+        Assert.Equal(1, Tool.SelectedNodeCount);
+        Assert.Equal(new Vec2(400, 200), Tool.AnchorPosition());                  // local (200,0), the next node along
+
+        _s.Undo();
+        Box(290, 150, 420, 250);                                                  // now that node goes too: the following one is selected
+        Assert.Equal(new Vec2(600, 200), Tool.AnchorPosition());
+    }
+
+    [Fact]
+    public void Nothing_depends_on_size_every_ordinary_node_in_the_box_goes()
+    {
+        var path = AddSquare();
+        Box(580, 180, 620, 620);                                                  // the corners at local (400,0) and (400,400): long vectors all round
+        Assert.Equal(6, Assert.Single(LoopsOf(path)).NodeCount);
+    }
+
+    [Fact]
+    public void A_box_holding_a_start_point_deletes_nothing_beeps_and_is_no_undo_step()
+    {
+        var path = AddSquare();
+        int steps = _s.History.UndoList.Count;
+        Box(150, 150, 320, 250);                                                  // the start at (200,200) and the three nodes beside it
+        Assert.Equal(1, _beeps);
         Assert.Equal(steps, _s.History.UndoList.Count);
+        Assert.Equal(8, Assert.Single(LoopsOf(path)).NodeCount);
         Assert.Equal(0, Tool.SelectedNodeCount);
+    }
+
+    [Fact]
+    public void A_box_with_no_nodes_or_no_size_does_nothing()
+    {
+        var path = AddSquare();
+        int steps = _s.History.UndoList.Count;
+        Box(700, 700, 750, 750);                                                  // empty canvas: no nodes
+        Box(300, 150, 300, 250);                                                  // no width
+        Assert.Equal(steps, _s.History.UndoList.Count);
+        Assert.Equal(0, _beeps);
         Assert.Equal(8, Assert.Single(LoopsOf(path)).NodeCount);
     }
+
     [Fact]
-    public void The_box_is_drawn_red_while_it_holds_small_nodes_and_plain_otherwise()
+    public void Ctrl_and_Alt_make_no_difference_to_a_box()
     {
-        AddNoisySquare();
+        var path = AddSquare();
+        Box(290, 150, 320, 250, ModifierKeys.Control);
+        Assert.Equal(5, Assert.Single(LoopsOf(path)).NodeCount);
+        _s.Undo();
+        Box(290, 150, 320, 250, ModifierKeys.Alt);
+        Assert.Equal(5, Assert.Single(LoopsOf(path)).NodeCount);
+    }
+
+    [Fact]
+    public void Shift_box_selects_the_nodes_strictly_inside_start_points_too_and_changes_nothing_else()
+    {
+        var path = AddSquare();
+        int steps = _s.History.UndoList.Count;
+        Box(190, 190, 210, 210, ModifierKeys.Shift);                              // around the start point
+        Assert.Equal(1, Tool.SelectedNodeCount);
+        Assert.Equal(new Vec2(200, 200), Tool.AnchorPosition());
+
+        Box(200, 150, 320, 250, ModifierKeys.Shift);                              // the left edge passes exactly through the start: strictly inside excludes it
+        Assert.Equal(3, Tool.SelectedNodeCount);
+        Assert.Equal(steps, _s.History.UndoList.Count);
+        Assert.Equal(0, _beeps);
+        Assert.Equal(8, Assert.Single(LoopsOf(path)).NodeCount);
+    }
+
+    [Fact]
+    public void The_option_swaps_which_box_deletes_and_which_selects()
+    {
+        var path = AddSquare();
+        VectorEditOptions.MarqueeShiftSelects = false;
+        Box(290, 150, 320, 250);                                                  // plain now selects
+        Assert.Equal(3, Tool.SelectedNodeCount);
+        Assert.Equal(8, Assert.Single(LoopsOf(path)).NodeCount);
+        Box(290, 150, 320, 250, ModifierKeys.Shift);                              // Shift now deletes
+        Assert.Equal(5, Assert.Single(LoopsOf(path)).NodeCount);
+        Assert.Equal("Delete Vectors", _s.History.UndoDescription);
+
+        _s.Undo();
+        Box(150, 150, 320, 250, ModifierKeys.Shift);                              // and the start-point rule goes with the deleting box
+        Assert.Equal(1, _beeps);
+        Assert.Equal(8, Assert.Single(LoopsOf(path)).NodeCount);
+    }
+
+    [Fact]
+    public void Pressing_on_empty_canvas_lets_go_of_the_selection_and_the_box_is_red_only_when_it_deletes()
+    {
+        AddSquare();
+        _s.PointerDown(At(304, 200, PointerButton.Left)); _s.PointerUp(At(304, 200, PointerButton.Left));
+        Assert.Equal(1, Tool.SelectedNodeCount);
+
         _s.PointerDown(At(290, 150, PointerButton.Left));
+        Assert.Equal(0, Tool.SelectedNodeCount);
         _s.PointerMove(At(310, 200));
         _s.PointerMove(At(320, 250));
         Assert.Equal(MarqueeKind.Delete, Assert.Single(_s.BuildOverlay().OfType<MarqueeOverlay>()).Kind);
-        Assert.Equal(3, Tool.SmallNodeCountIn(new Rect2(290, 150, 320, 250)));
-        _s.PointerMove(At(295, 160));                                             // shrunk so it holds nothing
+        _s.PointerMove(At(322, 250, PointerButton.None, ModifierKeys.Shift));      // Shift held: this box would select
         Assert.Equal(MarqueeKind.Select, Assert.Single(_s.BuildOverlay().OfType<MarqueeOverlay>()).Kind);
-        Assert.True(_s.KeyDown(EditorKey.Escape, ModifierKeys.None));             // Esc cancels the box
-        _s.PointerUp(At(295, 160, PointerButton.Left));
+        Assert.True(_s.KeyDown(EditorKey.Escape, ModifierKeys.None));
+        _s.PointerUp(At(322, 250, PointerButton.Left));
         Assert.Empty(_s.BuildOverlay().OfType<MarqueeOverlay>());
-        Assert.Equal(8, Assert.Single(LoopsOf((PathObject)Tool.Target!)).NodeCount);
+    }
+
+    // ---- Small vectors: the count and the highlight ----
+
+    [Fact]
+    public void A_vector_is_small_by_the_straight_distance_between_its_ends_whatever_its_kind()
+    {
+        var loop = new Loop
+        {
+            Start = new Vec2(0, 0),
+            Segments =
+            [
+                Segment.Line(new Vec2(10, 0)),                                               // chord 10: small
+                Segment.Arc(new Vec2(15, -30), new Vec2(20, 0)),                             // a tall arc, but its ends are 10 apart: small
+                Segment.Cubic(new Vec2(60, 0), new Vec2(-40, 0), new Vec2(25, 0)),           // swings far out and back; chord 5: small
+                Segment.Line(new Vec2(125, 0)),                                              // chord 100: not small
+            ],
+        };
+        Assert.Equal(3, SmallVectors.Count(loop, 1));
+        Assert.Equal([new Vec2(10, 0), new Vec2(20, 0), new Vec2(25, 0)], SmallVectors.SmallEnds(loop, 1).ToArray());
+        Assert.Equal(0, SmallVectors.Count(loop, 10));                                       // on the page everything is ten times as long
     }
 
     [Fact]
-    public void Deleting_every_node_of_a_tiny_loop_removes_the_loop_and_leaves_the_rest()
+    public void The_object_scale_decides_what_the_count_includes()
     {
-        // A dot made of four tiny vectors beside a normal square: a box over the dot removes it and leaves the square.
-        var dot = PathEditing.ToLoops(PathGeometry.Rectangle(Rect2.FromXYWH(0, 0, 6, 6)))[0];
-        var square = PathEditing.ToLoops(PathGeometry.Rectangle(Rect2.FromXYWH(100, 0, 300, 300)))[0];
-        var path = new PathObject(PathEditing.FromLoops([dot, square], FillRule.EvenOdd)) { Transform = Affine2.Translation(200, 200), Style = ObjectStyle.FillOnly(DocColor.Black) };
-        _s.History.Execute(new AddObjectCommand(L, path));
-        _s.EditVectors(path);
-        Box(190, 190, 215, 215);
-        var loop = Assert.Single(LoopsOf(path));
-        Assert.Equal(new Rect2(100, 0, 400, 300), loop.Bounds());
-        Assert.Equal("Delete Small Vectors", _s.History.UndoDescription);
-    }
-
-    // ---- The threshold ----
-
-    [Fact]
-    public void The_Info_Line_counts_the_small_vectors_with_the_threshold_it_uses()
-    {
-        AddNoisySquare();
-        Assert.Contains("2 small vecs (< 0.25in)", Tool.InfoLine());              // the two 4 point vectors (100-104 and 104-108)
+        var loops = new List<Loop> { new() { Start = default, Segments = [Segment.Line(new Vec2(10, 0)), Segment.Line(new Vec2(30, 0)), Segment.Line(new Vec2(130, 0))] } };
+        int Count(double scale) => PathEditing.Stats(loops.Select(l => (l, scale)), SmallVectors.ThresholdPoints).SmallVectors;
+        Assert.Equal(1, Count(1));                                                           // chords 10, 20, 100 against 18 points
+        Assert.Equal(2, Count(0.5));                                                         // 5, 10, 50
+        Assert.Equal(0, Count(2));                                                           // 20, 40, 200
     }
 
     [Fact]
-    public void A_smaller_threshold_makes_fewer_nodes_small_and_a_larger_one_more()
+    public void Info_Line_counts_small_vectors_with_the_chord_rule_and_names_the_threshold()
     {
-        AddNoisySquare();
-        Assert.Equal(3, Overlay().Nodes.Count(m => m.Small));
-
-        Assert.Equal(0.02, SmallVectors.SetInches(0.02));                         // 1.44 points: the 4 point vectors are not small any more
-        Assert.DoesNotContain(Overlay().Nodes, m => m.Small);
+        AddSquare();
+        Assert.Contains("2 small vecs (< 0.25in)", Tool.InfoLine());                          // 100-104 and 104-108
+        SmallVectors.SetInches(0.02);
         Assert.Contains("0 small vecs (< 0.02in)", Tool.InfoLine());
-
-        SmallVectors.SetInches(1.5);                                              // 108 points: every vector except the three 400 point sides... and 108-200 (92)
-        var small = Overlay().Nodes.Count(m => m.Small);
-        Assert.True(small > 3);
+        SmallVectors.SetInches(1.5);                                                         // 108 points
         Assert.Contains("(< 1.5in)", Tool.InfoLine());
+        Assert.DoesNotContain("0 small vecs", Tool.InfoLine());
     }
 
     [Fact]
-    public void The_threshold_is_kept_between_a_hundredth_and_five_inches()
+    public void The_threshold_setting_is_kept_between_a_hundredth_and_five_inches()
     {
         Assert.Equal(SmallVectors.MinInches, SmallVectors.SetInches(0));
         Assert.Equal(SmallVectors.MaxInches, SmallVectors.SetInches(99));
         Assert.Equal(0.25, SmallVectors.SetInches(double.NaN));
         Assert.Equal(Units.FromInches(0.25), SmallVectors.ThresholdPoints, 9);
+    }
+
+    [Fact]
+    public void Highlight_marks_the_end_of_every_short_vector_in_every_object_and_is_off_by_default()
+    {
+        AddSquare(edit: false);                                                              // short vectors end at local x = 104 and 108
+        var small = new PathObject(PathEditing.FromLoops([new Loop { Start = default, Segments = [Segment.Line(new Vec2(5, 0)), Segment.Line(new Vec2(5, 400))] }], FillRule.NonZero))
+        { Transform = Affine2.Translation(100, 500) };
+        _s.History.Execute(new AddObjectCommand(L, small));
+        Assert.Empty(_s.BuildOverlay().OfType<SmallVectorMarksOverlay>());                   // off
+
+        VectorEditOptions.HighlightSmallVectors = true;
+        var marks = Assert.Single(_s.BuildOverlay().OfType<SmallVectorMarksOverlay>()).Ends;
+        Assert.Contains(new Vec2(304, 200), marks);
+        Assert.Contains(new Vec2(308, 200), marks);
+        Assert.Contains(new Vec2(105, 500), marks);                                          // the other object's 5 point vector
+        Assert.DoesNotContain(new Vec2(300, 200), marks);                                    // 100 ends a 100 point vector
+        Assert.Equal(3, marks.Count);
+
+        _s.Viewport.Set(1, new Vec2(-5000, -5000));                                          // scrolled away: nothing on screen, nothing marked
+        Assert.Empty(_s.BuildOverlay().OfType<SmallVectorMarksOverlay>());
+        _s.Viewport.Set(1, Vec2.Zero);
+        _s.History.Execute(TransformObjectsCommand.ApplyWorld("Move", [small], Affine2.Translation(50, 0)));
+        Assert.Contains(new Vec2(155, 500), Assert.Single(_s.BuildOverlay().OfType<SmallVectorMarksOverlay>()).Ends);   // follows the object
+        SmallVectors.SetInches(0.05);                                                        // 3.6 points: the 4 point vectors are no longer short
+        Assert.Empty(_s.BuildOverlay().OfType<SmallVectorMarksOverlay>());
     }
 }

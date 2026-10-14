@@ -27,7 +27,7 @@ public partial class MainWindow : Window
                 "vector.makeCorner", "vector.makeSmooth", "vector.makeSymmetric", "-",
                 "vector.breakLoop", "vector.setStart", "vector.join", "vector.delete"),
             MenuNode.Menu("Loops", "loop.reverse", "loop.open", "loop.close", "loop.toCircle", "loop.breakOut", "-", "loop.reorder", "loop.delete")),
-        MenuNode.Menu("_View", "view.zoomIn", "view.zoomOut", "view.zoomPage", "view.zoomAll", "view.zoomSelection", "-", "view.fillColors", "view.loopDirection", "view.jobPalette", "view.rulers", "view.guides", "view.snapGuides", "-",
+        MenuNode.Menu("_View", "view.zoomIn", "view.zoomOut", "view.zoomPage", "view.zoomAll", "view.zoomSelection", "-", "view.fillColors", "view.loopDirection", "view.highlightSmall", "view.jobPalette", "view.rulers", "view.guides", "view.snapGuides", "-",
             MenuNode.Menu("Interface Text _Size", TextSizeMenuIds.Cast<object>().ToArray()), "-", "view.darkMenus", "view.darkCanvas"),
         MenuNode.Menu("_Layout", MenuNode.Menu("_Guides", GuideMenuCommandIds.Cast<object>().ToArray()), MenuNode.Menu("Shapes", "tool.rectangle", "tool.roundedRectangle", "tool.ellipse", "tool.square", "tool.circle", "tool.polygon", "tool.arrow", "-", "shape.convertRounded"), "-", "layout.properties", "layout.sizeToFit"),
         MenuNode.Menu("_Arrange", MenuNode.Menu("Alig_n", AlignMenu.Cast<object>().ToArray()), "-", MenuNode.Menu("Group", "arrange.ungroup", "arrange.group", "arrange.groupAll", "arrange.groupByColor"), "arrange.combine", "arrange.breakApart", "arrange.breakIntoLoops", "arrange.breakIntoOuterLoops", "arrange.closeAllLoops", "arrange.removeInnerLoops", "text.toCurves", "-",
@@ -175,6 +175,7 @@ public partial class MainWindow : Window
         session.ToolChanged += (_, _) => OnToolChanged();
         session.GuideStateChanged += (_, _) => ShowContextBar();
         session.ContextMenuRequested += (_, req) => ShowObjectMenu(req);
+        session.Beep = Shell.SystemBeep.Play;   // a refused Vector Edit box
         session.DisplayChanged += (_, _) => QueueRefresh();   // toolbar toggle state
         Surface.PointerDocChanged += (_, _) => OnPointerDocChanged();
         Surface.Redrawn += (_, _) =>
@@ -273,6 +274,8 @@ public partial class MainWindow : Window
         Add("loop.breakOut", "_Break Out", () => Lp().BreakOut(), can: () => InLoop(l => l.CanBreakOut));
         Add("loop.reorder", "Re_order Loops", () => Lp().ReorderLoops(), can: () => InLoop(l => l.CanReorder));
         Add("view.loopDirection", "Show Loop _Direction", () => Lp().ShowDirection = !Lp().ShowDirection, isChecked: () => Lp().ShowDirection);
+        // A red square at the end of every vector shorter than the small-vector threshold (Tools > Options > Vector editing); remembered.
+        Add("view.highlightSmall", "Highlight Small _Vectors", () => { Shell.VectorEditSettings.SetHighlightSmallVectors(!VectorEditOptions.HighlightSmallVectors); _session.RequestRedraw(); }, isChecked: () => VectorEditOptions.HighlightSmallVectors);
 
         Add("arrange.toTop", "To _Top", () => Reorder(int.MaxValue, absolute: true), can: HasSelection);
         Add("arrange.oneUp", "One _Up", () => Reorder(1, absolute: false), can: HasSelection);

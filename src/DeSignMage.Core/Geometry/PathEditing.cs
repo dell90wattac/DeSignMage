@@ -467,6 +467,17 @@ public static partial class PathEditing
         if (l.Closed)
         {
             if (l.Segments.Count <= 2) { loops.RemoveAt(li); return; }
+            if (k > 0)
+            {
+                // An ordinary node: its two vectors merge where they are, so the loop's start/end point does not move.
+                var before = l.Segments[k - 1];
+                var after = l.Segments[k];
+                l.Segments[k - 1] = before.Kind == SegmentKind.Cubic && after.Kind == SegmentKind.Cubic
+                    ? Segment.Cubic(before.C1, after.C2, after.End)
+                    : Segment.Line(after.End);
+                l.Segments.RemoveAt(k);
+                return;
+            }
             Rotate(l, (k - 1 + l.Segments.Count) % l.Segments.Count);   // now the node is node 1
             var a = l.Segments[0];
             var b = l.Segments[1];
