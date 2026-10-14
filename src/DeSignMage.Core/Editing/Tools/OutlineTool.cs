@@ -15,7 +15,8 @@ public sealed class OutlineTool : Tool
     private readonly Dictionary<OutlineKind, (double First, double Second)> _remembered = [];
     private OutlineSnapshot? _snapshot;
     private EdgeProbe? _probe;
-    private PreviewRunner? _runner;
+    private LatestWinsRunner? _live;
+    private OutlineEffect.QuickSources? _quick;   // the shapes prepared for the quick offset; written by the worker, read by the worker
     private IReadOnlyList<PathGeometry> _previewPaths = [];
     private (Vec2 From, Vec2 To)? _rubber;
     private bool _dragging, _applying;
@@ -40,7 +41,10 @@ public sealed class OutlineTool : Tool
     public IReadOnlyList<PathGeometry> PreviewPaths => _previewPaths;
 
     /// <summary>Awaitable end of the newest preview computation (tests).</summary>
-    public Task PreviewSettled => _runner?.Settled ?? Task.CompletedTask;
+    public Task PreviewSettled => _live?.Idle ?? Task.CompletedTask;
+
+    /// <summary>How many previews were worked out and how many requests were skipped because a newer one replaced them (tests, profiling).</summary>
+    public (int Computed, int Skipped) PreviewCounts => (_live?.Computed ?? 0, _live?.Skipped ?? 0);
 
     /// <summary>Height of the selection in points: 100 % of the "%" fields.</summary>
     public double Height => _snapshot?.Height ?? 0;
@@ -51,9 +55,6 @@ public sealed class OutlineTool : Tool
 
     /// <summary>The bar re-reads the tool when this is raised (a field changed, a preview arrived).</summary>
     public event EventHandler? Changed;
-
-    /// <summary>Debounce before a preview starts (about 0.7 s while typing; the work is off the UI thread).</summary>
-    public TimeSpan PreviewDelay { get; set; } = TimeSpan.FromMilliseconds(150);
 
     // ---- Starting and stopping ----
 
@@ -73,6 +74,7 @@ public sealed class OutlineTool : Tool
         _probe = _snapshot is null ? null : new EdgeProbe(_snapshot.Geometries);
         _previewPaths = [];
         _rubber = null;
+        _quick = null;
         SchedulePreview();
         Changed?.Invoke(this, EventArgs.Empty);
         Redraw();
@@ -80,8 +82,7 @@ public sealed class OutlineTool : Tool
 
     public override void Activate()
     {
-        _runner = Session.NewPreviewRunner();
-        _runner.Debounce = PreviewDelay;
+        _live = Session.NewLiveRunner();
         Session.Selection.Changed += OnSelectionChanged;
         Session.Document.Changed += OnDocumentChanged;
     }
@@ -90,10 +91,11 @@ public sealed class OutlineTool : Tool
     {
         Session.Selection.Changed -= OnSelectionChanged;
         Session.Document.Changed -= OnDocumentChanged;
-        _runner?.Cancel();
+        _live?.Cancel();
         if (_snapshot is not null) Remember();
         _snapshot = null;
         _probe = null;
+        _quick = null;
         _previewPaths = [];
         _rubber = null;
         _dragging = false;
@@ -135,21 +137,38 @@ public sealed class OutlineTool : Tool
     public double FirstPercent => HasPercent ? Settings.First / Height * 100 : 0;
     public double SecondPercent => HasPercent ? Settings.Second / Height * 100 : 0;
 
+    /// <summary>
+    /// Asks for a new preview of the current fields (R31). It never waits: the work goes to the worker thread at once, one preview is worked out at a
+    /// time and only the newest request waits behind it, so a drag or typing is followed as fast as the worker can go and never piles up. The worker
+    /// uses the quick offset (<see cref="IOffsetPreviewService"/>) on shapes it prepared once for this zoom; the exact offset is only made on Apply.
+    /// </summary>
     private void SchedulePreview()
     {
-        _runner?.Cancel();
-        if (_runner is null) return;
+        if (_live is null) return;
         if (!PreviewEnabled || Settings.IsZero || _snapshot is not { IsEmpty: false } snapshot || Session.OffsetService is not { } offsets)
         {
+            _live.Cancel();
             if (_previewPaths.Count > 0) { _previewPaths = []; Redraw(); }
             return;
         }
         var booleans = Session.BooleanService;
+        var quickService = Session.OffsetPreviewService;
         var kind = Kind;
         var settings = Settings;
-        _runner.Debounce = PreviewDelay;
-        _runner.Schedule(
-            ct => OutlineEffect.Compute(offsets, booleans, snapshot, kind, settings, ct).Select(x => x.Result).ToList(),
+        double tolerance = OutlineEffect.PreviewTolerance(Session.Viewport.Zoom);
+        _live.Submit(
+            ct =>
+            {
+                if (quickService is null)
+                    return OutlineEffect.Compute(offsets, booleans, snapshot, kind, settings, ct).Select(x => x.Result).ToList();
+                var prepared = Volatile.Read(ref _quick);
+                if (prepared is null || !prepared.Fits(snapshot, tolerance, settings.ContourOnly))
+                {
+                    prepared = OutlineEffect.PrepareQuick(quickService, snapshot, tolerance, settings.ContourOnly);
+                    Volatile.Write(ref _quick, prepared);
+                }
+                return OutlineEffect.ComputeQuick(prepared, offsets, booleans, kind, settings, ct);
+            },
             paths =>
             {
                 _previewPaths = paths;
@@ -158,7 +177,6 @@ public sealed class OutlineTool : Tool
             },
             _ => { _previewPaths = []; Redraw(); });
     }
-
     // ---- Applying ----
 
     /// <summary>Done: makes the new object(s) and returns to the Layout tool. False when there is nothing to make.</summary>
@@ -168,7 +186,7 @@ public sealed class OutlineTool : Tool
         var plan = OutlineEffect.Plan(Session, Kind, Settings, _snapshot);
         if (plan is null) return false;
         _applying = true;
-        _runner?.Cancel();
+        _live?.Cancel();
         try
         {
             var outcome = await Session.RunEffectAsync(plan);

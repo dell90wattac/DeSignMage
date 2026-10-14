@@ -179,9 +179,18 @@ public class MenuStripTests : IDisposable
             {
                 var ids = MenuCommandIds(w, name);
                 Assert.NotEmpty(ids);
-                Assert.Equal(ids, strip.CommandsOf(name).Select(c => c.Id));         // the same commands, in the menu's order
-                Assert.Equal(ids.Length, strip.ButtonsOf(name).Count);
-                foreach (var id in ids)
+                var stripIds = strip.CommandsOf(name).Select(c => c.Id).ToArray();
+                if (name == "Tools")
+                {
+                    // the Tools strip follows the Toolbox (R29, see ToolsStripParityTests) and keeps everything else the menu has
+                    Assert.All(ids, id => Assert.Contains(id, stripIds));
+                }
+                else
+                {
+                    Assert.Equal(ids, stripIds);                                         // the same commands, in the menu's order
+                    Assert.Equal(ids.Length, strip.ButtonsOf(name).Count);
+                }
+                foreach (var id in stripIds)
                     Assert.NotNull(MenuStripIcons.For(id));                           // every one has its own drawn icon (no initials fallback)
             }
             Assert.Contains("image.resample", strip.CommandsOf("Image").Select(c => c.Id));   // the newest Image command is in

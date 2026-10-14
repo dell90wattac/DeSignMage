@@ -21,6 +21,7 @@
   <ItemGroup>
     <ProjectReference Include="..\..\src\DeSignMage.Core\DeSignMage.Core.csproj" />
     <ProjectReference Include="..\..\src\DeSignMage.Formats\DeSignMage.Formats.csproj" />
+    <ProjectReference Include="..\..\src\DeSignMage.Geometry\DeSignMage.Geometry.csproj" />
     <ProjectReference Include="..\..\src\DeSignMage.Rendering\DeSignMage.Rendering.csproj" />
     <ProjectReference Include="..\..\src\DeSignMage.Text\DeSignMage.Text.csproj" />
   </ItemGroup>

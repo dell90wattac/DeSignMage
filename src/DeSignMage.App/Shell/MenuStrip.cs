@@ -99,6 +99,12 @@ public sealed class MenuStrip : Grid
     /// <summary>The tab that is open now ("Image", "Effects", "Tools"), or null.</summary>
     public string? Open => _layout.Open;
 
+    /// <summary>
+    /// Says whether a command's button looks pressed when the command itself does not know (a tool button: pressed while that tool is the active one,
+    /// as in the Toolbox); null means "use the command's own check state". Set by the window.
+    /// </summary>
+    public Func<AppCommand, bool?>? Pressed { get; set; }
+
     /// <summary>Raised after a click opened, switched or closed a strip.</summary>
     public event EventHandler? Changed;
 
@@ -187,7 +193,8 @@ public sealed class MenuStrip : Grid
         {
             if (e.Command is not { } c || e.Button is not { } b) continue;
             b.IsEnabled = c.CanExecute();
-            if (c.IsChecked is { } isOn) b.Classes.Set("on", isOn());
+            if (Pressed?.Invoke(c) is { } pressed) b.Classes.Set("on", pressed);
+            else if (c.IsChecked is { } isOn) b.Classes.Set("on", isOn());
         }
     }
 
@@ -214,6 +221,9 @@ public sealed class MenuStrip : Grid
     internal IReadOnlyList<AppCommand> CommandsOf(string name) => [.. _entries[name].Where(e => e.Command is not null).Select(e => e.Command!)];
 
     internal Border Panel => _panel;
+
+    /// <summary>One strip as a list of command ids with "-" for each divider, in order (tests).</summary>
+    internal IReadOnlyList<string> LayoutOf(string name) => [.. _entries[name].Select(e => e.Command?.Id ?? "-")];
 
     /// <summary>The label under each button of a strip, in order (tests).</summary>
     internal IReadOnlyList<string> LabelsOf(string name) =>

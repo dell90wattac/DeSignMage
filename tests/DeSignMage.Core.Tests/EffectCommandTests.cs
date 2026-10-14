@@ -225,7 +225,6 @@ public class EffectCommandTests
         var a = AddRect(200, 200, 100, 100);
         _s.Selection.Set(a);
         var tool = _s.GetTool<OutlineTool>();
-        tool.PreviewDelay = TimeSpan.Zero;
         Assert.True(_s.BeginOutline(OutlineKind.Outline));
         Assert.Equal("outline", _s.ActiveTool.Id);
         Assert.False(tool.CanApply);                                  // Done is disabled while the distance is 0
@@ -255,7 +254,6 @@ public class EffectCommandTests
         var a = AddRect(200, 200, 100, 50);
         _s.Selection.Set(a);
         var tool = _s.GetTool<OutlineTool>();
-        tool.PreviewDelay = TimeSpan.Zero;
         _s.BeginOutline(OutlineKind.Inline);
         _s.PointerDown(At(250, 215, PointerButton.Left));           // 15 inside the top edge
         _s.PointerUp(At(250, 215, PointerButton.Left));
@@ -811,7 +809,6 @@ public class EffectCommandTests
         var a = AddRect(200, 200, 100, 100);
         _s.Selection.Set(a);
         var tool = _s.GetTool<OutlineTool>();
-        tool.PreviewDelay = TimeSpan.Zero;
         _s.BeginOutline(OutlineKind.Outline);
         tool.Update(s => s with { First = 10 });
         _s.NudgeSelection(new Vec2(50, 0));                       // arrow key, with the tool still open

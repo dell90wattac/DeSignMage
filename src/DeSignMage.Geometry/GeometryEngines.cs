@@ -7,4 +7,5 @@ public static class GeometryEngines
 {
     public static IBooleanService Booleans { get; } = new ClipperBooleanService();
     public static IOffsetService Offsets { get; } = new ClipperOffsetService();
+    public static IOffsetPreviewService OffsetPreview { get; } = new ClipperOffsetPreview();
 }

@@ -171,6 +171,36 @@ public class EffectShellTests
     }
 
     [AvaloniaFact]
+    public async Task Outline_amount_boxes_apply_while_typing_without_Enter_and_without_undo_steps()
+    {
+        var w = Open();
+        var a = AddRect(w, 200, 200, 100);
+        w.Session.Selection.Set(a);
+        Click(Item(w, "Outline..."));
+        var bar = Assert.IsType<OutlineContextBar>(w.FindControl<ContentControl>("ContextBarHost")!.Content);
+        var fields = bar.GetVisualDescendants().OfType<TextBox>().ToList();
+        var tool = w.Session.GetTool<OutlineTool>();
+        int steps = w.Session.History.UndoList.Count;
+
+        fields[0].Focus();                                                      // inches
+        fields[0].Text = "0.2";
+        await Task.Delay(EffectBarParts.Field.LiveDelayMs * 3);
+        Dispatcher.UIThread.RunJobs();
+        Assert.Equal(14.4, tool.Settings.First, 6);                             // no Enter, no leaving the box
+        await tool.PreviewSettled;
+        Dispatcher.UIThread.RunJobs();
+        Assert.Single(tool.PreviewPaths);
+
+        fields[1].Focus();                                                      // the "%" box of the 1st amount
+        fields[1].Text = "10";
+        await Task.Delay(EffectBarParts.Field.LiveDelayMs * 3);
+        Dispatcher.UIThread.RunJobs();
+        Assert.Equal(10, tool.Settings.First, 6);                               // 10 % of 100 pt
+        Assert.Equal(steps, w.Session.History.UndoList.Count);                  // typing makes no undo step
+        w.Close();
+    }
+
+    [AvaloniaFact]
     public async Task Knife_and_cookie_cutter_bars_work_and_a_live_text_outline_keeps_the_text()
     {
         var w = Open();

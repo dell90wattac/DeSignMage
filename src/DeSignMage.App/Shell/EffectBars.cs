@@ -15,15 +15,34 @@ internal static class EffectBarParts
     /// <summary>A number box that remembers what it was last set to, so committing an untouched field does nothing.</summary>
     public sealed class Field
     {
-        public Field(Action<double> apply)
+        /// <summary>How long a typed value waits before a live field acts on it (a keystroke later it is replaced).</summary>
+        public const int LiveDelayMs = 50;
+
+        private readonly Avalonia.Threading.DispatcherTimer? _live;
+
+        /// <param name="live">True: the value is applied while it is typed (after <see cref="LiveDelayMs"/> without another keystroke), not only on Enter or when the box is left (R31).
+        /// Applying only changes what the tool shows; nothing is committed until the tool's own Done, so there is no undo step per keystroke.</param>
+        public Field(Action<double> apply, bool live = false)
         {
             Box = ContextBars.NumberBox(() =>
             {
-                if (Refreshing || (Box!.Text ?? "") == Shown) return;
-                if (ContextBars.TryParse(Box, out var v)) apply(v);
+                _live?.Stop();
+                if (Refreshing || (Box!.Text ?? "") == _applied) return;
+                if (ContextBars.TryParse(Box, out var v)) { _applied = Box.Text ?? ""; apply(v); }
                 else Show(Shown);   // not a number: put the old value back
             });
+            if (!live) return;
+            _live = new Avalonia.Threading.DispatcherTimer { Interval = TimeSpan.FromMilliseconds(LiveDelayMs) };
+            _live.Tick += (_, _) =>
+            {
+                _live.Stop();
+                if (Refreshing || (Box.Text ?? "") == _applied) return;
+                if (ContextBars.TryParse(Box, out var v)) { _applied = Box.Text ?? ""; apply(v); }   // half-typed ("0.", "-") is just waited for
+            };
+            Box.TextChanged += (_, _) => { if (!Refreshing) { _live.Stop(); _live.Start(); } };
         }
+
+        private string _applied = "";   // what the tool was last given from this box (or shown in it): typing back to it changes nothing
 
         public TextBox Box { get; }
         public string Shown { get; private set; } = "";
@@ -33,7 +52,7 @@ internal static class EffectBarParts
         {
             if (Box.IsFocused) return;   // never overwrite what the user is typing
             Refreshing = true;
-            Box.Text = Shown = text;
+            Box.Text = Shown = _applied = text;
             Refreshing = false;
         }
     }
@@ -46,6 +65,7 @@ internal static class EffectBarParts
         bar.DetachedFromVisualTree += (_, _) => { remove(On); session.RedrawRequested -= On; };
     }
 }
+
 /// <summary>
 /// Outline / Inline Context Bar: the distance as inches or % of the selection's
 /// height, the optional 2nd ring, the corner type (Auto with OAT, Miter, Round), Contour, Leave Original and Preview, then Done.
@@ -66,10 +86,11 @@ public sealed class OutlineContextBar : ContextBarBase, IRefreshable
     {
         _session = session;
         _tool = tool;
-        _first = new EffectBarParts.Field(v => tool.Update(s => s with { First = Units.FromInches(v) }));
-        _firstPct = new EffectBarParts.Field(v => { if (tool.HasPercent) tool.Update(s => s with { First = v / 100 * tool.Height }); });
-        _second = new EffectBarParts.Field(v => tool.Update(s => s with { Second = Units.FromInches(v) }));
-        _secondPct = new EffectBarParts.Field(v => { if (tool.HasPercent) tool.Update(s => s with { Second = v / 100 * tool.Height }); });
+        // The four amounts are live: the preview follows the digits as they are typed (R31).
+        _first = new EffectBarParts.Field(v => tool.Update(s => s with { First = Units.FromInches(v) }), live: true);
+        _firstPct = new EffectBarParts.Field(v => { if (tool.HasPercent) tool.Update(s => s with { First = v / 100 * tool.Height }); }, live: true);
+        _second = new EffectBarParts.Field(v => tool.Update(s => s with { Second = Units.FromInches(v) }), live: true);
+        _secondPct = new EffectBarParts.Field(v => { if (tool.HasPercent) tool.Update(s => s with { Second = v / 100 * tool.Height }); }, live: true);
         _oat = new EffectBarParts.Field(v => tool.Update(s => s with { Oat = Math.Clamp(v, 0, 180) }));
 
         _corners = new ComboBox { ItemsSource = new[] { "Auto (OAT)", "Miter", "Round" }, VerticalAlignment = VerticalAlignment.Center };

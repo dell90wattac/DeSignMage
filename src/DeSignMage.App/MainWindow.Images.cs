@@ -7,6 +7,8 @@ using Avalonia.Platform.Storage;
 using DeSignMage.App.Shell;
 using DeSignMage.Core.Editing;
 using DeSignMage.Core.Geometry;
+using DeSignMage.Core.Import;
+using DeSignMage.Formats.Native;
 using DeSignMage.Core.Imaging;
 using DeSignMage.Core.Model;
 using DeSignMage.Imaging;
@@ -175,9 +177,17 @@ public partial class MainWindow
     internal void HandleDroppedFiles(IReadOnlyList<string> paths, Vec2? docPoint)
     {
         if (paths.Count == 0) return;
-        if (paths.FirstOrDefault(p => string.Equals(Path.GetExtension(p), ".lyt", StringComparison.OrdinalIgnoreCase)) is { } layout)
+        // Our own documents and legacy layouts open (R30); a dropped PDF, AI, EPS or SVG is imported into this design through the Import dialog.
+        if (paths.FirstOrDefault(p => string.Equals(Path.GetExtension(p), ".lyt", StringComparison.OrdinalIgnoreCase) || DsmFormat.IsNativeFile(p)) is { } document)
         {
-            _ = OpenFileAsync(layout);
+            _ = OpenFileAsync(document);
+            return;
+        }
+        var vectors = paths.Where(VectorFileTypes.IsVectorFile).ToList();
+        if (vectors.Count > 0)
+        {
+            if (vectors.Count > 1) Flash($"Importing {Path.GetFileName(vectors[0])}; drop the other {vectors.Count - 1} file{(vectors.Count == 2 ? "" : "s")} one at a time.");
+            _ = ImportVectorFileAsync(vectors[0], docPoint);
             return;
         }
         var pictures = paths.Where(ImageCodec.IsImageFile).ToList();

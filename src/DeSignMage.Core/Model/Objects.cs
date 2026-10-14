@@ -75,6 +75,14 @@ public sealed class GroupObject : DocObject, IObjectContainer
         _children.Add(member);
     }
 
+    /// <summary>A new group, not in any document yet, holding <paramref name="members"/> (detached objects, bottom to top). For things that are built outside a document and then placed.</summary>
+    public static GroupObject Of(IEnumerable<DocObject> members, string? name = null)
+    {
+        var group = new GroupObject { Name = name };
+        foreach (var m in members) group.AddDetached(m);
+        return group;
+    }
+
     /// <summary>All objects that are not groups below this group, at any depth, in structure order (not drawing order; see <c>Stacking.LeavesBottomToTop</c>).</summary>
     public IEnumerable<DocObject> Leaves()
     {

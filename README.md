@@ -101,5 +101,5 @@ On the first start after the rename from an earlier build, those folders are car
 DeSign Mage is free software: you can redistribute it and/or modify it under the terms of the GNU General Public License,
 version 3, as published by the Free Software Foundation. See [LICENSE](LICENSE). It comes with no warranty.
 
-Third-party libraries keep their own licenses: Avalonia, SkiaSharp and HarfBuzzSharp (MIT), Clipper2 (Boost Software License),
+Third-party libraries keep their own licenses: Avalonia, SkiaSharp and HarfBuzzSharp (MIT), Clipper2 (Boost Software License), PdfPig (Apache License 2.0),
 the Inter font (SIL Open Font License).

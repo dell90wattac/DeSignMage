@@ -11,9 +11,39 @@ namespace DeSignMage.App;
 /// </summary>
 public partial class MainWindow
 {
+    /// <summary>
+    /// The Tools strip mirrors the Toolbox (R29): the same tools in the same order with the same icons, then what the Tools menu has besides
+    /// (Loop Edit, Show Transparency, Options). The other menus' strips list exactly what their menus list. The drop-down menus are not changed.
+    /// </summary>
+    private IEnumerable<MenuNode> StripMenus() => MenuLayout.Select(m => m.Header == "_Tools" ? ToolsStripNode(m) : m);
+
+    /// <summary>The command id of a Toolbox tool (<c>select</c> is "tool.select", <c>vectordraw</c> is "tool.vectorDraw").</summary>
+    internal string CommandOfTool(string toolId) =>
+        _commands.All.FirstOrDefault(c => c.Id.Equals("tool." + toolId, StringComparison.OrdinalIgnoreCase))?.Id
+        ?? throw new InvalidOperationException($"The Toolbox has a tool '{toolId}' with no command to run it.");
+
+    private MenuNode ToolsStripNode(MenuNode tools)
+    {
+        var fromToolbox = Toolbox.Buttons.Select(b => CommandOfTool(b.ToolId)).ToList();
+        var children = new List<object>(fromToolbox);
+        children.Add("-");
+        // what the Tools menu has besides the Toolbox's tools, in the menu's own order
+        foreach (var node in tools.Children ?? [])
+        {
+            if (node.IsSeparator) { children.Add("-"); continue; }
+            if (node.CommandId is { } id && !fromToolbox.Contains(id)) children.Add(id);
+        }
+        return MenuNode.Menu(tools.Header, [.. children]);
+    }
+
+    /// <summary>Tool buttons of the strip look pressed while their tool is the active one, as the Toolbox's buttons do.</summary>
+    private bool? ToolButtonPressed(AppCommand c) =>
+        c.Id.StartsWith("tool.", StringComparison.Ordinal) ? _session.ActiveTool.Id.Equals(c.Id["tool.".Length..], StringComparison.OrdinalIgnoreCase) : null;
+
     private void InitMenuStrip()
     {
-        MenuStrip.Populate(MenuLayout, _commands);
+        MenuStrip.Pressed = ToolButtonPressed;
+        MenuStrip.Populate(StripMenus(), _commands);
         ContextBarBorder.SizeChanged += (_, _) => FitMenuStrip();
         UiScale.Changed += FitMenuStrip;
         AppTheme.Changed += MenuStrip.Refresh;   // a switch changed from the menu or its own button: the strip button follows (pressed or not)

@@ -87,35 +87,108 @@ public static class OutlineEffect
     public static List<(DocObject Leaf, PathGeometry Result)> Compute(IOffsetService offsets, IBooleanService? booleans,
         OutlineSnapshot snapshot, OutlineKind kind, OutlineSettings settings, CancellationToken ct = default)
     {
-        double sign = kind == OutlineKind.Inline ? -1 : 1;
-        double d1 = sign * settings.First, d2 = sign * settings.Second;
-        var options = settings.ToOffsetOptions();
         var results = new List<(DocObject, PathGeometry)>();
         foreach (var (leaf, world) in snapshot.Shapes)
         {
             ct.ThrowIfCancellationRequested();
-            PathGeometry r;
-            if (d2 == 0)
-            {
-                r = offsets.Offset(world, d1, options);
-            }
-            else
-            {
-                var rings = offsets.Offset(world, [d1, d1 + d2], options);
-                bool hasOpen = EffectGeometry.CountLoops(world).Open > 0;
-                // Areas: the band between the two rings. Open lines: both parallel lines.
-                if (hasOpen || booleans is null) r = EffectGeometry.Concat(rings, FillRule.NonZero);
-                else
-                {
-                    var (outer, inner) = d2 > 0 ? (rings[1], rings[0]) : (rings[0], rings[1]);   // the larger offset is the larger area
-                    r = booleans.Difference(outer, inner);
-                }
-            }
+            var r = ComputeShape(offsets, booleans, world, kind, settings);
             if (!r.IsEmpty) results.Add((leaf, r));
         }
         return results;
     }
 
+    /// <summary>The exact outline of one shape (document coordinates), empty when it vanishes.</summary>
+    public static PathGeometry ComputeShape(IOffsetService offsets, IBooleanService? booleans, PathGeometry world, OutlineKind kind, OutlineSettings settings)
+    {
+        double sign = kind == OutlineKind.Inline ? -1 : 1;
+        double d1 = sign * settings.First, d2 = sign * settings.Second;
+        var options = settings.ToOffsetOptions();
+        if (d2 == 0) return offsets.Offset(world, d1, options);
+        var rings = offsets.Offset(world, [d1, d1 + d2], options);
+        bool hasOpen = EffectGeometry.CountLoops(world).Open > 0;
+        // Areas: the band between the two rings. Open lines: both parallel lines.
+        if (hasOpen || booleans is null) return EffectGeometry.Concat(rings, FillRule.NonZero);
+        var (outer, inner) = d2 > 0 ? (rings[1], rings[0]) : (rings[0], rings[1]);   // the larger offset is the larger area
+        return booleans.Difference(outer, inner);
+    }
+
+    // ---- The quick pass for live previews (R31) ----
+
+    /// <summary>
+    /// The selection's shapes prepared for the quick offset at one accuracy and one Contour setting. Made once (on the worker thread, the first time a
+    /// preview is wanted) and reused for every pointer move and keystroke after it. A shape that cannot be prepared (it has open paths) is null and
+    /// gets the exact offset instead.
+    /// </summary>
+    public sealed class QuickSources
+    {
+        internal QuickSources(OutlineSnapshot snapshot, double tolerance, bool contourOnly, IReadOnlyList<IOffsetPreviewSource?> sources, IReadOnlyList<PathGeometry?> openParts)
+        {
+            OpenParts = openParts;
+            Snapshot = snapshot;
+            Tolerance = tolerance;
+            ContourOnly = contourOnly;
+            Sources = sources;
+        }
+
+        public OutlineSnapshot Snapshot { get; }
+        public double Tolerance { get; }
+        public bool ContourOnly { get; }
+        internal IReadOnlyList<IOffsetPreviewSource?> Sources { get; }
+
+        /// <summary>The open subpaths of a shape that also has closed ones (they get the exact offset, they are few); null when there are none.</summary>
+        internal IReadOnlyList<PathGeometry?> OpenParts { get; }
+
+        /// <summary>True when these were made for this snapshot and a preview of at most this much error (a coarser one is not good enough, a much finer one is slower than needed).</summary>
+        public bool Fits(OutlineSnapshot snapshot, double tolerance, bool contourOnly) =>
+            ReferenceEquals(Snapshot, snapshot) && ContourOnly == contourOnly && Tolerance <= tolerance * 1.01 && Tolerance >= tolerance / 4;
+    }
+
+    /// <summary>How accurate (points) a preview needs to be at this zoom: 0.8 of a screen pixel, never finer than 0.02 points or coarser than 2.</summary>
+    public static double PreviewTolerance(double zoom) => Math.Clamp(0.8 / Math.Max(zoom, 1e-6), 0.02, 2);
+
+    public static QuickSources PrepareQuick(IOffsetPreviewService service, OutlineSnapshot snapshot, double tolerance, bool contourOnly)
+    {
+        var sources = new List<IOffsetPreviewSource?>();
+        var openParts = new List<PathGeometry?>();
+        foreach (var (_, world) in snapshot.Shapes)
+        {
+            var (closed, open) = EffectGeometry.CountLoops(world);
+            if (open == 0) { sources.Add(service.Prepare(world, tolerance, contourOnly)); openParts.Add(null); }
+            else if (closed == 0) { sources.Add(null); openParts.Add(null); }   // only lines: the exact offset, as a whole
+            else
+            {
+                var loops = PathEditing.ToLoops(world);
+                bool IsClosed(Loop l) => l.Closed || Vec2.Distance(l.Start, l.Segments[^1].End) < 1e-6;
+                var closedPart = PathEditing.FromLoops(loops.Where(IsClosed), world.FillRule);
+                var openPart = PathEditing.FromLoops(loops.Where(l => !IsClosed(l)), world.FillRule);
+                sources.Add(service.Prepare(closedPart, tolerance, contourOnly));
+                openParts.Add(openPart);
+            }
+        }
+        return new(snapshot, tolerance, contourOnly, sources, openParts);
+    }
+
+    /// <summary>The preview outlines of every shape: the quick offset where a shape was prepared, the exact one for the others.</summary>
+    public static List<PathGeometry> ComputeQuick(QuickSources prepared, IOffsetService offsets, IBooleanService? booleans, OutlineKind kind,
+        OutlineSettings settings, CancellationToken ct = default)
+    {
+        double sign = kind == OutlineKind.Inline ? -1 : 1;
+        var results = new List<PathGeometry>(prepared.Sources.Count);
+        for (int i = 0; i < prepared.Sources.Count; i++)
+        {
+            ct.ThrowIfCancellationRequested();
+            PathGeometry r;
+            if (prepared.Sources[i] is { } quick)
+            {
+                r = quick.Offset(sign * settings.First, sign * settings.Second, settings.Corners, settings.Oat);
+                if (prepared.OpenParts[i] is { } lines)
+                    r = EffectGeometry.Concat([r, ComputeShape(offsets, booleans, lines, kind, settings)], FillRule.NonZero);
+            }
+            else r = ComputeShape(offsets, booleans, prepared.Snapshot.Shapes[i].World, kind, settings);
+            if (!r.IsEmpty) results.Add(r);
+        }
+        return results;
+    }
     public static EffectPlan? Plan(EditorSession s, OutlineKind kind, OutlineSettings settings, OutlineSnapshot? snapshot = null)
     {
         if (s.OffsetService is not { } offsets || settings.IsZero) return null;

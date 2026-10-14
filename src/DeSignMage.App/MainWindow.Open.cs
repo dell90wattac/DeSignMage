@@ -5,6 +5,7 @@ using Avalonia.Layout;
 using Avalonia.Platform.Storage;
 using DeSignMage.App.Shell;
 using DeSignMage.Core.Editing;
+using DeSignMage.Core.Import;
 using DeSignMage.Core.Model;
 using DeSignMage.Feedback;
 using DeSignMage.Formats.Lyt;
@@ -56,7 +57,9 @@ public partial class MainWindow
             AllowMultiple = false,
             FileTypeFilter =
             [
+                new FilePickerFileType("All supported files") { Patterns = [$"*{DsmFormat.Extension}", $"*{DsmFormat.LegacyExtension}", "*.lyt", "*.pdf", "*.ai", "*.eps", "*.svg"] },
                 new FilePickerFileType($"DeSign Mage documents and legacy layouts (*{DsmFormat.Extension}, *{DsmFormat.LegacyExtension}, *.lyt)") { Patterns = [$"*{DsmFormat.Extension}", $"*{DsmFormat.LegacyExtension}", "*.lyt"] },
+                new FilePickerFileType("PDF, Illustrator, EPS and SVG files (*.pdf, *.ai, *.eps, *.svg)") { Patterns = ["*.pdf", "*.ai", "*.eps", "*.svg"] },
                 new FilePickerFileType($"DeSign Mage documents (*{DsmFormat.Extension}, *{DsmFormat.LegacyExtension})") { Patterns = [$"*{DsmFormat.Extension}", $"*{DsmFormat.LegacyExtension}"] },
                 new FilePickerFileType("Legacy layouts (*.lyt)") { Patterns = ["*.lyt"] },
                 FilePickerFileTypes.All,
@@ -101,8 +104,12 @@ public partial class MainWindow
         string ext = Path.GetExtension(path);
         bool native = DsmFormat.IsNativeFile(path);
         bool earlierBuild = string.Equals(ext, DsmFormat.LegacyExtension, StringComparison.OrdinalIgnoreCase);
-        if (!native && !string.Equals(ext, ".lyt", StringComparison.OrdinalIgnoreCase))
-            return Fail(name, $"DeSign Mage opens its own documents ({DsmFormat.Extension}, and {DsmFormat.LegacyExtension} from earlier builds) and legacy layouts (.lyt); {ext} files are not supported yet.");
+        bool vector = VectorFileTypes.IsVectorFile(path);
+        if (!native && !vector && !string.Equals(ext, ".lyt", StringComparison.OrdinalIgnoreCase))
+            return Fail(name, $"DeSign Mage opens its own documents ({DsmFormat.Extension}, and {DsmFormat.LegacyExtension} from earlier builds), legacy layouts (.lyt) and PDF, AI, EPS and SVG files; {ext} files are not supported yet.");
+        // PDF, AI, EPS and SVG open as a new document of their own (the same files dragged onto the window are imported instead: MainWindow.Import.cs).
+        var vectorReader = vector ? VectorFiles.Importer : null;
+        if (vector && (vectorReader is null || !vectorReader.CanRead(path))) return Fail(name, VectorFiles.CannotRead(path));
 
         Document document;
         IReadOnlyList<string> warnings;
@@ -115,6 +122,13 @@ public partial class MainWindow
                     var result = DsmReader.Load(path);
                     return (result.Document, result.Warnings);
                 }
+                if (vectorReader is not null)
+                {
+                    var read = vectorReader.Read(path);
+                    var notes = read.Warnings.ToList();
+                    if (read.PageCount > 1) notes.Insert(0, $"The file has {read.PageCount} pages; only the first page was opened.");
+                    return (read.Document, notes);
+                }
                 var lyt = LytImporter.Open(path);
                 return (lyt.Document, lyt.Warnings);
             }, cancellable: true);
@@ -123,7 +137,7 @@ public partial class MainWindow
         {
             return false;   // the user pressed Cancel; the current design stays as it is
         }
-        catch (Exception e) when (e is LytFormatException or DsmFormatException or IOException or UnauthorizedAccessException)
+        catch (Exception e) when (e is LytFormatException or DsmFormatException or IOException or InvalidDataException or UnauthorizedAccessException)
         {
             AppLog.Warn("file", $"open failed for {name}: {e.GetType().Name}: {e.Message}");
             return Fail(name, e.Message);

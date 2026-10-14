@@ -95,6 +95,7 @@ public partial class MainWindow : Window
         InitThemeButtons();
         InitMenuStrip();
         InitFileOpening();
+        VectorFiles.Importer ??= new FormatsVectorImporter(() => _session?.BooleanService);   // PDF, AI, EPS and SVG (File > Open, drag and drop)
         InitRecentMenu();
         InitFeedback();
         InitDockPanels();
@@ -478,6 +479,7 @@ public partial class MainWindow : Window
         AppLog.Info("tool", $"active tool: {_session.ActiveTool.Id}");
         ContextBarHost.Content = null;
         ShowContextBar();
+        MenuStrip.Refresh();   // the Tools strip shows the active tool pressed, like the Toolbox
     }
 
     /// <summary>The Context Bar is the active tool's, or the guide bar while a ruler guide is selected.</summary>

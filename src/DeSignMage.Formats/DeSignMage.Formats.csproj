@@ -14,4 +14,8 @@
     <ProjectReference Include="..\DeSignMage.Core\DeSignMage.Core.csproj" />
   </ItemGroup>
 
+  <ItemGroup>
+    <PackageReference Include="PdfPig" />
+  </ItemGroup>
+
 </Project>

@@ -15,6 +15,9 @@ public sealed partial class EditorSession
     /// <summary>The offsets (Outline, Inline, Cookie Cutter outline). The window plugs in <c>GeometryEngines.Offsets</c>.</summary>
     public IOffsetService? OffsetService { get; set; }
 
+    /// <summary>The quick offset for live previews (Outline, Inline: R31). Without one the previews use the exact offset, which is slow on big lettering. The window plugs in <c>GeometryEngines.OffsetPreview</c>.</summary>
+    public IOffsetPreviewService? OffsetPreviewService { get; set; }
+
     /// <summary>
     /// Runs something on the UI thread. The window sets it; null runs the action right away. Previews and effect results computed
     /// on worker threads come back through it.
@@ -37,6 +40,9 @@ public sealed partial class EditorSession
 
     /// <summary>The newest effect started with <see cref="RunEffectAsync"/> (completed when it is done). Tests await it.</summary>
     public Task EffectIdle { get; private set; } = Task.CompletedTask;
+
+    /// <summary>A runner for live previews that follow a pointer or typing: one worker, the latest request wins (R31).</summary>
+    internal LatestWinsRunner NewLiveRunner() => new(a => { if (UiPost is { } post) post(a); else a(); });
 
     internal PreviewRunner NewPreviewRunner() => new(a => { if (UiPost is { } post) post(a); else a(); });
 

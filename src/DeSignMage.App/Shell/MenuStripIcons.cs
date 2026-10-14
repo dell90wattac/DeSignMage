@@ -44,7 +44,7 @@ internal static class MenuStripIcons
         ["effects.gradientBlend"] = "Gradient",
         ["effects.softShadow"] = "Soft Sh.", ["effects.glow"] = "Glow", ["effects.feather"] = "Feather",
         ["effects.easyBevel"] = "Bevel", ["effects.shadow"] = "Drop",["effects.shadowExtruded"] = "Extruded", ["effects.shadowPerspective"] = "Persp.", ["effects.shadowCast"] = "Cast",
-        ["tool.select"] = "Layout", ["tool.vector"] = "Vector", ["tool.vectorDraw"] = "Draw", ["tool.loop"] = "Loops", ["tools.showTransparency"] = "Transparency", ["tools.options"] = "Options",
+        ["tool.select"] = "Layout", ["tool.vector"] = "Vector", ["tool.vectorDraw"] = "Draw", ["tool.text"] = "Text", ["tool.rectangle"] = "Rectangle", ["tool.ellipse"] = "Ellipse", ["tool.loop"] = "Loops", ["tools.showTransparency"] = "Transparency", ["tools.options"] = "Options",
     };
 
     /// <summary>The label of a command: its short word, or (for a command without one) the first word of its name.</summary>

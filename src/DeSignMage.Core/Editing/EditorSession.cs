@@ -559,14 +559,15 @@ public sealed partial class EditorSession
     /// <summary>
     /// Hangs new, detached objects on the cursor: drawn as the outline-only drag preview centered on the pointer (at the view center
     /// until the pointer is over the canvas); the next left click adds them there as one undo step named <paramref name="description"/>,
-    /// Esc cancels. Starting another one replaces the first.
+    /// Esc cancels. Starting another one replaces the first. <paramref name="atScreen"/> is where the items hang until the pointer moves
+    /// (a dropped file's drop point), when it is not already over the canvas.
     /// </summary>
-    public void BeginPlacing(IReadOnlyList<DocObject> items, string description)
+    public void BeginPlacing(IReadOnlyList<DocObject> items, string description, Vec2? atScreen = null)
     {
         if (items.Count == 0) return;
         Selection.Clear();
         SetTool("place");
-        GetTool<PlaceTool>().Begin(items, description, HoverScreen);
+        GetTool<PlaceTool>().Begin(items, description, atScreen ?? HoverScreen);
     }
 
     /// <summary>True while a paste hangs on the cursor.</summary>

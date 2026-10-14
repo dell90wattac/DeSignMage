@@ -74,6 +74,7 @@ public partial class MainWindow
     {
         session.BooleanService = GeometryEngines.Booleans;
         session.OffsetService = GeometryEngines.Offsets;
+        session.OffsetPreviewService = GeometryEngines.OffsetPreview;
         session.UiPost = action => Dispatcher.UIThread.Post(action);
         EnsureBusyBar();
 

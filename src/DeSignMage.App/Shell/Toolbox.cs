@@ -86,7 +86,7 @@ public static class Toolbox
             var b = new ToggleButton { Content = UiIcons.Box(spec.Icon(), 20, 20), Focusable = false }.ScaledWidth(30, icon: true).ScaledHeight(30, icon: true);
             b.Classes.Add("tb");
             ToolTip.SetTip(b, spec.ToolTip);
-            b.Click += (_, _) => session.SetTool(spec.ToolId);
+            b.Click += (_, _) => { session.SetTool(spec.ToolId); b.IsChecked = session.ActiveTool.Id == spec.ToolId; };   // a click on the tool that is already active must not leave its button looking released
             host.Children.Add(b);
             buttons.Add((b, spec.ToolId));
         }
