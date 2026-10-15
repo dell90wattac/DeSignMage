@@ -181,6 +181,8 @@ public sealed class SelectionContextBar : ContextBarBase, IRefreshable
     private readonly EditorSession _session;
     private readonly TextBox _x, _y, _w, _h;
     private readonly Control[] _fields;   // the X, Y, W and H fields with their captions: shown only while something is selected
+    private readonly TextBox _pageW, _pageH;
+    private readonly Control _pageFields;   // the layout's width and height: shown only while nothing is selected
     private readonly TextBlock _count = new() { VerticalAlignment = VerticalAlignment.Center, Foreground = AppTheme.Brush("Ui.Muted") };
     private bool _refreshing, _edited;
     private readonly Button _combine, _breakApart, _group, _ungroup;
@@ -202,7 +204,9 @@ public sealed class SelectionContextBar : ContextBarBase, IRefreshable
         _y = ContextBars.NumberBox(Apply);
         _w = ContextBars.NumberBox(Apply);
         _h = ContextBars.NumberBox(Apply);
-        foreach (var box in new[] { _x, _y, _w, _h })
+        _pageW = ContextBars.NumberBox(ApplyPageSize);
+        _pageH = ContextBars.NumberBox(ApplyPageSize);
+        foreach (var box in new[] { _x, _y, _w, _h, _pageW, _pageH })
             box.TextChanged += (_, _) => { if (!_refreshing) _edited = true; };
 
         // Group buttons (Combine, Break Apart, Group, Ungroup).
@@ -214,6 +218,9 @@ public sealed class SelectionContextBar : ContextBarBase, IRefreshable
         // Row 1: where the selection is and how big; row 2: what can be done with it (the picture and text controls join it when they apply).
         _fields = [ContextBars.Field("X", _x, "in"), ContextBars.Field("Y", _y, "in"), ContextBars.Field("W", _w, "in"), ContextBars.Field("H", _h, "in")];
         foreach (var field in _fields) Row1.Children.Add(field);
+        // With nothing selected the same place sizes the layout (the page), like the W and H of a selection.
+        _pageFields = ContextBars.Group(ContextBars.Caption("Layout"), ContextBars.Field("W", _pageW, "in"), ContextBars.Field("H", _pageH, "in"));
+        Row1.Children.Add(_pageFields);
         Row1.Children.Add(ContextBars.Separator());
         Row1.Children.Add(_count);
         Row2.Children.Add(_combine);
@@ -293,6 +300,14 @@ public sealed class SelectionContextBar : ContextBarBase, IRefreshable
         {
             _x.Text = _y.Text = _w.Text = _h.Text = "";
         }
+        bool none = _session.Selection.IsEmpty;
+        ContextBars.Valid(_pageFields, none);
+        if (none)
+        {
+            var page = _session.Document.Page;
+            if (!_pageW.IsFocused) _pageW.Text = ContextBars.Fmt(Units.ToInches(page.Width));
+            if (!_pageH.IsFocused) _pageH.Text = ContextBars.Fmt(Units.ToInches(page.Height));
+        }
         _edited = false;
         // Each button shows exactly when its command would work (R26); otherwise it is not there at all.
         ContextBars.Valid(_combine, _session.CanCombine);
@@ -332,6 +347,24 @@ public sealed class SelectionContextBar : ContextBarBase, IRefreshable
         _session.SetSelectionBounds(target);
     }
 
+    /// <summary>Layout W / H typed with nothing selected: resizes the page (Layout Properties), keeping its bottom-left corner.</summary>
+    private void ApplyPageSize()
+    {
+        if (_refreshing || !_edited || !_session.Selection.IsEmpty) return;
+        if (!ContextBars.TryParse(_pageW, out var w) || !ContextBars.TryParse(_pageH, out var h) || w <= 0 || h <= 0)
+        {
+            Refresh();
+            return;
+        }
+        _edited = false;
+        _session.SetPageSize(Units.FromInches(w), Units.FromInches(h));
+        // Show the size the page really has (it may have been clamped), even in the field that still has the keyboard.
+        _refreshing = true;
+        _pageW.Text = ContextBars.Fmt(Units.ToInches(_session.Document.Page.Width));
+        _pageH.Text = ContextBars.Fmt(Units.ToInches(_session.Document.Page.Height));
+        _refreshing = false;
+    }
+
     // ---- For tests ----
 
     internal Button Combine => _combine;
@@ -347,6 +380,9 @@ public sealed class SelectionContextBar : ContextBarBase, IRefreshable
     internal TextBox Y => _y;
     internal TextBox W => _w;
     internal TextBox H => _h;
+    internal Control PageFields => _pageFields;
+    internal TextBox PageW => _pageW;
+    internal TextBox PageH => _pageH;
 }
 
 /// <summary>Rectangle tool: corner radius for new rectangles (also applied to selected rectangles).</summary>

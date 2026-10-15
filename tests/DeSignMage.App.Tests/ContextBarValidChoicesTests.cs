@@ -197,6 +197,44 @@ public class ContextBarValidChoicesTests
         w.Close();
     }
 
+    // ---------------------------------------------------------------- the layout's size
+
+    [AvaloniaFact]
+    public void Layout_size_fields_show_only_with_nothing_selected_and_resize_the_page()
+    {
+        var (w, _) = Open();
+        var s = w.Session;
+        var bar = SelectionBar(w);
+
+        Select(w);                                                    // nothing selected: Layout W and H, the object fields gone
+        Assert.True(bar.PageFields.IsVisible);
+        Assert.False(bar.W.IsEffectivelyVisible);
+        Assert.Equal(ContextBars.Fmt(Units.ToInches(s.Document.Page.Width)), bar.PageW.Text);
+        Assert.Equal(ContextBars.Fmt(Units.ToInches(s.Document.Page.Height)), bar.PageH.Text);
+
+        var bottom = s.Document.Page.Y + s.Document.Page.Height;
+        bar.PageW.Focus(); bar.PageW.Text = "20"; w.KeyPress(Key.Enter, RawInputModifiers.None, PhysicalKey.Enter, null);
+        Flush();
+        Assert.Equal(Units.FromInches(20), s.Document.Page.Width, 3);
+        bar.PageH.Focus(); bar.PageH.Text = "8.5"; w.KeyPress(Key.Enter, RawInputModifiers.None, PhysicalKey.Enter, null);
+        Flush();
+        Assert.Equal(Units.FromInches(8.5), s.Document.Page.Height, 3);
+        Assert.Equal(bottom, s.Document.Page.Y + s.Document.Page.Height, 3);   // the bottom-left corner stays put
+
+        s.History.Undo();                                             // one undo step per change
+        Flush();
+        Assert.Equal(Units.FromInches(20), s.Document.Page.Width, 3);
+        Assert.NotEqual(Units.FromInches(8.5), s.Document.Page.Height, 3);
+
+        var a = AddRect(w, 100, 100);
+        Select(w, a);                                                 // something selected: the layout fields go away
+        Assert.False(bar.PageFields.IsVisible);
+        Assert.True(bar.W.IsEffectivelyVisible);
+        Select(w);
+        Assert.True(bar.PageFields.IsVisible);
+        w.Close();
+    }
+
     // ---------------------------------------------------------------- font controls
 
     [AvaloniaFact]

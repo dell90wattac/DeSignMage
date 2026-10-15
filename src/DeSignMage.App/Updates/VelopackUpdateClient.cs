@@ -47,12 +47,12 @@ internal sealed class VelopackUpdateClient : IUpdateClient
     public string CurrentVersion => _manager.CurrentVersion?.ToString() ?? "";
 
     public UpdateOffer? DownloadedUpdate() =>
-        _manager.UpdatePendingRestart is { } asset ? new UpdateOffer(asset.Version.ToString(), asset) : null;
+        _manager.UpdatePendingRestart is { } asset ? new UpdateOffer(asset.Version.ToString(), asset, asset.NotesMarkdown) : null;
 
     public async Task<UpdateOffer?> CheckAsync(CancellationToken ct)
     {
         var info = await _manager.CheckForUpdatesAsync().ConfigureAwait(false);
-        return info is null ? null : new UpdateOffer(info.TargetFullRelease.Version.ToString(), info);
+        return info is null ? null : new UpdateOffer(info.TargetFullRelease.Version.ToString(), info, info.TargetFullRelease.NotesMarkdown);
     }
 
     public Task DownloadAsync(UpdateOffer offer, Action<int> progress, CancellationToken ct) =>

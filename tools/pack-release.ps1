@@ -23,7 +23,8 @@ param(
     [Parameter(Mandatory)] [string] $OutputDir,
     # Default: the Version in Directory.Build.props (or whatever the publish folder was built with, see publish-portable.ps1 -Version).
     [string] $Version,
-    # Markdown file shown as the release notes inside the update; a short default is written when omitted.
+    # Markdown file shown as the release notes inside the update (the "Update required" window shows its first lines).
+    # Default: docs\release-notes\<version>.md, or a short general line when that file does not exist.
     [string] $ReleaseNotesFile,
     [switch] $DownloadPrevious,
     [string] $Repo = 'https://github.com/dell90wattac/DeSignMage',
@@ -73,6 +74,9 @@ try {
         } else { Write-Host 'No earlier release: this is the first one, so there is no delta package.' }
     }
 
+    if (-not $ReleaseNotesFile -and (Test-Path (Join-Path $root "docs\release-notes\$Version.md"))) {
+        $ReleaseNotesFile = Join-Path $root "docs\release-notes\$Version.md"
+    }
     if (-not $ReleaseNotesFile) {
         $ReleaseNotesFile = Join-Path $OutputDir "release-notes-$Version.md"
         [IO.File]::WriteAllText($ReleaseNotesFile, "# DeSign Mage $Version`n`nImprovements and fixes. The full list is on the release page.`n")

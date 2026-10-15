@@ -6,7 +6,8 @@ approval. Background: [CODE-SIGNING-POLICY.md](CODE-SIGNING-POLICY.md).
 ## Each release
 
 1. Make sure `main` is what you want to ship and [CI](.github/workflows/ci.yml) is green on it.
-2. Set the new version in `Directory.Build.props` (`<Version>`, for example `0.3.7`), commit and push to `main`.
+2. Set the new version in `Directory.Build.props` (`<Version>`, for example `0.3.7`) and write its notes in `docs/release-notes/<version>.md`
+   (a short list; the first four lines show in the "Update required" window, the whole file on top of the release page). Commit and push to `main`.
 3. Tag that commit and push the tag. The tag is `v` + the version, and the workflow refuses a tag that does not match `<Version>`:
 
    ```

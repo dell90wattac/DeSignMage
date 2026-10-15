@@ -187,6 +187,9 @@ jobs:
 
           See the [code signing policy](https://github.com/$repo/blob/$env:TAG/CODE-SIGNING-POLICY.md) for who signs and approves releases, and the [privacy policy](https://github.com/$repo/blob/$env:TAG/PRIVACY.md) for what the program sends over the network.
           "@ | Out-File notes.md -Encoding utf8
+          # The same notes the update shows (docs/release-notes/<version>.md) go on top of the release page.
+          $whatsNew = "docs/release-notes/$env:VERSION.md"
+          if (Test-Path $whatsNew) { (Get-Content $whatsNew -Raw) + "`n" + (Get-Content notes.md -Raw) | Out-File notes.md -Encoding utf8 }
           $extra = @()
           if ($env:TAG -match '-') { $extra += '--prerelease' }   # v1.2.3-beta.1 is marked as a pre-release
           $update = $env:UPDATE_FILES -split '\|'

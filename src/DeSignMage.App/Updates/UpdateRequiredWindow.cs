@@ -26,6 +26,9 @@ internal sealed class UpdateRequiredWindow : Window
     public TextBlock HeadingText { get; } = new() { TextWrapping = TextWrapping.Wrap, FontWeight = FontWeight.SemiBold };
     public TextBlock DetailText { get; } = new() { TextWrapping = TextWrapping.Wrap };
     public TextBlock ProgressText { get; } = new() { TextWrapping = TextWrapping.Wrap };
+    /// <summary>"What's new": the first few lines of the new version's release notes (hidden when it has none).</summary>
+    public TextBlock NotesText { get; } = new() { TextWrapping = TextWrapping.Wrap };
+    private readonly StackPanel _notes;
     public ProgressBar Progress { get; } = new() { Minimum = 0, Maximum = 100 };
 
     /// <summary>Completes when the person may go on: true = the program starts normally (the update failed), nothing else ever completes (an installed update ends the process).</summary>
@@ -51,13 +54,20 @@ internal sealed class UpdateRequiredWindow : Window
         DetailText.Foreground = AppTheme.Brush("Ui.Muted");
         DetailText.Classes.Add("small");
         DetailText.Text = $"You have version {currentVersion}. Updating takes a few seconds, and DeSign Mage opens again by itself. Your settings and designs are not touched.";
+        NotesText.Name = "NotesText";
+        NotesText.Text = ReleaseNotes.Brief(flow.Offer.Notes);
+        _notes = new StackPanel
+        {
+            Spacing = UiScale.Sp(2), IsVisible = NotesText.Text is not null,
+            Children = { ContextBars.Caption("What's new"), NotesText },
+        };
 
         Content = DialogScale.Scrollable(new StackPanel
         {
             Margin = UiScale.Space(16), Spacing = UiScale.Sp(8),
             Children =
             {
-                HeadingText, DetailText, Progress, ProgressText,
+                HeadingText, DetailText, _notes, Progress, ProgressText,
                 new StackPanel { Orientation = Orientation.Horizontal, HorizontalAlignment = HorizontalAlignment.Right, Margin = UiScale.Space(0, 10, 0, 0), Children = { ActionButton } },
             },
         });
@@ -101,6 +111,7 @@ internal sealed class UpdateRequiredWindow : Window
     {
         string version = _flow.Offer.Version;
         DetailText.IsVisible = _flow.Step != UpdateStep.Failed;   // 'updating takes a few seconds' would be wrong after a failure
+        _notes.IsVisible = NotesText.Text is not null && _flow.Step != UpdateStep.Failed;
         switch (_flow.Step)
         {
             case UpdateStep.Idle:

@@ -49,6 +49,38 @@ public class UpdateShellTests
     }
 
     [AvaloniaFact]
+    public async Task The_window_shows_the_first_lines_of_the_release_notes_and_hides_them_when_there_are_none()
+    {
+        var client = new FakeUpdateClient();
+        var flow = new UpdateFlow(client, new GateDecision(StartupAction.RequireUpdate, "test",
+            new UpdateOffer("2.0.0", Notes: "# DeSign Mage 2.0.0\n\n- Layout **size** fields\n- [Notes](https://example.com) here\n"), true), [], _ => { });
+        var w = new UpdateRequiredWindow(flow, "1.0.0");
+        w.Show();
+        await Settle(flow, UpdateStep.Ready);
+        Assert.True(w.NotesText.IsEffectivelyVisible);
+        Assert.Equal("• Layout size fields\n• Notes here", w.NotesText.Text);
+        w.Close();
+
+        var (plain, plainFlow, _) = Open(downloaded: true);   // no notes in the package: no "What's new" at all
+        await Settle(plainFlow, UpdateStep.Ready);
+        Assert.False(plain.NotesText.IsEffectivelyVisible);
+        plain.Close();
+    }
+
+    [Fact]
+    public void Release_notes_are_cut_to_a_few_lines_and_a_few_hundred_characters()
+    {
+        Assert.Null(ReleaseNotes.Brief(null));
+        Assert.Null(ReleaseNotes.Brief("# Only a heading\n\n---\n"));
+        Assert.Equal("Improvements and fixes.", ReleaseNotes.Brief("# DeSign Mage 1.0\n\nImprovements and fixes.\n"));
+        Assert.Equal("• a\n• b\n• c\n• d …", ReleaseNotes.Brief("- a\n* b\n+ c\n- d\n- e\n"));
+        string longLine = string.Join(' ', Enumerable.Repeat("word", 100));
+        var brief = ReleaseNotes.Brief(longLine)!;
+        Assert.True(brief.Length <= 282);
+        Assert.EndsWith(" …", brief);
+    }
+
+    [AvaloniaFact]
     public async Task The_window_cannot_be_closed_around_the_button()
     {
         var (w, flow, client) = Open(downloaded: true);
@@ -149,6 +181,8 @@ public class UpdateShellTests
 /// <summary>Developer tool, not a test: with DSM_SHOTS set to a folder it writes screenshots of the Update required window in each state.</summary>
 public class UpdateWindowScreenshots
 {
+    private const string DemoNotes = "# DeSign Mage 0.3.7\n\n- Set the **layout size** from the Context Bar when nothing is selected\n- Short release notes in this window\n- Fixes for text editing\n- Faster drawing of large designs\n- Another change\n";
+
     [AvaloniaFact]
     public async Task Write_screenshots_when_asked()
     {
@@ -162,7 +196,7 @@ public class UpdateWindowScreenshots
             UiScale.SetScale(scale, remember: false);
             Dispatcher.UIThread.RunJobs();
             client ??= new FakeUpdateClient();
-            var flow = new UpdateFlow(client, new GateDecision(StartupAction.RequireUpdate, "demo", new UpdateOffer("0.3.7"), downloaded), [], _ => { });
+            var flow = new UpdateFlow(client, new GateDecision(StartupAction.RequireUpdate, "demo", new UpdateOffer("0.3.7", Notes: DemoNotes), downloaded), [], _ => { });
             var w = new UpdateRequiredWindow(flow, "0.3.6");
             w.Show();
             Dispatcher.UIThread.RunJobs();
