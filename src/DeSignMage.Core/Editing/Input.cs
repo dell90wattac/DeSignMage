@@ -120,3 +120,5 @@ public readonly record struct PointHandleMark(Vec2 Position, bool Active);
 /// a fixed anchor to a point, and the points themselves (round handles).
 /// </summary>
 public sealed record PointHandlesOverlay(PathGeometry? Ring, IReadOnlyList<(Vec2 From, Vec2 To)> Lines, IReadOnlyList<PointHandleMark> Points) : OverlayItem;
+/// <summary>A picture should open in the Picture Editor.</summary>
+public sealed record PictureEditRequest(Model.ImageObject Image);

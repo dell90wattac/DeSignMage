@@ -343,8 +343,8 @@ public class NativeFormatTests(ITestOutputHelper output)
     {
         var bytes = DsmWriter.SaveToBytes(SampleDocuments.Everything(), new DsmSaveOptions { AppVersion = "1.0" });
         var future = Zip.EditDocumentJson(bytes, json => json
-            .Replace("\"formatVersion\": 1", "\"formatVersion\": 3")
-            .Replace("\"minReaderVersion\": 1", "\"minReaderVersion\": 3"));
+            .Replace($"\"formatVersion\": {DsmFormat.CurrentVersion}", $"\"formatVersion\": {DsmFormat.CurrentVersion + 1}")
+            .Replace("\"minReaderVersion\": 1", $"\"minReaderVersion\": {DsmFormat.CurrentVersion + 1}"));
 
         var ex = Assert.Throws<DsmFormatException>(() => DsmReader.Load(new MemoryStream(future)));
         Assert.Contains("newer version", ex.Message);

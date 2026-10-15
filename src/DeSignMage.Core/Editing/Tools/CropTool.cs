@@ -4,7 +4,7 @@ using DeSignMage.Core.Model;
 namespace DeSignMage.Core.Editing.Tools;
 
 /// <summary>
-/// Image â–¸ Crop Tool. Modal: drag a box over the picture (it cannot leave the picture), adjust it by dragging inside it (move)
+/// Image ▸ Crop Tool. Modal: drag a box over the picture (it cannot leave the picture), adjust it by dragging inside it (move)
 /// or its handles (resize), then Enter, a double-click or the Context Bar's check mark crops; Esc cancels.
 /// Dragging outside the box starts a new one. The box lives in the picture's own frame (points), so a rotated or scaled
 /// picture crops correctly. Cropping removes pixels and is one undo step.

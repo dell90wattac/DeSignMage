@@ -8,7 +8,7 @@ namespace DeSignMage.Core.Editing;
 /// <summary>
 /// One open document plus everything needed to edit it: undo history, selection, view, tools.
 /// The UI shell forwards raw pointer/key input here; this class routes it:
-/// right button â†’ marquee zoom / zoom-out stack, middle button or Space+left â†’ pan, left â†’ active tool.
+/// right button → marquee zoom / zoom-out stack, middle button or Space+left → pan, left → active tool.
 /// </summary>
 public enum MiddleButtonUsage { Pan, Zoom }
 

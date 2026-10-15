@@ -105,14 +105,14 @@ public class ImageShellTests : IDisposable
     // ---- the menu ----
 
     [AvaloniaFact]
-    public void Image_menu_follows_SWs_layout_and_leaves_unbuilt_entries_disabled()
+    public void Image_menu_has_its_usual_layout_and_leaves_unbuilt_entries_disabled()
     {
         var (w, _) = Open();
         var items = TopMenu(w, "Image").Items.OfType<Control>().ToList();
         string Name(Control c) => c is MenuItem m ? Strip(m.Header) : "-";
         Assert.Equal(
         [
-            "Vectorize...", "Crop Tool", "Rasterize...", "Resample...", "-", "Modify Pixels", "-",
+            "Vectorize...", "Edit Photo...", "Flatten Picture", "Crop Tool", "Rasterize...", "Resample...", "-", "Modify Pixels", "-",
             "Rotate 90 degrees clockwise", "Rotate 90 degrees counter-clockwise", "Flip Horizontal", "Flip Vertical", "Invert", "Commit Rotation", "1:1 Zoom", "-",
             "Color Depth", "Extract Alpha Channel", "-", "Save As...", "-",
             "Manage Image Fill Library...", "Update Image Fill Library", "Add to Image Fill Library..",
@@ -121,7 +121,7 @@ public class ImageShellTests : IDisposable
         // Nothing selected: picture commands are off (Vectorize asks for a file, so it stays on).
         bool Enabled(string header) => Cmd(w, "Image", header).CanExecute();
         Assert.True(Enabled("Vectorize..."));
-        foreach (var h in new[] { "Crop Tool", "Rasterize...", "Resample...", "Rotate 90 degrees clockwise", "Rotate 90 degrees counter-clockwise", "Flip Horizontal", "Flip Vertical", "Invert", "1:1 Zoom" })
+        foreach (var h in new[] { "Edit Photo...", "Flatten Picture", "Crop Tool", "Rasterize...", "Resample...", "Rotate 90 degrees clockwise", "Rotate 90 degrees counter-clockwise", "Flip Horizontal", "Flip Vertical", "Invert", "1:1 Zoom" })
             Assert.False(Enabled(h), h);
         // Never built yet: disabled whatever is selected.
         foreach (var h in new[] { "Commit Rotation", "Extract Alpha Channel", "Save As...", "Manage Image Fill Library...", "Update Image Fill Library", "Add to Image Fill Library.." })
@@ -135,9 +135,10 @@ public class ImageShellTests : IDisposable
         var (w, _) = Open();
         await ImportOne(w, WriteFlat("a.png", 60, 30));
 
-        foreach (var h in new[] { "Crop Tool", "Resample...", "Rotate 90 degrees clockwise", "Rotate 90 degrees counter-clockwise", "Flip Horizontal", "Flip Vertical", "Invert", "1:1 Zoom" })
+        foreach (var h in new[] { "Edit Photo...", "Crop Tool", "Resample...", "Rotate 90 degrees clockwise", "Rotate 90 degrees counter-clockwise", "Flip Horizontal", "Flip Vertical", "Invert", "1:1 Zoom" })
             Assert.True(Cmd(w, "Image", h).CanExecute(), h);
         Assert.False(Cmd(w, "Image", "Rasterize...").CanExecute());   // a picture alone has nothing to rasterize
+        Assert.False(Cmd(w, "Image", "Flatten Picture").CanExecute());   // and a picture that was never edited has nothing to flatten
         // Shortcuts (Alt+V, Ctrl+F7, Alt+1) wait for the user's approval.
         foreach (var h in new[] { "Vectorize...", "Crop Tool", "1:1 Zoom" })
             Assert.Empty(Cmd(w, "Image", h).Gestures);

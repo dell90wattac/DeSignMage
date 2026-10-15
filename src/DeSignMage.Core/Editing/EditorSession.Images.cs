@@ -70,20 +70,105 @@ public sealed partial class EditorSession
         foreach (var image in SelectedImages())
         {
             if (!EnsurePixelSize(image)) continue;
-            if (ImageService.Apply(Document, image.AssetId, op) is not { } pixels)
+            var next = RecipeAfter(image, op);
+            if (Compute(ImageService, Document, image.AssetId, image.SourceAssetId, next, op) is not { } pixels)
             {
                 LastImageError = "The picture could not be read.";
                 continue;
             }
-            var frame = op is ImageOp.Rotate90
-                ? ImageFrames.Rotate90(image.Width, image.Height, image.Transform)
-                : new ImageFrame(image.Width, image.Height, image.Transform);
-            commands.Add(new ReplaceImageCommand(description, image, pixels, frame));
+            commands.Add(OpCommand(image, op, description, pixels, next));
         }
         if (commands.Count == 0) return 0;
         using (History.BeginTransaction(description))
             foreach (var c in commands) History.Execute(c);
         return commands.Count;
+    }
+
+    // Rotate, Flip and Invert on a picture that has an editing recipe (Edit Picture) change the recipe instead of its pixels: the original stays, so
+    // nothing the user did in the editor is lost, and the finished picture is rebuilt from the original. On a plain picture they stay what they
+    // always were (lossless, on the pixels; no second copy of the picture is kept). Crop and Resample work on the finished pixels and end the recipe.
+
+    /// <summary>The recipe <paramref name="image"/> would have after <paramref name="op"/>, or null when the operation works on the pixels.</summary>
+    private static PictureRecipe? RecipeAfter(ImageObject image, ImageOp op)
+    {
+        if (image.Recipe is not { } r || image.SourceAssetId is null) return null;
+        PictureRecipe? next = null;
+        if (op is ImageOp.Rotate90 turn) next = turn.Clockwise ? r.RotatedRight() : r.RotatedLeft();
+        else if (op is ImageOp.Flip flip) next = flip.Horizontal ? r.FlippedHorizontally() : r.FlippedVertically();
+        else if (op is ImageOp.Invert) next = r with { Effects = r.Effects with { Invert = !r.Effects.Invert } };
+        return next?.Normalized();
+    }
+
+    /// <summary>The new pixels: the operation on the stored picture, or (<paramref name="next"/> not null) the new recipe rendered from the original. Runs on a worker for big pictures.</summary>
+    private static ImagePixels? Compute(IImageService service, Document doc, string assetId, string? sourceAssetId, PictureRecipe? next, ImageOp op) =>
+        next is null ? service.Apply(doc, assetId, op)
+        : next.IsIdentity ? new ImagePixels(sourceAssetId!, next.SourceWidth, next.SourceHeight)   // back to the plain original
+        : service.RenderRecipe(doc, sourceAssetId!, next);
+
+    private static ReplaceImageCommand OpCommand(ImageObject image, ImageOp op, string description, ImagePixels pixels, PictureRecipe? next)
+    {
+        if (next is null)
+        {
+            var frame = op is ImageOp.Rotate90
+                ? ImageFrames.Rotate90(image.Width, image.Height, image.Transform)
+                : new ImageFrame(image.Width, image.Height, image.Transform);
+            return new ReplaceImageCommand(description, image, pixels, frame);
+        }
+        var original = PictureGeometry.BaseFrameFor(image.Recipe!, image.Width, image.Height, image.PixelWidth, image.PixelHeight, image.Transform);
+        if (next.IsIdentity) return new ReplaceImageCommand(description, image, pixels, original);
+        return new ReplaceImageCommand(description, image, pixels, PictureGeometry.FrameFor(next, original.Width, original.Height, original.Transform), image.SourceAssetId, next);
+    }
+
+    // ---- Picture Editor ----
+
+    /// <summary>Raised when a picture should open in the Picture Editor (a double-click on it, Image ▸ Edit Picture...); the window shows the editor.</summary>
+    public event EventHandler<PictureEditRequest>? PictureEditRequested;
+
+    /// <summary>Edit Picture works on one selected picture.</summary>
+    public bool CanEditPicture => HasSingleImageSelected;
+
+    /// <summary>The picture the editor would open, with its pixel size known; null when none or unreadable.</summary>
+    public ImageObject? EditPictureTarget => CanEditPicture && Selection.Items[0] is ImageObject image && EnsurePixelSize(image) ? image : null;
+
+    /// <summary>Asks the window to open the Picture Editor on <paramref name="image"/> (which becomes the selection).</summary>
+    public void RequestPictureEdit(ImageObject image)
+    {
+        if (!Selection.Contains(image) || Selection.Count != 1) Selection.Set(image);
+        PictureEditRequested?.Invoke(this, new PictureEditRequest(image));
+    }
+
+    /// <summary>
+    /// The Picture Editor's OK: gives <paramref name="image"/> its new pixels (the finished picture at full resolution, an asset), the original
+    /// they were made from and the recipe, with the frame the recipe gives it on the page. One undo step ("Edit Picture"). Without a recipe
+    /// (<paramref name="recipe"/> null: everything was reset) the picture is simply the original again.
+    /// </summary>
+    public void CommitPicture(ImageObject image, ImagePixels result, ImageFrame frame, string? sourceAssetId, PictureRecipe? recipe) =>
+        History.Execute(new ReplaceImageCommand("Edit Picture", image, result, frame, sourceAssetId, recipe));
+
+    // ---- Flatten ----
+
+    /// <summary>The selected pictures (also inside selected groups) that carry an editing recipe, so that flattening them changes something.</summary>
+    public IReadOnlyList<ImageObject> FlattenablePictures() =>
+        SelectedImages().Where(i => i.SourceAssetId is not null && i.Recipe is { IsIdentity: false }).Distinct().ToList();
+
+    /// <summary>Flatten applies when at least one selected picture has a recipe (the Context Bar shows its button only then).</summary>
+    public bool CanFlatten => FlattenablePictures().Count > 0;
+
+    /// <summary>
+    /// Image ▸ Flatten Picture: bakes the recipe of every selected picture that has one into its pixels, for good. The finished picture (already stored at full
+    /// resolution, pixels outside a crop already gone) becomes the whole picture: the original and the recipe are let go, so the file gets smaller and the Picture
+    /// Editor starts afresh on it. One undo step; undo brings the original and the recipe back exactly. Returns how many pictures were flattened.
+    /// </summary>
+    public int FlattenPictures()
+    {
+        var pictures = FlattenablePictures();
+        if (pictures.Count == 0) return 0;
+        string description = pictures.Count == 1 ? "Flatten Picture" : "Flatten Pictures";
+        using (History.BeginTransaction(description))
+            foreach (var image in pictures)
+                History.Execute(new ReplaceImageCommand(description, image,
+                    new ImagePixels(image.AssetId, image.PixelWidth, image.PixelHeight), new ImageFrame(image.Width, image.Height, image.Transform)));
+        return pictures.Count;
     }
 
     // ---- Resample ----
@@ -124,7 +209,8 @@ public sealed partial class EditorSession
     public const long BackgroundPixelThreshold = 600_000;
 
     private static bool IsBig(ImageObject image) =>
-        !image.HasPixelSize || (long)image.PixelWidth * image.PixelHeight > BackgroundPixelThreshold;
+        !image.HasPixelSize || (long)image.PixelWidth * image.PixelHeight > BackgroundPixelThreshold
+        || image.Recipe is { } r && image.SourceAssetId is not null && (long)r.SourceWidth * r.SourceHeight > BackgroundPixelThreshold;   // a recipe is rebuilt from the original
 
     /// <summary>The newest background picture job (completed when done). Tests await it.</summary>
     public Task ImageIdle { get; private set; } = Task.CompletedTask;
@@ -137,12 +223,12 @@ public sealed partial class EditorSession
         var service = ImageService!;
         var doc = Document;
         long revision = doc.Revision;
-        var jobs = images.Select(i => (Image: i, i.AssetId, Known: i.HasPixelSize)).ToList();
+        var jobs = images.Select(i => (Image: i, i.AssetId, i.SourceAssetId, Known: i.HasPixelSize, Next: RecipeAfter(i, op))).ToList();
         (ImageObject Image, ImagePixels? Pixels, (int Width, int Height)? Size)[] results;
         try
         {
             var raw = await Background!(description + "...", _ =>
-                jobs.Select(j => (j.Image, service.Apply(doc, j.AssetId, op), j.Known ? null : service.GetPixelSize(doc, j.AssetId))).ToArray());
+                jobs.Select(j => (j.Image, Compute(service, doc, j.AssetId, j.SourceAssetId, j.Next, op), j.Known ? null : service.GetPixelSize(doc, j.AssetId))).ToArray());
             results = ((ImageObject, ImagePixels?, (int, int)?)[])raw!;
         }
         catch (Exception e) when (e is not OutOfMemoryException)
@@ -158,10 +244,7 @@ public sealed partial class EditorSession
             if (!doc.Contains(image)) continue;
             if (size is { } s && !image.HasPixelSize) { image.PixelWidth = s.Width; image.PixelHeight = s.Height; }
             if (pixels is null) { LastImageError = "The picture could not be read."; continue; }
-            var frame = op is ImageOp.Rotate90
-                ? ImageFrames.Rotate90(image.Width, image.Height, image.Transform)
-                : new ImageFrame(image.Width, image.Height, image.Transform);
-            commands.Add(new ReplaceImageCommand(description, image, pixels, frame));
+            commands.Add(OpCommand(image, op, description, pixels, jobs.First(j => j.Image == image).Next));
         }
         if (commands.Count == 0) { ImageFinished?.Invoke(this, EventArgs.Empty); return; }
         using (History.BeginTransaction(description))

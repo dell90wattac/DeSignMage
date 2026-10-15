@@ -40,6 +40,9 @@ public partial class MainWindow
         // Names and order follow the usual Image menu (the two rotate labels are the right way round here).
         // Shortcuts (Alt+V, Ctrl+F7, Alt+1, Ctrl+Alt+I) stay unbound until the user approves them.
         Add("image.crop", "Crop Tool", () => _session.BeginCrop(), () => _session.CanCrop);
+        Add("image.flatten", "Flatten Picture", () => _session.FlattenPictures(), () => _session.CanFlatten);
+        Add("image.editPicture", "Edit Photo...", () => { if (_session.EditPictureTarget is { } picture) _session.RequestPictureEdit(picture); }, () => _session.CanEditPicture);
+        ImageActions.OpenEditor = () => { if (_session.EditPictureTarget is { } picture) _session.RequestPictureEdit(picture); };
         Add("image.resample", "Resample...", () => _ = ResampleSelectionAsync(), () => _session.CanResample);
         ImageActions.OpenResample = () => { if (_session.CanResample) _ = ResampleSelectionAsync(); };
         Add("image.rotateCW", "Rotate 90 degrees clockwise", () => ImageActions.RotateClockwise(_session), HasImage);
@@ -71,6 +74,7 @@ public partial class MainWindow
     {
         session.ImageService = ImageService;
         session.ScreenScale = RenderScaling;
+        session.PictureEditRequested += (_, request) => _ = OpenPictureEditorAsync(session, request.Image);   // a double-click on a picture, Image > Edit Picture...
         session.ClipboardChanged += (_, _) => OnSessionClipboardChanged(session);   // tags the system clipboard (MainWindow.Paste.cs)
         // Photos are decoded, turned and re-encoded on a worker thread with a progress window (BackgroundWork), so the window stays alive.
         session.Background = (title, work) => BackgroundWork.RunAsync<object?>(this, Title ?? "DeSign Mage", title, work);
@@ -193,6 +197,42 @@ public partial class MainWindow
         var pictures = paths.Where(ImageCodec.IsImageFile).ToList();
         if (pictures.Count > 0) _ = ImportImagesAsync(pictures, docPoint);
         else _ = OpenFileAsync(paths[0]);   // says what is supported
+    }
+
+    // ---------------------------------------------------------------- Picture Editor
+
+    /// <summary>The Picture Editor that is open (for tests); null otherwise.</summary>
+    internal PictureEditorDialog? OpenPictureEditor { get; private set; }
+
+    /// <summary>
+    /// Opens the Picture Editor on <paramref name="image"/>. The original pixels are decoded off the UI thread (with the progress window for a big photo);
+    /// while the window is open the design behind it shows the preview, and OK is one undo step.
+    /// </summary>
+    internal async Task OpenPictureEditorAsync(EditorSession session, ImageObject image)
+    {
+        if (OpenPictureEditor is not null || !ReferenceEquals(session, _session) || !session.Document.Contains(image)) return;
+        string sourceId = image.SourceAssetId ?? image.AssetId;
+        if (session.Document.Assets.Get(sourceId) is not { } asset)
+        {
+            await ShowDialogAsync("Picture Editor", "The picture data is missing from this document, so it cannot be edited.", "OK", null);
+            return;
+        }
+        PixelBuffer source;
+        try
+        {
+            source = await BackgroundWork.RunAsync(this, "Picture Editor", "Opening the picture...", _ => ImageCodec.Decode(asset.Data));
+        }
+        catch (InvalidDataException e)
+        {
+            await ShowDialogAsync("Picture Editor", "The picture could not be read: " + e.Message, "OK", null);
+            return;
+        }
+        if (!ReferenceEquals(session, _session) || !session.Document.Contains(image) || !image.HasPixelSize) return;
+        var dialog = new PictureEditorDialog(session, image, source, sourceId);
+        OpenPictureEditor = dialog;
+        try { await dialog.ShowDialog(this); }
+        finally { OpenPictureEditor = null; }
+        QueueRefresh();
     }
 
     // ---------------------------------------------------------------- Resample

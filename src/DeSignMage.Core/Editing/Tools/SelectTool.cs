@@ -114,6 +114,11 @@ public sealed class SelectTool : Tool
                 Session.EditText(text, e.Doc);   // R6: double-click on text = edit mode (not the context menu)
                 return;
             }
+            if (hit is ImageObject picture)
+            {
+                Session.RequestPictureEdit(picture);   // double-click on a picture opens the Picture Editor (not a menu)
+                return;
+            }
             if (hit is not GroupObject && OutlineView.IsEditable(hit)) Session.EditVectors(hit);
             else Session.RequestContextMenu(hit, e.Screen);
             return;

@@ -36,7 +36,7 @@ internal static class MenuStripIcons
     /// <summary>The short word shown on a strip button (the tooltip keeps the full command name).</summary>
     private static readonly Dictionary<string, string> Labels = new()
     {
-        ["image.vectorize"] = "Vectorize", ["image.crop"] = "Crop", ["image.resample"] = "Resample",
+        ["image.vectorize"] = "Vectorize", ["image.editPicture"] = "Edit Photo", ["image.flatten"] = "Flatten",["image.crop"] = "Crop", ["image.resample"] = "Resample",
         ["image.rotateCW"] = "Rotate R", ["image.rotateCCW"] = "Rotate L", ["image.flipH"] = "Flip H", ["image.flipV"] = "Flip V",
         ["image.invert"] = "Invert", ["image.zoom11"] = "1:1",
         ["effects.outline"] = "Outline", ["effects.inline"] = "Inline", ["effects.knife"] = "Knife", ["effects.weld"] = "Weld",
@@ -86,6 +86,9 @@ internal static class MenuStripIcons
         // a few picture pixels, and a smooth vector curve with nodes drawn from them
         ["image.vectorize"] = () => Box(Fill("M2,2 H6 V6 H2 Z M6,6 H10 V10 H6 Z"), Stroke("M7,17 C9,9 14,19 18,7", Accent), Fill("M5.5,15.5 H8.5 V18.5 H5.5 Z M16.5,5.5 H19.5 V8.5 H16.5 Z", Accent)),
         // the two crop marks
+        ["image.editPicture"] = () => Box(Stroke("M2.5,3.5 H17.5 V16.5 H2.5 Z"), Fill("M4,15.5 L8,9.5 L11,13 L13,11 L16,15.5 Z"), Stroke("M13.5,6.5 A1.5,1.5 0 1 0 13.5,6.51", Accent)),
+        // an arrow pressing down onto one flat line: the edits are baked into the picture
+        ["image.flatten"] = () => Box(Stroke("M2.5,16 H17.5"), Stroke("M10,3 V12 M6,8.5 L10,12.5 L14,8.5", Accent)),
         ["image.crop"] = () => Box(Stroke("M6,2 V14 H18"), Stroke("M2,6 H14 V18")),
         // a picture with a smaller block of pixels, and an arrow to the new size
         ["image.resample"] = () => Box(Stroke("M3,3 H17 V17 H3 Z"), Fill("M3,3 H10 V10 H3 Z"), Stroke("M11,11 L16,16 M12.5,16 H16 V12.5", Accent)),

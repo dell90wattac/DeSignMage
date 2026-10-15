@@ -42,6 +42,15 @@ public sealed class SkiaImageService : IImageService
         return Store(doc, result);
     }
 
+    public ImagePixels? RenderRecipe(Document doc, string sourceAssetId, PictureRecipe recipe)
+    {
+        if (doc.Assets.Get(sourceAssetId) is not { } asset) return null;
+        PixelBuffer source;
+        try { source = ImageCodec.Decode(asset.Data); }
+        catch (InvalidDataException) { return null; }
+        return Store(doc, PictureProcessor.Render(source, recipe));
+    }
+
     public ImagePixels? Rasterize(Document doc, IReadOnlyList<DocObject> objects, Rect2 bounds, int pixelWidth, int pixelHeight)
     {
         var info = new SKImageInfo(pixelWidth, pixelHeight, SKColorType.Rgba8888, SKAlphaType.Premul);

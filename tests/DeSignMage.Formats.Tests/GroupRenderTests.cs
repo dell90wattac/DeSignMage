@@ -80,7 +80,7 @@ public class GroupRenderTests
         var loaded = DsmReader.Load(new MemoryStream(bytes));
         var doc = loaded.Document;
         Assert.Empty(loaded.Warnings);
-        Assert.Equal(2, loaded.FormatVersion);
+        Assert.Equal(DsmFormat.CurrentVersion, loaded.FormatVersion);
         Assert.Equal(3, doc.ActiveLayer.Children.Count);
         Assert.Equal(1, doc.GroupCount);
         var g = Assert.Single(doc.Groups);

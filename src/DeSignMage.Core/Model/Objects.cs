@@ -214,6 +214,8 @@ public sealed class ImageObject : DocObject
     private double _width, _height;
     private int _pixelWidth, _pixelHeight;
     private string? _sourceName;
+    private string? _sourceAssetId;
+    private Imaging.PictureRecipe? _recipe;
 
     public ImageObject(string assetId, double width, double height, int pixelWidth = 0, int pixelHeight = 0, string? sourceName = null)
     {
@@ -234,6 +236,16 @@ public sealed class ImageObject : DocObject
 
     public bool HasPixelSize => _pixelWidth > 0 && _pixelHeight > 0;
 
+    /// <summary>
+    /// With a <see cref="Recipe"/>: the untouched original pixels (an asset). <see cref="AssetId"/> then holds the finished result at full resolution, so
+    /// everything that reads the picture (drawing, export, clipboard, Vectorize, the legacy layout writer) needs no knowledge of the recipe.
+    /// Null for a picture that was never edited in the Picture Editor.
+    /// </summary>
+    public string? SourceAssetId { get => _sourceAssetId; set { _sourceAssetId = value; Touch(); } }
+
+    /// <summary>What the Picture Editor did to <see cref="SourceAssetId"/> to make <see cref="AssetId"/> (crop, straighten, colors); null when nothing was.</summary>
+    public Imaging.PictureRecipe? Recipe { get => _recipe; set { _recipe = value; Touch(); } }
+
     /// <summary>Pixels per inch across the image as it lies on the page (world scale included); 0 if the pixel size is unknown.</summary>
     public double EffectiveDpiX => HasPixelSize ? _pixelWidth / Math.Max(WorldFrameLength(new Vec2(_width, 0)), 1e-9) * Units.PointsPerInch : 0;
 
@@ -243,6 +255,7 @@ public sealed class ImageObject : DocObject
     private double WorldFrameLength(Vec2 edge) => GetWorldTransform().TransformVector(edge).Length;
 
     public override string KindName => "Bitmap";
-    protected override DocObject CloneCore() => new ImageObject(_assetId, _width, _height, _pixelWidth, _pixelHeight, _sourceName);
+    protected override DocObject CloneCore() =>
+        new ImageObject(_assetId, _width, _height, _pixelWidth, _pixelHeight, _sourceName) { _sourceAssetId = _sourceAssetId, _recipe = _recipe };
     public override PathGeometry GetLocalGeometry() => PathGeometry.Rectangle(new Rect2(0, 0, _width, _height));
 }

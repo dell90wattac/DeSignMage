@@ -56,7 +56,7 @@ public static class PixelResampler
         }
     }
 
-    private static byte[] Premultiplied(byte[] rgba)
+    internal static byte[] Premultiplied(byte[] rgba)
     {
         var p = new byte[rgba.Length];
         for (int i = 0; i < rgba.Length; i += 4)

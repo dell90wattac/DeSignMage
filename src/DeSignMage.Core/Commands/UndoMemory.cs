@@ -69,6 +69,7 @@ public static class UndoMemory
         {
             case ImageObject img:
                 yield return img.AssetId;
+                if (img.SourceAssetId is { } source) yield return source;   // the untouched original of an edited picture
                 break;
             case GroupObject g:
                 foreach (var c in g.Children)

@@ -39,6 +39,17 @@ internal sealed class FakeImageService : IImageService
         return new ImagePixels(Register(doc, w, h), w, h);
     }
 
+    /// <summary>The recipes rendered (the original's asset and the recipe), in order.</summary>
+    public List<(string Source, PictureRecipe Recipe)> Recipes { get; } = [];
+
+    public ImagePixels? RenderRecipe(Document doc, string sourceAssetId, PictureRecipe recipe)
+    {
+        Recipes.Add((sourceAssetId, recipe));
+        if (!_sizes.ContainsKey(sourceAssetId)) return null;
+        var (w, h) = recipe.ResultSize;
+        return new ImagePixels(Register(doc, w, h), w, h);
+    }
+
     public ImagePixels? Rasterize(Document doc, IReadOnlyList<DocObject> objects, Rect2 bounds, int pixelWidth, int pixelHeight)
     {
         Rasterized.Add((bounds, pixelWidth, pixelHeight));

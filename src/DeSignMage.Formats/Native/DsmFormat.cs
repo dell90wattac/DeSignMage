@@ -43,9 +43,12 @@ public static class DsmFormat
     /// <item>1: groups were objects of the layer that held their members (<c>kind: "group"</c> with <c>children</c>), so members were always next to each other in the drawing order.</item>
     /// <item>2 (R22): grouping and drawing order are separate. The layers list every drawn object in drawing order; groups are listed once, in <c>groups</c>,
     /// and objects (and groups) name the group they belong to with <c>group</c>. Version 1 files are read as before.</item>
+    /// <item>3 (Picture Editor): a picture edited non-destructively has <c>source</c> (the untouched original, an asset) and <c>recipe</c> (crop, straighten,
+    /// colors); its <c>asset</c> is the finished picture, so a reader that knows nothing of recipes still shows the right picture (and warns about the newer
+    /// version). Files without these (versions 1 and 2) open as before.</item>
     /// </list>
     /// </summary>
-    public const int CurrentVersion = 2;
+    public const int CurrentVersion = 3;
 
     /// <summary>
     /// Written as <c>minReaderVersion</c>: the oldest format version a reader must understand to open what we write.

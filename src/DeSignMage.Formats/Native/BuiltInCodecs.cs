@@ -199,6 +199,11 @@ internal sealed class BitmapCodec : ObjectCodec<ImageObject>
         if (o.PixelWidth != 0) ctx.Json.WriteNumber("pixelWidth", o.PixelWidth);
         if (o.PixelHeight != 0) ctx.Json.WriteNumber("pixelHeight", o.PixelHeight);
         if (o.SourceName is { } source) ctx.Json.WriteString("sourceName", source);
+        if (o.SourceAssetId is { } original && o.Recipe is { } recipe)
+        {
+            ctx.Json.WriteString("source", original);
+            PictureRecipeJson.Write(ctx.Json, "recipe", recipe);
+        }
     }
 
     protected override ImageObject ReadFields(JsonElement e, DsmReadContext ctx)
@@ -206,7 +211,18 @@ internal sealed class BitmapCodec : ObjectCodec<ImageObject>
         var stored = e.Str("asset") ?? throw new DsmFormatException("A bitmap has no 'asset'.");
         var id = ctx.ResolveAssetId(stored);
         if (ctx.Document.Assets.Get(id) is null) ctx.Warn($"A bitmap's picture data is missing from the file (asset {stored[..Math.Min(8, stored.Length)]}…); a placeholder is shown.");
-        return new ImageObject(id, e.Num("width"), e.Num("height"), e.Int("pixelWidth"), e.Int("pixelHeight"), e.Str("sourceName"));
+        var picture = new ImageObject(id, e.Num("width"), e.Num("height"), e.Int("pixelWidth"), e.Int("pixelHeight"), e.Str("sourceName"));
+        if (e.Str("source") is { } storedSource && e.TryGet("recipe", out var recipeJson))
+        {
+            var sourceId = ctx.ResolveAssetId(storedSource);
+            if (ctx.Document.Assets.Get(sourceId) is null) ctx.Warn($"A bitmap's original picture is missing from the file (asset {storedSource[..Math.Min(8, storedSource.Length)]}…); it can no longer be edited from its original.");
+            else
+            {
+                picture.SourceAssetId = sourceId;
+                picture.Recipe = PictureRecipeJson.Read(recipeJson);
+            }
+        }
+        return picture;
     }
 }
 

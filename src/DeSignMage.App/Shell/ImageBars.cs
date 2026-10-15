@@ -16,6 +16,9 @@ internal static class ImageActions
     /// <summary>Opens the Resample dialog (the window sets it).</summary>
     public static Action? OpenResample { get; set; }
 
+    /// <summary>Opens the Picture Editor (the window sets it).</summary>
+    public static Action? OpenEditor { get; set; }
+
     public static bool Run(EditorSession session, ImageOp op, string description)
     {
         int done = session.ApplyImageOp(op, description);
@@ -45,19 +48,30 @@ public sealed class ImageContextRow : BarRow, IRefreshable
         this.Spaced(SpacingProperty, ContextBars.RowSpacing).Spaced(LineSpacingProperty, ContextBars.LineSpacing);
         IsVisible = false;
         Children.Add(_info);
-        AddButton("Rotate ↻", "Rotate 90 degrees clockwise", () => ImageActions.RotateClockwise(session));
+        // Edit Photo is for one picture; Flatten only for pictures that have edits to bake in (R26: hidden, not greyed, otherwise).
+        EditButton = AddButton("Edit Photo", "Edit Photo: crop, rotate, adjust colors and add effects (the original is kept)", () => ImageActions.OpenEditor?.Invoke());
+        FlattenButton = AddButton("Flatten", "Flatten Picture: make the edits permanent, and drop the original and what was cropped away", () => session.FlattenPictures());
+        AddButton("Rotate ↻","Rotate 90 degrees clockwise", () => ImageActions.RotateClockwise(session));
         AddButton("Rotate ↺", "Rotate 90 degrees counter-clockwise", () => ImageActions.RotateCounterClockwise(session));
         AddButton("Flip H", "Flip Horizontal", () => ImageActions.FlipHorizontal(session));
         AddButton("Flip V", "Flip Vertical", () => ImageActions.FlipVertical(session));
         AddButton("Invert", "Invert colors", () => ImageActions.Invert(session));
-        AddButton("Crop", "Crop Tool", () => session.BeginCrop());
+        AddButton("Crop","Crop Tool", () => session.BeginCrop());
         AddButton("Resample", "Resample: set the pixel size or resolution (the size on the page stays)", () => ImageActions.OpenResample?.Invoke());
         AddButton("1:1", "1:1 Zoom: one picture pixel per screen pixel", () => session.ZoomToImagePixels());
     }
 
-    private void AddButton(string text, string tip, Action run)
+    /// <summary>The Edit Photo button (shown while exactly one picture is selected).</summary>
+    internal Button EditButton { get; }
+
+    /// <summary>The Flatten button (shown while a selected picture has edits to bake in).</summary>
+    internal Button FlattenButton { get; }
+
+    private Button AddButton(string text, string tip, Action run)
     {
-        Children.Add(ContextBars.Action(text, () => { run(); ContextBars.FocusCanvas?.Invoke(); }, tip));
+        var button = ContextBars.Action(text, () => { run(); ContextBars.FocusCanvas?.Invoke(); }, tip);
+        Children.Add(button);
+        return button;
     }
 
     public void Refresh()
@@ -66,6 +80,8 @@ public sealed class ImageContextRow : BarRow, IRefreshable
         IsVisible = images.Count > 0;
         if (images.Count == 0) return;
         foreach (var b in Children.OfType<Button>()) b.IsEnabled = _session.ImageService is not null;
+        EditButton.IsVisible = _session.CanEditPicture;
+        FlattenButton.IsVisible = _session.CanFlatten;
         if (images.Count > 1)
         {
             _info.Text = $"{images.Count} bitmaps";

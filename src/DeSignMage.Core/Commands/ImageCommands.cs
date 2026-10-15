@@ -5,8 +5,11 @@ using DeSignMage.Core.Model;
 namespace DeSignMage.Core.Commands;
 
 /// <summary>
-/// Swaps what a placed picture shows: its stored pixels, size and frame. All Image-menu operations (rotate, flip, invert, crop)
-/// are one of these, so undo only puts the old asset id and frame back (the old pixels stay in the asset store).
+/// Swaps what a placed picture shows: its stored pixels, size and frame, and the Picture Editor's recipe with the original it belongs to. All
+/// Image-menu operations (rotate, flip, invert, crop, resample) and the Picture Editor are one of these, so undo only puts the old asset ids,
+/// recipe and frame back (the old pixels stay in the asset store while a step needs them).
+/// The Image-menu operations work on the pixels as they are shown, so they end the recipe: the edited picture becomes the picture
+/// (<paramref name="sourceAssetId"/> and <paramref name="recipe"/> default to none); undo brings the recipe back.
 /// </summary>
 public sealed class ReplaceImageCommand : IDocumentCommand, IUndoMemory
 {
@@ -14,16 +17,19 @@ public sealed class ReplaceImageCommand : IDocumentCommand, IUndoMemory
     private readonly State _old, _new;
 
     public long ApproximateBytes => 256;
-    /// <summary>Both versions: undo needs the old pixels, redo the new ones.</summary>
-    public IEnumerable<string> HeldAssetIds => [_old.AssetId, _new.AssetId];
-    private readonly record struct State(string AssetId, int PixelWidth, int PixelHeight, double Width, double Height, Affine2 Transform);
 
-    public ReplaceImageCommand(string description, ImageObject image, ImagePixels pixels, ImageFrame frame)
+    /// <summary>All versions: undo needs the old pixels (and their original), redo the new ones.</summary>
+    public IEnumerable<string> HeldAssetIds =>
+        new[] { _old.AssetId, _new.AssetId, _old.SourceAssetId, _new.SourceAssetId }.OfType<string>().Distinct();
+
+    private readonly record struct State(string AssetId, string? SourceAssetId, PictureRecipe? Recipe, int PixelWidth, int PixelHeight, double Width, double Height, Affine2 Transform);
+
+    public ReplaceImageCommand(string description, ImageObject image, ImagePixels pixels, ImageFrame frame, string? sourceAssetId = null, PictureRecipe? recipe = null)
     {
         Description = description;
         _image = image;
-        _old = new State(image.AssetId, image.PixelWidth, image.PixelHeight, image.Width, image.Height, image.Transform);
-        _new = new State(pixels.AssetId, pixels.PixelWidth, pixels.PixelHeight, frame.Width, frame.Height, frame.Transform);
+        _old = new State(image.AssetId, image.SourceAssetId, image.Recipe, image.PixelWidth, image.PixelHeight, image.Width, image.Height, image.Transform);
+        _new = new State(pixels.AssetId, sourceAssetId, recipe, pixels.PixelWidth, pixels.PixelHeight, frame.Width, frame.Height, frame.Transform);
     }
 
     public string Description { get; }
@@ -34,6 +40,8 @@ public sealed class ReplaceImageCommand : IDocumentCommand, IUndoMemory
     private void Apply(State s)
     {
         _image.AssetId = s.AssetId;
+        _image.SourceAssetId = s.SourceAssetId;
+        _image.Recipe = s.Recipe;
         _image.PixelWidth = s.PixelWidth;
         _image.PixelHeight = s.PixelHeight;
         _image.Width = s.Width;

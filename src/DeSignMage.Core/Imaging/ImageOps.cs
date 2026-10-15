@@ -44,6 +44,12 @@ public interface IImageService
     ImagePixels? Apply(Document doc, string assetId, ImageOp op);
 
     /// <summary>
+    /// The finished picture of an editing <paramref name="recipe"/> applied to the original stored as <paramref name="sourceAssetId"/>, at full
+    /// resolution, stored as a new asset. Null when the original cannot be decoded (or the service does not do recipes).
+    /// </summary>
+    ImagePixels? RenderRecipe(Document doc, string sourceAssetId, PictureRecipe recipe) => null;
+
+    /// <summary>
     /// Draws <paramref name="objects"/> into a transparent picture of the given pixel size that covers
     /// <paramref name="bounds"/> (document space), and stores it as an asset.
     /// </summary>
@@ -192,7 +198,11 @@ public static class BitmapStats
         var ids = new HashSet<string>();
         void Visit(DocObject o)
         {
-            if (o is ImageObject img) ids.Add(img.AssetId);
+            if (o is ImageObject img)
+            {
+                ids.Add(img.AssetId);
+                if (img.SourceAssetId is { } source) ids.Add(source);
+            }
             else if (o is CombinedObject c) foreach (var p in c.Parts) Visit(p);
         }
         foreach (var o in doc.AllObjects()) Visit(o);
