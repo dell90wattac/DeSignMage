@@ -46,6 +46,16 @@ public class FileCommandTests
     private static MenuItem Item(MenuItem menu, string text) =>
         menu.Items.OfType<MenuItem>().First(m => (m.Header as string)?.Replace("_", "").StartsWith(text) == true);
 
+    [AvaloniaFact]
+    public void The_File_menu_has_no_palette_loading_items()
+    {
+        var w = Show();
+        var headers = FileMenu(w).Items.OfType<MenuItem>().Select(m => (m.Header as string) ?? "").ToList();
+        Assert.DoesNotContain(headers, h => h.Contains("Palette"));
+        Assert.Contains(headers, h => h.Replace("_", "").StartsWith("Export"));
+        w.Close();
+    }
+
     // ---------------------------------------------------------------- Save / Save As
 
     [AvaloniaFact]

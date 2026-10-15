@@ -8,9 +8,9 @@ public enum SendStatus
     /// <summary>No connection, a timeout, or the attempt was cancelled: try again later.</summary>
     Offline,
     RateLimited,
-    /// <summary>Discord answered 5xx.</summary>
+    /// <summary>The relay (or what is behind it) answered 5xx: switched off, not set up, or having a bad moment.</summary>
     ServerError,
-    /// <summary>Discord refused the request (4xx other than 429): wrong address, deleted webhook, ...</summary>
+    /// <summary>The relay refused the request (4xx other than 429): an attachment type or size it does not take, an old program version, ...</summary>
     Rejected,
     NotConfigured,
 }
@@ -20,7 +20,7 @@ public sealed record SendResult(SendStatus Status, string? Detail = null, TimeSp
     public bool IsSent => Status == SendStatus.Sent;
 }
 
-/// <summary>Delivers one outbox report. The real one talks to Discord; tests use fakes.</summary>
+/// <summary>Delivers one outbox report. The real one talks to the relay; tests use fakes.</summary>
 public interface IReportSender
 {
     Task<SendResult> SendAsync(OutboxItem item, CancellationToken ct);
@@ -46,7 +46,7 @@ public sealed class OutboxRunResult
 
 /// <summary>
 /// Reports on disk (<c>feedback\outbox\&lt;id&gt;\report.json</c> + attachments). A report goes in here first and comes out only after
-/// Discord answered 2xx, so nothing is lost when she is offline, the program closes, or a crash follows.
+/// the relay answered 2xx, so nothing is lost when she is offline, the program closes, or a crash follows.
 /// </summary>
 public sealed class Outbox
 {
@@ -149,7 +149,7 @@ public sealed class Outbox
 
     /// <summary>
     /// Tries to deliver waiting reports, oldest first; a report is deleted only after a successful send. Stops early when the network is
-    /// down or Discord rate-limits (the same webhook serves every report). <paramref name="onlyId"/> limits it to one report;
+    /// down or the relay rate-limits (the limit counts per computer, not per report). <paramref name="onlyId"/> limits it to one report;
     /// <paramref name="ignoreBackoff"/> also tries reports that are waiting out a back-off.
     /// </summary>
     public async Task<OutboxRunResult> ProcessAsync(IReportSender sender, CancellationToken ct, string? onlyId = null, bool ignoreBackoff = false)
@@ -190,7 +190,7 @@ public sealed class Outbox
                 {
                     Delete(item.Id);
                     run.Sent++;
-                    AppLog.Info("outbox", $"Report {item.Id} delivered" + (result.AttachmentsDropped ? " (without attachments: Discord refused them)" : ""));
+                    AppLog.Info("outbox", $"Report {item.Id} delivered" + (result.AttachmentsDropped ? " (without attachments: the relay refused them)" : ""));
                     continue;
                 }
 

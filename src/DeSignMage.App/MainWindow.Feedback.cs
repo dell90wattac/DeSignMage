@@ -35,7 +35,9 @@ public partial class MainWindow
         crash.DocumentSummary = DescribeDocument;
         crash.SystemInfoProvider = CollectSystemInfo;
 
-        void OnUiError() => Dispatcher.UIThread.Post(() => Flash("Something went wrong. A report was saved and will be sent to the developer."));
+        void OnUiError() => Dispatcher.UIThread.Post(() => Flash(FeedbackHost.Get().AlwaysSendCrashes
+            ? "Something went wrong. A report was saved and will be sent to the developer."
+            : "Something went wrong. A report was saved; you will be asked next time whether to send it."));
         FeedbackHost.UiErrorCaught += OnUiError;
         Closed += (_, _) => FeedbackHost.UiErrorCaught -= OnUiError;
 
@@ -67,12 +69,40 @@ public partial class MainWindow
         {
             try
             {
-                var notice = await service.RecoverFromCrashAsync();
-                if (notice is not null) await Dispatcher.UIThread.InvokeAsync(() => ShowCrashNotice(notice));
+                // A crash report is only sent after the person said yes (the prompt), or when they chose "always send".
+                if (service.FindCrashesToAsk() is { } prompt)
+                    await Dispatcher.UIThread.InvokeAsync(() => AskAboutCrashesAsync(prompt));
+                else if (await service.RecoverFromCrashAsync() is { } notice)
+                    await Dispatcher.UIThread.InvokeAsync(() => ShowCrashNotice(notice));
             }
             catch (Exception ex) { AppLog.Error("crash", "Checking for an earlier crash failed", ex); }
             service.StartBackground();
         });
+    }
+
+    /// <summary>The crash prompt opened last (for tests).</summary>
+    internal CrashPromptDialog? LastCrashPrompt { get; private set; }
+
+    /// <summary>
+    /// "DeSign Mage closed unexpectedly last time. Send the crash report?" Send queues and sends it (and remembers "always send" when
+    /// ticked), Don't send keeps it on this computer, closing the window asks again at the next start. Shows the one-line notice after.
+    /// </summary>
+    internal async Task AskAboutCrashesAsync(CrashPrompt prompt)
+    {
+        var service = FeedbackHost.Get();
+        var dialog = new CrashPromptDialog(prompt, service.IncludeDesign);
+        LastCrashPrompt = dialog;
+        AppLog.Info("crash", $"Asking whether to send {prompt.Count} crash report(s)");
+        await dialog.ShowDialog(this);
+        var answer = dialog.Answer ?? new CrashAnswer(CrashChoice.Later, false);
+        if (answer.Choice == CrashChoice.Later) return;
+        try
+        {
+            var notice = await service.AnswerCrashPromptAsync(answer.Choice == CrashChoice.Send, answer.Always);
+            if (notice is not null) ShowCrashNotice(notice);
+        }
+        catch (Exception ex) { AppLog.Error("crash", "Handling the crash prompt answer failed", ex); }
+        Surface.Focus();
     }
 
     // ---------------------------------------------------------------- the dialog
@@ -84,7 +114,7 @@ public partial class MainWindow
             AppLog.Info("feedback", "dialog opened");
             _displayLines = ScreenshotTools.DescribeDisplays(this).ToList();
             var service = FeedbackHost.Get();
-            var dialog = new FeedbackDialog(service.CanSend, service.SavedName, SendFeedbackAsync);
+            var dialog = new FeedbackDialog(service.CanSend, service.SavedName, SendFeedbackAsync, service.IncludeDesign, service.IncludeScreenshot);
             LastFeedbackDialog = dialog;
             await dialog.ShowDialog(this);
             Surface.Focus();
@@ -99,6 +129,12 @@ public partial class MainWindow
     {
         var service = FeedbackHost.Get();
         service.SaveName(input.Name);
+        if (input.Kind == ReportKind.Bug)
+        {
+            // Remembered for next time; it also decides whether a later crash report may carry the design.
+            service.IncludeDesign = input.IncludeDesign;
+            service.IncludeScreenshot = input.IncludeScreenshot;
+        }
         var info = CollectSystemInfo();
         var request = new ReportRequest
         {

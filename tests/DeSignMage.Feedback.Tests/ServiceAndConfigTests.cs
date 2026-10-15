@@ -2,87 +2,62 @@ using System.Text;
 
 namespace DeSignMage.Feedback.Tests;
 
-public class WebhookConfigTests
+public class RelayConfigTests
 {
-    [Fact]
-    public void A_discord_webhook_address_is_accepted()
+    private static SettingsStore Store(TempDir dir, string? json)
     {
-        Assert.True(WebhookConfig.LooksValid(Fake.Url));
-        Assert.True(WebhookConfig.LooksValid("https://discordapp.com/api/webhooks/123456789012345678/abcdefghijklmnopqrstuvwxyz0123"));
-        Assert.True(WebhookConfig.LooksValid("https://canary.discord.com/api/v10/webhooks/123456789012345678/abcdefghijklmnopqrstuvwxyz0123"));
+        var path = Path.Combine(dir.Path, "settings.json");
+        if (json is not null) File.WriteAllText(path, json);
+        return new SettingsStore(path);
+    }
+
+    [Fact]
+    public void The_public_relay_is_the_default()
+    {
+        using var dir = new TempDir();
+        var config = RelayConfig.FromSettings(Store(dir, null));
+        Assert.Equal(new Uri(RelayConfig.DefaultUrl), config.Url);
+        Assert.Equal("https", config.Url.Scheme);
+        Assert.Equal(config.Url, RelayConfig.FromSettings(null).Url);
+    }
+
+    [Fact]
+    public void A_setting_can_point_at_another_relay()
+    {
+        using var dir = new TempDir();
+        var config = RelayConfig.FromSettings(Store(dir, "{ \"feedback.relayUrl\": \"https://relay.example.org/feedback\" }"));
+        Assert.Equal("https://relay.example.org/feedback", config.Url.ToString());
+        Assert.Equal("http://localhost:8787/", RelayConfig.FromSettings(Store(dir, "{ \"feedback.relayUrl\": \"http://localhost:8787/\" }")).Url.ToString());
     }
 
     [Theory]
-    [InlineData("http://discord.com/api/webhooks/123456789012345678/abcdefghijklmnopqrstuvwxyz0123")]
-    [InlineData("https://evil.example.com/api/webhooks/123456789012345678/abcdefghijklmnopqrstuvwxyz0123")]
-    [InlineData("https://discord.com.evil.example/api/webhooks/123456789012345678/abcdefghijklmnopqrstuvwxyz0123")]
-    [InlineData("https://discord.com/api/webhooks/abc/abcdefghijklmnopqrstuvwxyz0123")]
-    [InlineData("https://discord.com/api/webhooks/123456789012345678/short")]
-    [InlineData("https://discord.com/channels/1/2")]
+    [InlineData("http://relay.example.org/")]                       // plain http only to this computer
+    [InlineData("https://user:pass@relay.example.org/")]            // no credentials in the address
+    [InlineData("ftp://relay.example.org/")]
     [InlineData("not a url")]
-    public void Anything_else_is_rejected(string url) => Assert.False(WebhookConfig.LooksValid(url));
-
-    [Fact]
-    public void File_text_may_have_comments_and_options()
-    {
-        var r = WebhookConfig.Parse($"\ufeff# my feedback channel\r\n\r\n{Fake.Url}\r\nforumThreads: true\r\n");
-        Assert.Equal(Fake.Url, r.Config!.Url);
-        Assert.True(r.Config.ForumThreads);
-        Assert.False(WebhookConfig.Parse(Fake.Url).Config!.ForumThreads);
-        Assert.False(WebhookConfig.Parse($"{Fake.Url}\nforumThreads: false").Config!.ForumThreads);
-    }
-
-    [Fact]
-    public void Missing_and_invalid_are_told_apart_and_the_problem_text_has_no_address()
-    {
-        Assert.True(WebhookConfig.Parse("").IsMissing);
-        Assert.True(WebhookConfig.Parse("# nothing yet\n").IsMissing);
-        var bad = WebhookConfig.Parse("https://discord.com/api/webhooks/1/short-token-that-leaks");
-        Assert.Null(bad.Config);
-        Assert.NotNull(bad.Problem);
-        Assert.DoesNotContain("leaks", bad.Problem);
-    }
-
-    [Fact]
-    public void The_address_is_never_printed_by_ToString_or_scrubbing()
-    {
-        var config = Fake.Config();
-        Assert.DoesNotContain(Fake.Token, config.ToString());
-        Assert.DoesNotContain(Fake.Token, WebhookConfigResult.Missing.ToString());
-
-        Redactor.RegisterSecrets(config.Secrets());
-        try
-        {
-            Assert.DoesNotContain(Fake.Token, Redactor.Scrub($"failed: {Fake.Url} and just the token {Fake.Token}"));
-            Assert.DoesNotContain(Fake.Id, Redactor.Scrub($"id {Fake.Id}"));
-        }
-        finally { Redactor.ClearSecrets(); }
-    }
-
-    [Fact]
-    public void Embedded_address_wins_then_the_file_next_to_the_program()
+    [InlineData("")]
+    public void An_unusable_setting_falls_back_to_the_default(string value)
     {
         using var dir = new TempDir();
-        string other = Fake.Url.Replace("FAKEtoken", "OTHERtoken");
-        File.WriteAllText(Path.Combine(dir.Path, WebhookConfig.FileName), other);
-
-        Assert.Equal(Fake.Url, WebhookConfig.Load(() => Fake.Url, dir.Path).Config!.Url);       // (a) embedded
-        Assert.Equal(other, WebhookConfig.Load(() => null, dir.Path).Config!.Url);               // (b) file
-        Assert.Equal(other, WebhookConfig.Load(null, dir.Path).Config!.Url);
-        // a broken embedded address does not hide a good file
-        Assert.Equal(other, WebhookConfig.Load(() => "https://nope.example/x", dir.Path).Config!.Url);
+        var json = System.Text.Json.JsonSerializer.Serialize(new Dictionary<string, string> { ["feedback.relayUrl"] = value });
+        Assert.Equal(new Uri(RelayConfig.DefaultUrl), RelayConfig.FromSettings(Store(dir, json)).Url);
     }
 
     [Fact]
-    public void Nothing_set_up_is_missing_not_an_error()
+    public void The_program_holds_no_chat_webhook_address()
     {
-        using var dir = new TempDir();
-        Assert.True(WebhookConfig.Load(() => null, dir.Path).IsMissing);
-        Assert.True(WebhookConfig.Load(null, null).IsMissing);
-        Assert.True(WebhookConfig.Load(() => "   ", dir.Path).IsMissing);
-        var invalidOnly = WebhookConfig.Load(() => "https://nope.example/x", dir.Path);
-        Assert.False(invalidOnly.IsMissing);
-        Assert.Null(invalidOnly.Config);
+        // The default address is the relay, never a chat webhook.
+        Assert.DoesNotContain("discord", RelayConfig.DefaultUrl, StringComparison.OrdinalIgnoreCase);
+        Assert.DoesNotContain("webhooks", RelayConfig.DefaultUrl, StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Fact]
+    public void A_webhook_address_is_never_printed_by_scrubbing()
+    {
+        Assert.DoesNotContain(Fake.Token, Redactor.Scrub($"failed: {Fake.Url} and more"));
+        Assert.DoesNotContain(Fake.Token, Redactor.Scrub("https://discordapp.com/api/v10/webhooks/123456789012345678/" + Fake.Token));
+        Assert.Equal("plain text", Redactor.Scrub("plain text"));
+        Assert.DoesNotContain(Fake.Token, new RelayConfig(new Uri("https://relay.test/")).ToString());
     }
 }
 
@@ -121,7 +96,7 @@ public class FeedbackServiceTests
     }
 
     [Fact]
-    public async Task Without_a_webhook_the_report_is_still_saved()
+    public async Task Without_a_sender_the_report_is_still_saved()
     {
         using var dir = new TempDir();
         using var service = new FeedbackService(dir.Paths, sender: null);
@@ -134,6 +109,38 @@ public class FeedbackServiceTests
         Assert.Single(service.Outbox.List());
         await service.RunBackgroundOnceAsync();   // harmless
         Assert.Single(service.Outbox.List());
+    }
+
+    [Theory]
+    [InlineData(SendStatus.Offline, "Saved, will send when online.")]
+    [InlineData(SendStatus.RateLimited, "Saved. A lot of reports were sent from this computer lately, so this one will be sent a little later.")]
+    [InlineData(SendStatus.ServerError, "Saved. The feedback service isn't taking reports right now; this one will be sent later.")]
+    [InlineData(SendStatus.Rejected, "Saved. The feedback service isn't taking reports right now; this one will be sent later.")]
+    public async Task A_report_the_relay_did_not_take_says_why_in_plain_words(SendStatus status, string message)
+    {
+        using var dir = new TempDir();
+        using var service = new FeedbackService(dir.Paths, new ScriptedSender(new SendResult(status, "x")));
+
+        var result = await service.SubmitAsync(Fake.Bug());
+
+        Assert.Equal(SubmitStatus.Queued, result.Status);
+        Assert.Equal(message, result.Message);
+        Assert.Single(service.Outbox.List());
+    }
+
+    [Fact]
+    public void Design_and_screenshot_choices_start_off_and_are_remembered()
+    {
+        using var dir = new TempDir();
+        using (var first = new FeedbackService(dir.Paths, null))
+        {
+            Assert.False(first.IncludeDesign);
+            Assert.False(first.IncludeScreenshot);
+            first.IncludeDesign = true;
+        }
+        using var second = new FeedbackService(dir.Paths, null);
+        Assert.True(second.IncludeDesign);
+        Assert.False(second.IncludeScreenshot);
     }
 
     [Fact]
@@ -153,7 +160,7 @@ public class FeedbackServiceTests
     {
         using var dir = new TempDir();
         var handler = new FakeHandler(FakeHandler.RateLimited(0.01), FakeHandler.NoContent());
-        var sender = new DiscordSender(Fake.Config(), new HttpClient(handler), (_, _) => Task.CompletedTask);
+        var sender = new RelaySender(Fake.Relay, new HttpClient(handler), (_, _) => Task.CompletedTask);
         using var service = new FeedbackService(dir.Paths, sender);
 
         var result = await service.SubmitAsync(Fake.Bug());
@@ -168,7 +175,7 @@ public class FeedbackServiceTests
     {
         using var dir = new TempDir();
         var handler = new FakeHandler(FakeHandler.NoContent());
-        using var service = new FeedbackService(dir.Paths, new DiscordSender(Fake.Config(), new HttpClient(handler)));
+        using var service = new FeedbackService(dir.Paths, new RelaySender(Fake.Relay, new HttpClient(handler)));
 
         var result = await service.SubmitAsync(new ReportRequest { Kind = ReportKind.Feature, Description = "A polygon tool please", AppVersion = "0.1.0" });
 

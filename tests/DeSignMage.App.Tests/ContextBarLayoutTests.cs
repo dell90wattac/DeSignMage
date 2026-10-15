@@ -64,7 +64,7 @@ public class ContextBarLayoutTests
         var big = w.ColorMixer.BigSwatch;
         Assert.NotNull(big.Child);                                  // the red cross
         Assert.Equal("No color", ToolTip.GetTip(big));
-        Assert.Equal("No color", w.ColorMixer.NameBox.PlaceholderText);
+        Assert.False(w.ColorMixer.NameBox.IsVisible);               // no color, so no name to show
         Assert.Equal(string.Empty, w.ColorMixer.NameBox.Text ?? "");
         w.Close();
     }
@@ -113,7 +113,7 @@ public class ContextBarLayoutTests
         Assert.Equal(red, ((SolidPaint)w.Session.DefaultStyle.Fill!).Color);
         Assert.Equal(new SolidPaint(red), ((Control)w.ProjectColorBar.FillButton.Content!).Tag);
         Assert.Null(((Control)w.ProjectColorBar.StrokeButton.Content!).Tag);
-        Assert.Equal("Color name…", w.ColorMixer.NameBox.PlaceholderText);
+        Assert.False(w.ColorMixer.NameBox.IsVisible);               // an unnamed color shows no name
         Assert.Equal(200, w.ColorMixer.Rows[0].Value);
         w.Close();
     }

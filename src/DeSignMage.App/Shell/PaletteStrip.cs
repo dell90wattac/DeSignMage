@@ -7,20 +7,28 @@ using DeSignMage.Core.Model;
 
 namespace DeSignMage.App.Shell;
 
-/// <summary>One cell of the strip: a palette color.</summary>
+/// <summary>One cell of the strip: a built-in color.</summary>
 public sealed record SwatchCell(DocColor Color);
 
 /// <summary>
-/// The far-right vertical palette strip ("resource color palette"): the active palette's colors in a scrollable
-/// column. On a swatch, left click sets the fill and right click sets the stroke; the
-/// canvas keeps the right button for zoom. Hovering shows the color's name and values.
-/// Palette colors keep their name, vendor and model when applied.
+/// The far-right vertical Palette Strip: the red X (No Color) on top, then a small built-in set of plain colors in a scrollable
+/// column. On a swatch, left click sets the fill and right click sets the stroke; the canvas keeps the right button for zoom.
+/// Hovering shows the color's name and values.
 /// </summary>
 public static class PaletteStrip
 {
     public const double CellSize = 18;
 
-    public static void Populate(ContentControl host, EditorSession session, ColorUiState state)
+    /// <summary>The built-in colors: black, white, greys and basic hues (plain RGB values).</summary>
+    public static IReadOnlyList<DocColor> BuiltInColors { get; } = new[]
+    {
+        ("Black", "#000000"), ("Dark Grey", "#404040"), ("Grey", "#808080"), ("Light Grey", "#C0C0C0"), ("White", "#FFFFFF"),
+        ("Red", "#FF0000"), ("Orange", "#FF8000"), ("Yellow", "#FFFF00"), ("Lime", "#80FF00"), ("Green", "#00A000"),
+        ("Cyan", "#00FFFF"), ("Blue", "#0000FF"), ("Purple", "#8000FF"), ("Magenta", "#FF00FF"), ("Pink", "#FF80C0"),
+        ("Brown", "#804000"),
+    }.Select(c => DocColor.FromHex(c.Item2, c.Item1)).ToArray();
+
+    public static void Populate(ContentControl host, EditorSession session)
     {
         var items = new ItemsControl
         {
@@ -53,16 +61,7 @@ public static class PaletteStrip
         dock.Children.Add(scroll);
         host.Content = dock;
 
-        void Fill()
-        {
-            var cells = new List<SwatchCell>(state.ActivePalette.Colors.Count);
-            cells.AddRange(state.ActivePalette.Colors.Select(c => new SwatchCell(c)));
-            items.ItemsSource = cells;
-            scroll.Offset = default;
-        }
-
-        Fill();
-        state.PaletteChanged += (_, _) => Fill();
+        items.ItemsSource = BuiltInColors.Select(c => new SwatchCell(c)).ToList();
     }
 
     private static Control MakeCell(SwatchCell cell, EditorSession session)

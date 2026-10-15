@@ -1,0 +1,52 @@
+name: CI
+
+# Builds the whole solution (warnings are errors) and runs every test project on a clean checkout.
+# Tests that need the untracked local-testdata folder skip themselves when it is missing.
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build-and-test:
+    runs-on: windows-latest
+    timeout-minutes: 60
+    steps:
+      - name: Check out
+        uses: actions/checkout@v4
+
+      - name: Set up .NET 10
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 10.0.x
+
+      - name: Restore
+        run: dotnet restore DeSignMage.slnx
+
+      - name: Build (warnings are errors)
+        run: dotnet build DeSignMage.slnx -c Release --no-restore -warnaserror
+
+      # Every test project except the speed tests gates the build.
+      - name: Test
+        shell: pwsh
+        run: |
+          $failed = @()
+          foreach ($project in Get-ChildItem tests -Recurse -Filter *.csproj | Where-Object { $_.BaseName -ne 'DeSignMage.Perf.Tests' }) {
+            dotnet test $project.FullName -c Release --no-build
+            if ($LASTEXITCODE -ne 0) { $failed += $project.BaseName }
+          }
+          if ($failed) { throw "Failed test projects: $($failed -join ', ')" }
+
+      # The speed tests compare wall-clock times against fixed budgets, which a shared runner cannot promise: they are reported, never gating.
+      - name: Speed tests (informational)
+        continue-on-error: true
+        run: dotnet test tests/DeSignMage.Perf.Tests -c Release --no-build

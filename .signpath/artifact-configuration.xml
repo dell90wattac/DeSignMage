@@ -1,0 +1,17 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- SignPath artifact configuration: Authenticode-sign only the files this project builds.
+     The artifact is the ZIP that actions/upload-artifact makes from the published portable folder (see .github/workflows/release.yml).
+     Everything else in the folder (the .NET runtime, Avalonia, SkiaSharp, PdfPig, ...) is third-party software that stays exactly as its
+     publisher shipped it; SignPath copies those files into the signed result unchanged. -->
+<artifact-configuration xmlns="http://signpath.io/artifact-configuration/v1">
+  <zip-file>
+    <pe-file-set>
+      <include path="**/DeSignMage.exe" max-matches="unbounded" />
+      <include path="**/DeSignMage.dll" max-matches="unbounded" />
+      <include path="**/DeSignMage.*.dll" max-matches="unbounded" />
+      <for-each>
+        <authenticode-sign />
+      </for-each>
+    </pe-file-set>
+  </zip-file>
+</artifact-configuration>

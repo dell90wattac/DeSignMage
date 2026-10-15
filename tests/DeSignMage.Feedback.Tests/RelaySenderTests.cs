@@ -3,7 +3,7 @@ using System.Text.Json;
 
 namespace DeSignMage.Feedback.Tests;
 
-public class DiscordSenderTests
+public class RelaySenderTests
 {
     private static OutboxItem MakeItem(TempDir dir, ReportRequest? request = null)
     {
@@ -12,8 +12,8 @@ public class DiscordSenderTests
         return outbox.Get(id)!;
     }
 
-    private static DiscordSender Sender(FakeHandler handler, bool forum = false, List<TimeSpan>? waits = null) =>
-        new(Fake.Config(forum), new HttpClient(handler), (t, _) => { waits?.Add(t); return Task.CompletedTask; });
+    private static RelaySender Sender(FakeHandler handler, List<TimeSpan>? waits = null) =>
+        new(Fake.Relay, new HttpClient(handler), (t, _) => { waits?.Add(t); return Task.CompletedTask; });
 
     private static JsonElement Payload(FakeHandler.Recorded request)
     {
@@ -34,7 +34,8 @@ public class DiscordSenderTests
 
         Assert.True(result.IsSent);
         var request = Assert.Single(handler.Requests);
-        Assert.Equal(Fake.Url, request.Url);
+        Assert.Equal("https://relay.test/", request.Url);
+        Assert.Equal(RelayConfig.ClientValue, request.Client);       // the public app identifier travels with every report
         Assert.StartsWith("multipart/form-data", request.ContentType);
         Assert.Contains("payload_json", request.Body);
         for (int i = 0; i < item.Report.Files.Count; i++) Assert.Contains($"files[{i}]", request.Body);
@@ -54,7 +55,7 @@ public class DiscordSenderTests
     }
 
     [Fact]
-    public async Task Multipart_framing_is_what_discord_expects()
+    public async Task Multipart_framing_is_what_the_relay_expects()
     {
         using var dir = new TempDir();
         var handler = new FakeHandler(FakeHandler.NoContent());
@@ -64,24 +65,23 @@ public class DiscordSenderTests
         var boundary = request.ContentType.Split("boundary=")[1].Trim('"');
         var parts = request.Body.Split("--" + boundary).Skip(1).Where(p => !p.StartsWith("--")).ToList();   // last piece is the closing "--"
         var dispositions = parts.Select(p => p.Split("\r\n").First(l => l.StartsWith("Content-Disposition:"))).ToList();
-        Assert.Contains(dispositions, d => d.StartsWith("Content-Disposition: form-data; name=payload_json") || d.StartsWith("Content-Disposition: form-data; name=\"payload_json\""));
-        Assert.Contains(dispositions, d => d.Contains("name=\"files[0]\""));
-        Assert.Contains(dispositions, d => d.Contains("name=\"files[1]\""));
+        // Names and file names are quoted (the relay's host cannot read bare ones), with no second filename* form.
+        Assert.Contains(dispositions, d => d == "Content-Disposition: form-data; name=\"payload_json\"");
+        Assert.Contains(dispositions, d => d == $"Content-Disposition: form-data; name=\"files[0]\"; filename=\"{Fake.BugFile}\"");
+        Assert.Contains(dispositions, d => d.StartsWith("Content-Disposition: form-data; name=\"files[1]\"; filename=\""));
+        Assert.DoesNotContain(dispositions, d => d.Contains("filename*"));
         Assert.Contains(parts, p => p.Contains("Content-Type: application/json"));
         Assert.EndsWith("--" + boundary + "--\r\n", request.Body);
     }
 
     [Fact]
-    public async Task Forum_threads_option_sends_thread_name()
+    public async Task The_program_never_chooses_the_thread_the_relay_does()
     {
         using var dir = new TempDir();
         var handler = new FakeHandler(FakeHandler.NoContent());
-        await Sender(handler, forum: true).SendAsync(MakeItem(dir), default);
+        await Sender(handler).SendAsync(MakeItem(dir), default);
 
-        var payload = Payload(handler.Requests[0]);
-        var name = payload.GetProperty("thread_name").GetString()!;
-        Assert.StartsWith("Bug: The ruler", name);
-        Assert.True(name.Length <= 100);
+        Assert.False(Payload(handler.Requests[0]).TryGetProperty("thread_name", out _));
     }
 
     [Fact]
@@ -168,6 +168,9 @@ public class DiscordSenderTests
     [Theory]
     [InlineData(HttpStatusCode.NotFound, SendStatus.Rejected)]
     [InlineData(HttpStatusCode.Unauthorized, SendStatus.Rejected)]
+    [InlineData(HttpStatusCode.Forbidden, SendStatus.Rejected)]               // an unknown app identifier
+    [InlineData(HttpStatusCode.UnsupportedMediaType, SendStatus.Rejected)]    // an attachment type the relay does not take
+    [InlineData(HttpStatusCode.ServiceUnavailable, SendStatus.ServerError)]   // the relay is switched off
     [InlineData(HttpStatusCode.BadGateway, SendStatus.ServerError)]
     [InlineData(HttpStatusCode.InternalServerError, SendStatus.ServerError)]
     public async Task Other_failures_are_classified(HttpStatusCode code, SendStatus expected)
@@ -179,19 +182,43 @@ public class DiscordSenderTests
     }
 
     [Fact]
-    public void Payload_text_is_clamped_to_discord_limits_even_if_the_manifest_is_not()
+    public async Task A_refusal_from_the_relay_carries_its_message_for_the_log()
+    {
+        using var dir = new TempDir();
+        var handler = new FakeHandler(FakeHandler.Status(HttpStatusCode.UnsupportedMediaType, "{\"ok\":false,\"error\":\"bad_file_type\",\"message\":\"An attachment is not a kind the feedback service accepts.\"}"));
+
+        var result = await Sender(handler).SendAsync(MakeItem(dir), default);
+
+        Assert.Equal(SendStatus.Rejected, result.Status);
+        Assert.Equal("An attachment is not a kind the feedback service accepts.", result.Detail);
+    }
+
+    [Fact]
+    public async Task The_relays_own_rate_limit_answer_is_understood()
+    {
+        using var dir = new TempDir();
+        var handler = new FakeHandler(FakeHandler.Status((HttpStatusCode)429, "{\"ok\":false,\"error\":\"rate_limited\",\"message\":\"Too many reports\",\"retry_after\":829}"));
+
+        var result = await Sender(handler).SendAsync(MakeItem(dir), default);
+
+        Assert.Equal(SendStatus.RateLimited, result.Status);
+        Assert.Equal(TimeSpan.FromSeconds(829), result.RetryAfter);
+        Assert.Single(handler.Requests);   // too long to wait here: the outbox tries again later
+    }
+
+    [Fact]
+    public void Payload_text_is_clamped_to_chat_limits_even_if_the_manifest_is_not()
     {
         var report = new OutgoingReport
         {
             Id = "x", Kind = ReportKind.Bug, Title = new string('t', 900), Description = new string('d', 9000), Footer = new string('f', 5000),
             Fields = [new EmbedField { Name = new string('n', 500), Value = new string('v', 3000) }],
         };
-        var json = JsonDocument.Parse(DiscordSender.BuildPayloadJson(report, [], forumThreads: true)).RootElement;
+        var json = JsonDocument.Parse(RelaySender.BuildPayloadJson(report, [])).RootElement;
         var embed = json.GetProperty("embeds")[0];
         Assert.True(embed.GetProperty("title").GetString()!.Length <= 256);
         Assert.True(embed.GetProperty("description").GetString()!.Length <= 4096);
         Assert.True(embed.GetProperty("fields")[0].GetProperty("value").GetString()!.Length <= 1024);
         Assert.True(embed.GetProperty("footer").GetProperty("text").GetString()!.Length <= 2048);
-        Assert.True(json.GetProperty("thread_name").GetString()!.Length <= 100);
     }
 }

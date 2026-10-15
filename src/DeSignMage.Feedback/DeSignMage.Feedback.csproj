@@ -1,6 +1,6 @@
 <Project Sdk="Microsoft.NET.Sdk">
 
-  <!-- Logging, feedback/bug reports, crash capture and delivery to a Discord webhook.
+  <!-- Logging, feedback/bug reports, crash capture and delivery to the feedback relay.
        No UI and no Skia: everything here is testable without a window; the app supplies screenshots, the design and the dialog. -->
   <PropertyGroup>
     <RootNamespace>DeSignMage.Feedback</RootNamespace>

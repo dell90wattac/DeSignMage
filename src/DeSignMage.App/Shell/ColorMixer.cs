@@ -119,10 +119,11 @@ internal sealed class ChannelRow
 }
 
 /// <summary>
-/// The Color Mixer (the right dock's Color Mixer tab): color model, palette and named-color combos, per-channel sliders with number boxes,
-/// the current-color swatch, an HSV ring + square, join/cap buttons, the Fill/Stroke target, and an eyedropper. Edits apply live to the selection (a slider or wheel drag is ONE undo step); with nothing selected they set the
-/// default style of new objects. Colors picked from a palette keep their name, vendor and model; a hand-edited color keeps
-/// only its model.
+/// The Color Mixer (the right dock's Color Mixer tab): color model combo, the current color's name (shown only when it has one),
+/// per-channel sliders with number boxes, the current-color swatch, an HSV ring + square, join/cap buttons, the Fill/Stroke target,
+/// and an eyedropper. Edits apply live to the selection (a slider or wheel drag is ONE undo step); with nothing selected they set the
+/// default style of new objects. A color taken from the Palette Strip or an object keeps its name, vendor and model; a hand-edited
+/// color keeps only its model.
 /// </summary>
 public sealed class ColorMixer : IRefreshable
 {
@@ -130,8 +131,7 @@ public sealed class ColorMixer : IRefreshable
     private readonly ColorUiState _state;
 
     private readonly ComboBox _mode = new ComboBox { Name = "ColorModelCombo", Padding = new Thickness(6, 1) }.ScaledWidth(78).ScaledMinHeight(22);
-    private readonly ComboBox _palette = new() { Name = "PaletteCombo", MinHeight = 22, Padding = new Thickness(6, 1), HorizontalAlignment = HorizontalAlignment.Stretch };
-    private readonly AutoCompleteBox _name = new() { Name = "ColorNameBox", MinHeight = 22, MinimumPrefixLength = 0, FilterMode = AutoCompleteFilterMode.Contains, PlaceholderText = "Color name\u2026" };
+    private readonly TextBlock _name = new() { Name = "ColorNameBox", TextTrimming = TextTrimming.CharacterEllipsis, IsVisible = false };
     private readonly ChannelRow[] _rows = [new(), new(), new(), new()];
     private readonly Border _big = new Border { Name = "CurrentColorSwatch", VerticalAlignment = VerticalAlignment.Top, BorderBrush = AppTheme.Brush("Ui.SwatchBorder"), BorderThickness = new Thickness(1) }.ScaledWidth(40, icon: true).ScaledHeight(40, icon: true);
     private readonly ColorWheel _wheel = new();
@@ -139,15 +139,11 @@ public sealed class ColorMixer : IRefreshable
     private readonly RadioButton _stroke = new() { Name = "StrokeRadio", Content = "Stroke", GroupName = "colorTarget", Focusable = false };
     private readonly Button _eyedropper, _noFill, _noStroke;
     private readonly Button[] _joinButtons, _capButtons;
-    private readonly CheckBox _adjust = new() { Name = "AdjustmentControls", Content = "Adjustment Controls", IsChecked = true, Focusable = false };
-    private readonly ListBox _list = new() { Name = "PaletteList", MinHeight = 120, MaxHeight = 400 };
     private readonly Control _controls;
 
     private bool _refreshing;
     private DocColor _current = DocColor.Black;
     private double _h, _s, _v;   // the wheel's HSV; kept so hue survives passing through gray
-    private List<string> _names = [];
-    private List<DocColor> _paletteColors = [];
 
     public ColorMixer(Panel host, EditorSession session, ColorUiState state)
     {
@@ -155,14 +151,7 @@ public sealed class ColorMixer : IRefreshable
         _state = state;
 
         _mode.ItemsSource = new[] { "RGB", "CMYK", "HSV" };
-        _palette.ItemsSource = state.Palettes.Select(p => p.Name).ToList();
-
-        var combos = new DockPanel { LastChildFill = true };
-        DockPanel.SetDock(_mode, Dock.Left);
-        _mode.Margin = new Thickness(0, 0, 4, 0);
-        combos.Children.Add(_mode);
-        combos.Children.Add(PaletteMenuButton());
-        combos.Children.Add(_palette);
+        _mode.HorizontalAlignment = HorizontalAlignment.Left;
 
         // Sliders on the left, the big current-color swatch on the right.
         var sliders = new StackPanel();
@@ -208,25 +197,14 @@ public sealed class ColorMixer : IRefreshable
 
         var noPaintRow = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 8, Children = { _noFill, _noStroke } };
         _controls = new StackPanel { Spacing = 8, Children = { sliderArea, wheelRow } };
-        _list.ItemTemplate = new FuncDataTemplate<DocColor>((c, _) =>
-        {
-            var row = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 6 };
-            row.Children.Add(ColorUi.Swatch(new SolidPaint(c), 14));
-            row.Children.Add(new TextBlock { Text = c.DisplayName ?? c.ToHex(), VerticalAlignment = VerticalAlignment.Center });
-            return row;
-        });
-        _list.IsVisible = false;
 
-        host.Children.Add(combos);
+        host.Children.Add(_mode);
         host.Children.Add(_name);
         host.Children.Add(_controls);
-        host.Children.Add(_list);
         host.Children.Add(targetRow);
-        host.Children.Add(noPaintRow);   // always shown, also with Adjustment Controls off
-        host.Children.Add(_adjust);
+        host.Children.Add(noPaintRow);
 
         Wire();
-        FillPaletteLists();
         ConfigureChannels();
         Refresh();
     }
@@ -251,13 +229,6 @@ public sealed class ColorMixer : IRefreshable
         };
         _state.ModeChanged += (_, _) => { ConfigureChannels(); Refresh(); };
 
-        _palette.SelectionChanged += (_, _) =>
-        {
-            if (_refreshing || _palette.SelectedIndex < 0) return;
-            _state.ActivePalette = _state.Palettes[_palette.SelectedIndex];
-        };
-        _state.PaletteChanged += (_, _) => { FillPaletteLists(); Refresh(); };
-
         _state.TargetChanged += (_, _) => Refresh();
         _fill.IsCheckedChanged += (_, _) => { if (!_refreshing && _fill.IsChecked == true) _state.Target = ColorTarget.Fill; };
         _stroke.IsCheckedChanged += (_, _) => { if (!_refreshing && _stroke.IsChecked == true) _state.Target = ColorTarget.Stroke; };
@@ -278,68 +249,7 @@ public sealed class ColorMixer : IRefreshable
             Apply(_state.Mode == ColorEditMode.Cmyk ? FromRgbAsCmyk(r, g, b) : new DocColor(r, g, b));
         };
 
-        _name.SelectionChanged += (_, _) =>
-        {
-            if (_refreshing || _name.SelectedItem is not string text) return;
-            int i = _names.IndexOf(text);
-            if (i >= 0) Apply(_paletteColors[i]);
-        };
-
-        _list.SelectionChanged += (_, _) =>
-        {
-            if (_refreshing || _list.SelectedItem is not DocColor c) return;
-            Apply(c);
-            _refreshing = true;
-            _list.SelectedItem = null;   // so the same color can be picked again
-            _refreshing = false;
-        };
-
-        _adjust.IsCheckedChanged += (_, _) =>
-        {
-            bool on = _adjust.IsChecked == true;
-            _controls.IsVisible = on;
-            _list.IsVisible = !on;
-        };
-
         _session.ColorPicked += (_, e) => OnPicked(e.Style);
-    }
-
-    /// <summary>The "…" button beside the palette list: load palettes from any folder or file, or forget the ones added.</summary>
-    private Button PaletteMenuButton()
-    {
-        var folder = new MenuItem { Header = "Load palettes from a folder…" };
-        folder.Click += (_, _) => _state.LoadFolderRequested?.Invoke();
-        var files = new MenuItem { Header = "Load palette files…" };
-        files.Click += (_, _) => _state.LoadFilesRequested?.Invoke();
-        var forget = new MenuItem { Header = "Forget added palette folders" };
-        forget.Click += (_, _) => _state.ForgetAddedPalettes();
-        var button = new Button
-        {
-            Name = "PaletteMenuButton",
-            Content = "…",
-            Focusable = false,
-            Padding = new Thickness(6, 0),
-            Margin = new Thickness(4, 0, 0, 0),
-            VerticalAlignment = VerticalAlignment.Stretch,
-            Flyout = new MenuFlyout { Items = { folder, files, forget } },
-        };
-        ToolTip.SetTip(button, "Load color palettes (.PAL / .CLR) from a folder or file");
-        DockPanel.SetDock(button, Dock.Right);
-        return button;
-    }
-
-    private void FillPaletteLists()
-    {
-        var pal = _state.ActivePalette;
-        _paletteColors = pal.Colors.ToList();
-        _names = _paletteColors.Select(c => c.DisplayName ?? c.ToHex()).ToList();
-        _refreshing = true;
-        if (_palette.ItemCount != _state.Palettes.Count || !_state.Palettes.Select(p => p.Name).SequenceEqual(_palette.Items.OfType<string>()))
-            _palette.ItemsSource = _state.Palettes.Select(p => p.Name).ToList();   // palettes were added or forgotten
-        _palette.SelectedIndex = _state.Palettes.ToList().IndexOf(pal);
-        _name.ItemsSource = _names;
-        _list.ItemsSource = _paletteColors;
-        _refreshing = false;
     }
 
     /// <summary>Labels, ranges and decimals of the sliders for the current model.</summary>
@@ -450,7 +360,7 @@ public sealed class ColorMixer : IRefreshable
         ToolTip.SetTip(_big, paint is SolidPaint ? ColorUi.Describe(_current) : "No color");
 
         _name.Text = paint is SolidPaint ? (_current.DisplayName ?? "") : "";
-        _name.PlaceholderText = paint is null ? "No color" : "Color name\u2026";
+        _name.IsVisible = !string.IsNullOrEmpty(_name.Text);   // shown only for a color that has a name (imported, or from the Palette Strip)
         _controls.Opacity = paint is null ? 0.45 : 1;   // sliders and wheel are dimmed while the target has no color; using one gives it a color
 
         var stroke = style.Stroke;
@@ -512,8 +422,7 @@ public sealed class ColorMixer : IRefreshable
     internal ChannelRow[] Rows => _rows;
     internal ColorWheel Wheel => _wheel;
     internal ComboBox ModeCombo => _mode;
-    internal ComboBox PaletteCombo => _palette;
-    internal AutoCompleteBox NameBox => _name;
+    internal TextBlock NameBox => _name;
     internal RadioButton FillRadio => _fill;
     internal RadioButton StrokeRadio => _stroke;
     internal Button Eyedropper => _eyedropper;
@@ -521,7 +430,5 @@ public sealed class ColorMixer : IRefreshable
     internal Button NoStroke => _noStroke;
     internal Button[] JoinButtons => _joinButtons;
     internal Button[] CapButtons => _capButtons;
-    internal CheckBox Adjustment => _adjust;
-    internal ListBox List => _list;
     internal Border BigSwatch => _big;
 }

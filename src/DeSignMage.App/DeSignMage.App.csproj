@@ -1,4 +1,4 @@
-﻿<Project Sdk="Microsoft.NET.Sdk">
+<Project Sdk="Microsoft.NET.Sdk">
 
   <!-- Avalonia desktop shell: windows, panels, menus, the Skia canvas control. -->
   <PropertyGroup>
@@ -11,9 +11,8 @@
     <ApplicationIcon>Assets\DeSignMage.ico</ApplicationIcon>
     <BuiltInComInteropSupport>true</BuiltInComInteropSupport>
     <AvaloniaUseCompiledBindingsByDefault>true</AvaloniaUseCompiledBindingsByDefault>
-    <!-- Shown in bug reports ("version, build date"); bump Version for each beta handed out. -->
-    <Version>0.3.6</Version>
-    <InformationalVersion>0.3.6</InformationalVersion>
+    <!-- File description shown in the exe's Properties. The version and the rest of the identity are in Directory.Build.props. -->
+    <AssemblyTitle>DeSign Mage</AssemblyTitle>
   </PropertyGroup>
 
   <!-- Startup: a published build (`dotnet publish -r win-x64 ...`, framework-dependent or self-contained)
@@ -25,6 +24,17 @@
     <SatelliteResourceLanguages>en</SatelliteResourceLanguages>
   </PropertyGroup>
 
+  <!-- Only our own assemblies (DeSignMage.exe's DeSignMage.dll and DeSignMage.*.dll) are precompiled. Every other managed file (Avalonia, SkiaSharp,
+       PdfPig, ...) is published byte-identical to its NuGet package, so the files the release signing does not cover are still the vendors' originals
+       and Smart App Control / SmartScreen can recognize them. Costs some startup time; set -p:PrecompileAllAssemblies=true for the fastest personal build. -->
+  <Target Name="PrecompileOnlyOurAssemblies" AfterTargets="_ComputeAssembliesToPostprocessOnPublish" Condition="'$(PublishReadyToRun)' == 'true' and '$(PrecompileAllAssemblies)' != 'true'">
+    <ItemGroup>
+      <_PublishedAssembly Include="@(ResolvedFileToPublish->WithMetadataValue('PostprocessAssembly', 'true'))" />
+      <_ForeignAssembly Include="@(_PublishedAssembly)" Condition="'%(Filename)' != 'DeSignMage' and !$([System.String]::new('%(Filename)').StartsWith('DeSignMage.'))" />
+      <PublishReadyToRunExclude Include="@(_ForeignAssembly->'%(Filename)%(Extension)')" />
+    </ItemGroup>
+  </Target>
+
   <!-- The native symbol files that come with SkiaSharp and HarfBuzzSharp are about 100 MB and useless to a user: leave them out of a publish.
        The program's own .pdb files stay (small), so crash reports keep their line numbers. -->
   <Target Name="LeaveOutNativeSymbols" AfterTargets="ComputeResolvedFilesToPublishList">
@@ -35,13 +45,9 @@
   </Target>
 
   <ItemGroup>
+    <!-- The installer package id (see Directory.Build.props); the tests check that it cannot collide with the data folder. -->
+    <AssemblyMetadata Include="UpdatePackId" Value="$(UpdatePackId)" />
     <AssemblyMetadata Include="BuildDate" Value="$([System.DateTime]::UtcNow.ToString('yyyy-MM-dd HH:mm'))Z" />
-  </ItemGroup>
-
-  <!-- Feedback webhook: when app/secrets/feedback-webhook.txt exists it is built into the program, so a
-       portable build needs no extra file. The file is never committed (app/secrets/.gitignore) and its text is never printed. -->
-  <ItemGroup Condition="Exists('$(MSBuildThisFileDirectory)..\..\secrets\feedback-webhook.txt')">
-    <EmbeddedResource Include="..\..\secrets\feedback-webhook.txt" LogicalName="DeSignMage.feedback-webhook.txt" />
   </ItemGroup>
 
   <ItemGroup>
@@ -51,6 +57,7 @@
     <PackageReference Include="Avalonia.Themes.Fluent" />
     <PackageReference Include="Avalonia.Fonts.Inter" />
     <PackageReference Include="SkiaSharp" />
+    <PackageReference Include="Velopack" />
   </ItemGroup>
 
   <ItemGroup>
@@ -60,12 +67,6 @@
   <!-- Window/taskbar icon, loaded as an Avalonia resource. -->
   <ItemGroup>
     <AvaloniaResource Include="Assets\DeSignMage.ico" />
-  </ItemGroup>
-
-  <!-- Color palettes: palette files (.PAL / .CLR) in the untracked folder app/local-assets/palettes are copied next to the exe
-       (`palettes/`) when that folder exists. Without it the program starts with its built-in palette; more can be loaded from any folder. -->
-  <ItemGroup>
-    <Content Include="..\..\local-assets\palettes\*.PAL;..\..\local-assets\palettes\*.CLR" Link="palettes\%(Filename)%(Extension)" CopyToOutputDirectory="PreserveNewest" />
   </ItemGroup>
 
   <ItemGroup>

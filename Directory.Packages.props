@@ -17,6 +17,8 @@
     <PackageVersion Include="Clipper2Z" Version="2.0.0" />
     <!-- PDF reading (structure, filters, fonts) for the vector importer: PdfPig (Apache License 2.0). -->
     <PackageVersion Include="PdfPig" Version="0.1.16" />
+    <!-- Self-updating installed builds: Velopack (MIT). Keep it equal to the vpk tool version used by tools/pack-release.ps1. -->
+    <PackageVersion Include="Velopack" Version="1.2.161" />
 
     <PackageVersion Include="Microsoft.NET.Test.Sdk" Version="17.14.1" />
     <PackageVersion Include="xunit" Version="2.9.3" />

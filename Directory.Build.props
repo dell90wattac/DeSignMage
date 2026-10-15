@@ -7,4 +7,20 @@
     <InvariantGlobalization>false</InvariantGlobalization>
     <ManagePackageVersionsCentrally>true</ManagePackageVersionsCentrally>
   </PropertyGroup>
+
+  <!-- Identity of every assembly we build (file properties of the exe and the dlls, bug reports, the .dsm "writer" field).
+       One version for the whole program: bump it here for each release; a release tag must match it (see RELEASING.md). -->
+  <PropertyGroup>
+    <Version>0.3.6</Version>
+    <InformationalVersion>$(Version)</InformationalVersion>
+    <Product>DeSign Mage</Product>
+    <Company>dell90wattac</Company>
+    <Authors>dell90wattac</Authors>
+    <Copyright>Copyright &#169; 2026 dell90wattac. Free software under the GNU General Public License, version 3.</Copyright>
+    <Description>Vector graphic design program for Windows</Description>
+    <RepositoryUrl>https://github.com/dell90wattac/DeSignMage</RepositoryUrl>
+    <!-- Package id of the installer/updater. The installed copy lives in %LocalAppData%\$(UpdatePackId) and an uninstall deletes that whole folder,
+         so it must differ from the data folder %LocalAppData%\DeSignMage (settings, logs, crash files, feedback outbox). Never change it after the first release. -->
+    <UpdatePackId>DeSignMageApp</UpdatePackId>
+  </PropertyGroup>
 </Project>

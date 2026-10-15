@@ -1,3 +1,4 @@
+using System.Globalization;
 using System.Text;
 
 namespace DeSignMage.Feedback.Tests;
@@ -216,7 +217,7 @@ public class ReportBuilderTests
     }
 
     [Fact]
-    public void The_webhook_address_never_ends_up_in_a_report()
+    public void A_webhook_address_pasted_into_a_report_is_scrubbed()
     {
         var request = Fake.Bug($"I pasted {Fake.Url} by mistake") with { LogLines = [$"posted to {Fake.Url}"], Name = Fake.Url };
         var p = ReportBuilder.Build(request);
@@ -231,5 +232,77 @@ public class ReportBuilderTests
         var d = new ReportFile("recovered-1-Sign.dsm", "application/octet-stream", Fake.Bytes(10));
         var p = ReportBuilder.Build(Fake.Bug() with { Designs = [d, d, d] });
         Assert.Equal(["recovered-1-Sign.dsm", "recovered-1-Sign-2.dsm", "recovered-1-Sign-3.dsm"], p.Files.Where(f => f.FileName.EndsWith(".dsm")).Select(f => f.FileName).ToArray());
+    }
+}
+
+/// <summary>
+/// The feedback relay (tools/feedback-relay/src/index.js, <c>checkShape</c>) turns away anything that is not shaped like the program's
+/// own reports. These tests pin that shape on this side: if a report ever changes, the relay (and its header version) must change too.
+/// </summary>
+public class RelayShapeTests
+{
+    private static readonly Dictionary<ReportKind, int> RelayColors = new() { [ReportKind.Bug] = 0xD9534F, [ReportKind.Feature] = 0x2E86DE, [ReportKind.Crash] = 0x8B0000 };
+    private static readonly System.Text.RegularExpressions.Regex Footer = new(@"^Report [A-Za-z0-9-]{8,60} · .{8,40} UTC$");
+    private static readonly System.Text.RegularExpressions.Regex ReportTxt = new(@"^DeSignMage-(Bug|Feature|Crash)-[A-Za-z0-9._-]{1,70}\.txt$");
+
+    private static IEnumerable<ReportRequest> Requests()
+    {
+        yield return Fake.Bug();
+        yield return new ReportRequest { Kind = ReportKind.Feature, Description = "A polygon tool please", AppVersion = "0.4.0", Name = "Mum" };
+        yield return new ReportRequest { Kind = ReportKind.Feature, Description = new string('x', 6000), AppVersion = "0.4.0" };          // long: gets a text file
+        yield return Fake.Bug() with { Kind = ReportKind.Crash, Id = "crash-20261012-101500-abc123", CrashText = "System.InvalidOperationException: boom\n   at X()", CrashSummary = "InvalidOperationException: boom" };
+    }
+
+    [Fact]
+    public void Every_kind_of_report_has_the_shape_the_relay_accepts()
+    {
+        foreach (var request in Requests())
+        {
+            var p = ReportBuilder.Build(request);
+            var r = p.Report;
+            string kind = request.Kind.ToString();
+            Assert.StartsWith(kind + ": ", r.Title);
+            Assert.True(r.Title.Length > kind.Length + 2 && !char.IsWhiteSpace(r.Title[kind.Length + 2]));
+            Assert.Equal(RelayColors[request.Kind], r.Color);
+            Assert.False(string.IsNullOrEmpty(r.Description));
+            Assert.Matches(Footer, r.Footer);
+
+            var fields = r.Fields.ToDictionary(f => f.Name, f => f.Value);
+            Assert.True(fields.GetValueOrDefault("From", "-") != "-" && fields.GetValueOrDefault("Version", "-") != "-");
+            if (request.Kind != ReportKind.Feature) Assert.True(fields.GetValueOrDefault("Windows", "-") != "-");
+
+            var names = p.Files.Select(f => f.FileName).ToList();
+            var texts = names.Where(n => ReportTxt.IsMatch(n)).ToList();
+            Assert.True(texts.Count <= 1);
+            if (request.Kind != ReportKind.Feature || request.Description.Length > 1000) Assert.Single(texts);
+            foreach (var t in texts) Assert.StartsWith($"DeSignMage-{kind}-", t);
+            foreach (var n in names.Except(texts))
+                Assert.True(System.Text.RegularExpressions.Regex.IsMatch(n, @"^screenshot\.(png|jpe?g)$") || n.EndsWith(".dsm"), $"unexpected attachment {n}");
+            Assert.True(names.Count(n => n.StartsWith("screenshot")) <= 1);
+            Assert.True(p.Files.Count <= 8);
+        }
+    }
+
+    [Theory]
+    [InlineData("fi-FI")]
+    [InlineData("th-TH")]
+    [InlineData("ar-SA")]
+    public void The_footer_does_not_depend_on_the_computers_language_or_calendar(string culture)
+    {
+        var old = CultureInfo.CurrentCulture;
+        try
+        {
+            CultureInfo.CurrentCulture = new CultureInfo(culture);
+            var p = ReportBuilder.Build(Fake.Bug() with { CreatedUtc = new DateTime(2026, 10, 12, 10, 15, 0, DateTimeKind.Utc) });
+            Assert.EndsWith("· 2026-10-12 10:15 UTC", p.Report.Footer);
+        }
+        finally { CultureInfo.CurrentCulture = old; }
+    }
+
+    [Fact]
+    public void The_real_client_introduces_itself_as_the_program()
+    {
+        using var client = RelaySender.CreateClient();
+        Assert.StartsWith("DeSignMage/", client.DefaultRequestHeaders.UserAgent.ToString());
     }
 }

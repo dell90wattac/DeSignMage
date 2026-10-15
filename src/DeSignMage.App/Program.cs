@@ -1,6 +1,8 @@
 using Avalonia;
 using DeSignMage.App.Reporting;
+using DeSignMage.App.Updates;
 using DeSignMage.Feedback;
+using Velopack;
 
 namespace DeSignMage.App;
 
@@ -40,6 +42,12 @@ internal static class Program
     [STAThread]
     public static void Main(string[] args)
     {
+        // The installer runs the program with special arguments (after install, update, before uninstall): this handles them and
+        // exits, and must come before anything else (vpk checks that this call is at the start of Main). Installing an update that was
+        // downloaded earlier is NOT done here (Velopack's default is to do it at any start): only a fresh start (UpdateGate) may do that,
+        // never a second copy opened next to a running one.
+        VelopackApp.Build().SetAutoApplyOnStartup(false).Run();
+
         MainStartTicks = Environment.TickCount64;
         Options = StartupOptions.Parse(args);
         // Settings and logs of earlier builds are carried over before anything reads them (not in a development screenshot or crash-test run).
@@ -51,6 +59,9 @@ internal static class Program
         AppLog.Info("startup", $"DeSign Mage {FeedbackHost.AppVersionText} starting ({args.Length} command-line arguments)");
         if (migration is { Moved: > 0 } or { Skipped: > 0 } or { Error: not null })
             AppLog.Info("startup", $"brought data over from an earlier build: {migration.Moved} files moved, {migration.Skipped} left in place{(migration.Error is null ? "" : ", " + migration.Error)}");
+        // An installed copy asks the update server now, while the window is being built (a development screenshot run is not a session).
+        UpdateHost.Begin(args, isRealSession: Options.ScreenshotPath is null && Options.CrashTest is null && Options.FirstFramePath is null);
+        Mark("update-check-started");
         int exitCode = BuildAvaloniaApp().StartWithClassicDesktopLifetime(args);
         AppLog.Info("startup", $"exited normally (code {exitCode})");
         AppLog.Flush();

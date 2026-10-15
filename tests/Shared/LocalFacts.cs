@@ -2,7 +2,7 @@ using Xunit;
 
 namespace DeSignMage.TestSupport;
 
-/// <summary>A test that needs files from <c>local-testdata/</c> (or <c>assets:</c> from <c>local-assets/</c>): skipped when they are missing.</summary>
+/// <summary>A test that needs files from <c>local-testdata/</c>: skipped when they are missing.</summary>
 [AttributeUsage(AttributeTargets.Method)]
 internal sealed class LocalFactAttribute : FactAttribute
 {

@@ -25,7 +25,7 @@ public sealed class CrashRecord
     /// <summary>The system block (version, build date, Windows, .NET, displays) and the undo-history names at the time of the crash.</summary>
     public string? SystemInfoText { get; set; }
     public List<string> UndoHistory { get; set; } = [];
-    /// <summary>"new" until the report is in the outbox, then "queued".</summary>
+    /// <summary>"new" until the person decides; then "queued" (in the outbox, to be sent) or "declined" (stays on this computer only).</summary>
     public string Status { get; set; } = "new";
     public string? OutboxId { get; set; }
 
@@ -35,7 +35,8 @@ public sealed class CrashRecord
 
 /// <summary>
 /// Crash capture: on an unhandled exception writes <c>crash\crash-&lt;time&gt;\</c> (the exception and stack, the recent log, system info)
-/// and does an emergency save of the open documents as .dsm. Sending happens on the next launch (<see cref="CrashRecovery"/>).
+/// and does an emergency save of the open documents as .dsm. Nothing is sent from here: the next launch asks the person
+/// (<see cref="FeedbackService.FindCrashesToAsk"/>) unless they chose "always send" (<see cref="CrashRecovery"/> does the queueing).
 /// </summary>
 public sealed class CrashReporter
 {
@@ -233,6 +234,31 @@ public static class CrashRecovery
         return records.OrderByDescending(r => r.CreatedUtc).ToList();
     }
 
+    /// <summary>Crashes nobody has decided about yet (status "new"), oldest first.</summary>
+    public static IReadOnlyList<CrashRecord> Pending(AppPaths paths) =>
+        List(paths).Where(r => r.Status == "new").OrderBy(r => r.CreatedUtc).ToList();
+
+    /// <summary>"Don't send": marks every undecided crash as declined. The folder (and the recovered design) stays for the person.</summary>
+    public static IReadOnlyList<CrashRecord> Decline(AppPaths paths)
+    {
+        var declined = new List<CrashRecord>();
+        foreach (var crash in Pending(paths))
+        {
+            try
+            {
+                crash.Status = "declined";
+                File.WriteAllText(Path.Combine(crash.Directory, "crash.json"), JsonSerializer.Serialize(crash, Json));
+                declined.Add(crash);
+                AppLog.Info("crash", $"Crash report {crash.Id} was not sent (the person said no)");
+            }
+            catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or JsonException)
+            {
+                AppLog.Error("crash", $"Could not mark crash report {crash.Id} as declined", ex);
+            }
+        }
+        return declined;
+    }
+
     /// <summary>Builds the crash's report from its folder.</summary>
     public static PreparedReport BuildReport(CrashRecord crash, ReportBuilderOptions? options = null)
     {
@@ -241,10 +267,14 @@ public static class CrashRecovery
         int system = text.IndexOf("== System ==", StringComparison.Ordinal);
         if (system > 0) text = text[..system];
         else if (text.IndexOf("== Document ==", StringComparison.Ordinal) is > 0 and var doc) text = text[..doc];
-        var designs = crash.Recovered
+        bool attach = options?.AttachCrashDesigns ?? true;
+        List<ReportFile> designs = !attach ? [] : crash.Recovered
             .Where(f => File.Exists(Path.Combine(crash.Directory, f)))
             .Select(f => new ReportFile(f, "application/octet-stream", File.ReadAllBytes(Path.Combine(crash.Directory, f))))
             .ToList();
+        var notes = new List<string>();
+        if (crash.Recovered.Count == 0) notes.Add("No open design could be saved.");
+        else if (!attach) notes.Add("Design not attached: the sender has not allowed designs to be included.");
         var lines = ReadText(Path.Combine(crash.Directory, "log.txt")).Split('\n').Select(l => l.TrimEnd('\r')).Where(l => l.Length > 0).ToList();
         var request = new ReportRequest
         {
@@ -259,18 +289,21 @@ public static class CrashRecovery
             DocumentSummary = crash.DocumentSummary,
             Designs = designs,
             LogLines = lines,
-            Notes = crash.Recovered.Count == 0 ? ["No open design could be saved."] : [],
+            Notes = notes,
             Id = crash.Id,
             CreatedUtc = crash.CreatedUtc,
         };
         return ReportBuilder.Build(request, options);
     }
 
-    /// <summary>Puts every unsent crash into the outbox. Returns the ones that were queued now.</summary>
+    /// <summary>
+    /// Puts every undecided crash into the outbox. Returns the ones that were queued now. Only call this once the person agreed
+    /// (an answer of "Send", or the "always send" setting): the outbox is sent without asking again.
+    /// </summary>
     public static IReadOnlyList<CrashRecord> QueuePending(AppPaths paths, Outbox outbox, ReportBuilderOptions? options = null)
     {
         var queued = new List<CrashRecord>();
-        foreach (var crash in List(paths).Where(r => r.Status == "new").OrderBy(r => r.CreatedUtc))
+        foreach (var crash in Pending(paths))
         {
             try
             {
@@ -294,7 +327,7 @@ public static class CrashRecovery
     {
         foreach (var crash in List(paths))
         {
-            if (crash.Status != "queued" || utcNow - crash.CreatedUtc < maxAge) continue;
+            if (crash.Status is not ("queued" or "declined") || utcNow - crash.CreatedUtc < maxAge) continue;
             if (crash.OutboxId is { } id && isStillInOutbox?.Invoke(id) == true) continue;
             try { Directory.Delete(crash.Directory, true); }
             catch (Exception ex) when (ex is IOException or UnauthorizedAccessException) { }

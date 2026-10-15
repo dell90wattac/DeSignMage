@@ -1,9 +1,12 @@
 using Avalonia;
+using Avalonia.Controls;
 using Avalonia.Controls.ApplicationLifetimes;
 using Avalonia.Markup.Xaml;
 using Avalonia.Threading;
 using DeSignMage.App.Reporting;
 using DeSignMage.App.Shell;
+using DeSignMage.App.Updates;
+using DeSignMage.Feedback;
 
 namespace DeSignMage.App;
 
@@ -33,9 +36,49 @@ public partial class App : Application
 
         if (ApplicationLifetime is IClassicDesktopStyleApplicationLifetime desktop)
         {
-            desktop.MainWindow = new MainWindow(Program.Options);
+            var main = new MainWindow(Program.Options);
             Program.Mark("window-built");
+            if (UpdateHost.StartupDecision is { } decision)
+                _ = StartAfterUpdateCheckAsync(desktop, main, decision);   // fresh start of an installed copy: an update may come first
+            else
+                desktop.MainWindow = main;
         }
         base.OnFrameworkInitializationCompleted();
+    }
+
+    /// <summary>
+    /// The window is built; before it opens, the answer of the update check decides: start as usual, or show "Update required" first
+    /// (which installs the update and restarts, or, when that fails, lets the program start as it is).
+    /// </summary>
+    private static async Task StartAfterUpdateCheckAsync(IClassicDesktopStyleApplicationLifetime desktop, MainWindow main, Task<GateDecision> decisionTask)
+    {
+        desktop.ShutdownMode = ShutdownMode.OnExplicitShutdown;   // no window yet, and the update window may close before the main one opens
+        // An answer that is already there must not be acted on before the main loop runs: Shutdown() in here would kill the dispatcher first.
+        await Task.Yield();
+        GateDecision decision;
+        try { decision = await decisionTask; }
+        catch (Exception ex)
+        {
+            AppLog.Error("update", "The update check ended unexpectedly; starting normally", ex);
+            decision = new GateDecision(StartupAction.StartNormally, "the update check failed");
+        }
+        AppLog.Info("update", $"start: {decision.Action} - {decision.Reason}");
+
+        if (decision.Action == StartupAction.Exit) { desktop.Shutdown(); return; }
+
+        if (decision.Action == StartupAction.RequireUpdate && UpdateHost.Client is { } client)
+        {
+            var flow = new UpdateFlow(client, decision, UpdateHost.RestartArgs, m => AppLog.Warn("update", m));
+            UpdateHost.Guard?.SetUpdating(true);
+            var window = new UpdateRequiredWindow(flow, client.CurrentVersion);
+            window.Show();
+            await window.StartNormally;
+            UpdateHost.Guard?.SetUpdating(false);
+        }
+
+        desktop.MainWindow = main;
+        desktop.ShutdownMode = ShutdownMode.OnMainWindowClose;
+        main.Show();
+        UpdateHost.StartBackground();
     }
 }

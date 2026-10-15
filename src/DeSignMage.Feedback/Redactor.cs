@@ -3,36 +3,18 @@ using System.Text.RegularExpressions;
 namespace DeSignMage.Feedback;
 
 /// <summary>
-/// Keeps the webhook address out of everything we write (logs, crash reports, report text, error messages). The address is a secret:
-/// anyone who has it can post to the feedback channel.
+/// Keeps chat-webhook addresses out of everything we write (logs, crash reports, report text, error messages). The program holds no
+/// such address; this is a safety net in case one is ever pasted into a description or a log line.
 /// </summary>
 public static partial class Redactor
 {
     [GeneratedRegex(@"https?://[^\s""'<>]*discord(?:app)?\.com/api/[^\s""'<>]*webhooks/[^\s""'<>]*", RegexOptions.IgnoreCase)]
     private static partial Regex WebhookUrl();
 
-    private static readonly object Gate = new();
-    private static string[] _secrets = [];
-
-    /// <summary>Also blanks these exact strings (the id and token inside the configured address) wherever they appear.</summary>
-    public static void RegisterSecrets(IEnumerable<string> secrets)
-    {
-        lock (Gate) _secrets = [.. _secrets, .. secrets.Where(s => s.Length >= 8)];
-    }
-
-    public static void ClearSecrets()
-    {
-        lock (Gate) _secrets = [];
-    }
-
     public static string Scrub(string? text)
     {
         if (string.IsNullOrEmpty(text)) return text ?? "";
-        var result = WebhookUrl().Replace(text, "[webhook address]");
-        string[] secrets;
-        lock (Gate) secrets = _secrets;
-        foreach (var s in secrets) result = result.Replace(s, "[secret]", StringComparison.Ordinal);
-        return result;
+        return WebhookUrl().Replace(text, "[webhook address]");
     }
 }
 

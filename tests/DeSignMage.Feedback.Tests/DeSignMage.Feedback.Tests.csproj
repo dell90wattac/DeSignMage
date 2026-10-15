@@ -1,6 +1,6 @@
 <Project Sdk="Microsoft.NET.Sdk">
 
-  <!-- Feedback and crash reporting: report building, outbox, Discord sender (always a fake HTTP handler: no test calls Discord). -->
+  <!-- Feedback and crash reporting: report building, outbox, relay sender (always a fake HTTP handler: no test reaches the network). -->
   <PropertyGroup>
     <IsPackable>false</IsPackable>
   </PropertyGroup>

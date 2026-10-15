@@ -696,7 +696,7 @@ public class ButtonAuditTests
     // ================================================================ Color Mixer and Palette Strip
 
     [AvaloniaFact]
-    public void Color_Mixer_target_corner_and_end_buttons_and_the_palette_menu_button_work()
+    public void Color_Mixer_target_corner_and_end_buttons_work()
     {
         var (w, _) = Open();
         w.ToggleDockPanel("colorMixer");                           // the Dock starts closed
@@ -717,16 +717,7 @@ public class ButtonAuditTests
         Press(w, mixer.FillRadio);
         Assert.Equal(ColorTarget.Fill, w.ColorState.Target);
         Assert.DoesNotContain(w.GetVisualDescendants().OfType<Button>(), x => x.Name == "NoColorButton");   // the Palette Strip X is the only no-color button
-        // the "..." beside the palette list: its three items are wired
-        var button = NamedButton(w, "PaletteMenuButton");
-        var items = ((MenuFlyout)button.Flyout!).Items.OfType<MenuItem>().ToList();
-        Assert.Equal(3, items.Count);
-        int folders = 0, files = 0;
-        w.ColorState.LoadFolderRequested = () => folders++;
-        w.ColorState.LoadFilesRequested = () => files++;
-        items[0].RaiseEvent(new RoutedEventArgs(MenuItem.ClickEvent));
-        items[1].RaiseEvent(new RoutedEventArgs(MenuItem.ClickEvent));
-        Assert.Equal((1, 1), (folders, files));
+        Assert.DoesNotContain(w.GetVisualDescendants().OfType<Button>(), x => x.Name == "PaletteMenuButton");   // no palette loading any more
         w.Close();
     }
 

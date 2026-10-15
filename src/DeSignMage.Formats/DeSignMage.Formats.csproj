@@ -1,6 +1,6 @@
 <Project Sdk="Microsoft.NET.Sdk">
 
-  <!-- Readers (and later writers) for file formats: legacy .lyt layouts and palettes first, then the native document. Depends only on Core; no UI, no Skia.
+  <!-- Readers (and later writers) for file formats: legacy .lyt layouts first, then the native document. Depends only on Core; no UI, no Skia.
        Written from the documented formats. -->
   <PropertyGroup>
     <RootNamespace>DeSignMage.Formats</RootNamespace>

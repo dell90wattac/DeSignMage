@@ -57,7 +57,7 @@ public sealed class OutgoingFile
 }
 
 /// <summary>
-/// A finished report as it waits in the outbox (<c>report.json</c>): the Discord embed already trimmed to its limits, the names of the
+/// A finished report as it waits in the outbox (<c>report.json</c>): the chat embed already trimmed to its limits, the names of the
 /// attached files (stored beside it), and the delivery bookkeeping.
 /// </summary>
 public sealed class OutgoingReport
@@ -86,13 +86,19 @@ public sealed record PreparedReport(OutgoingReport Report, IReadOnlyList<ReportF
 /// <summary>A smaller picture of a screenshot (JPEG or PNG) produced by the UI layer, which has the image library.</summary>
 public sealed record ShrunkImage(byte[] Data, string Extension, string ContentType);
 
-public sealed class ReportBuilderOptions
+public sealed record ReportBuilderOptions
 {
-    /// <summary>Discord rejects requests above 8 MB (webhooks); stay a bit below so the multipart framing fits.</summary>
+    /// <summary>The relay and the chat service behind it refuse requests above about 8 MB; stay a bit below so the multipart framing fits.</summary>
     public long MaxTotalBytes { get; init; } = 7_500_000;
 
     /// <summary>A screenshot larger than this is shrunk first, even when there is room.</summary>
     public long ScreenshotSoftLimit { get; init; } = 1_500_000;
+
+    /// <summary>
+    /// Crash reports attach the recovered design(s). <see cref="FeedbackService"/> sets this from the person's remembered
+    /// "include my design" choice (<see cref="FeedbackSettings.IncludeDesign"/>), so a design only leaves the computer when they allowed it.
+    /// </summary>
+    public bool AttachCrashDesigns { get; init; } = true;
 
     public int MaxLogLines { get; init; } = 500;
     public int MaxUndoLines { get; init; } = 100;

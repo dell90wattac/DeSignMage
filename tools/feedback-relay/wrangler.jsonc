@@ -1,0 +1,18 @@
+{
+  // The feedback relay Worker. No secrets here: the Discord webhook is the Worker secret DISCORD_WEBHOOK_URL
+  // (set with `npx wrangler secret put DISCORD_WEBHOOK_URL`, typed into your own terminal).
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "designmage-feedback",
+  "main": "src/index.js",
+  "compatibility_date": "2026-09-01",
+  "workers_dev": true,
+
+  // Settings changed in the Cloudflare dashboard (Settings > Variables) survive a deploy:
+  //   RELAY_ENABLED         "false" switches the relay off (anything else, or unset, is on)
+  //   RATE_LIMIT_PER_HOUR   reports per computer per hour (default 5)
+  //   FORUM_THREADS         "true" when the Discord channel is a Forum channel (every report becomes its own post)
+  "keep_vars": true,
+
+  // Counts reports per computer per hour (free plan: 1,000 writes a day). Created on the first deploy.
+  "kv_namespaces": [{ "binding": "RATE" }]
+}

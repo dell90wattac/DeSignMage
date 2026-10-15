@@ -6,13 +6,11 @@ using DeSignMage.Feedback;
 namespace DeSignMage.App.Reporting;
 
 /// <summary>
-/// The program-wide feedback service. <see cref="StartForReal"/> (from <c>Program.Main</c>) is the only way a real webhook ever gets
-/// loaded; until then (every test, every headless run) <see cref="Get"/> hands out an inert service that can only write to a temp folder.
+/// The program-wide feedback service. <see cref="StartForReal"/> (from <c>Program.Main</c>) is the only way a real sender ever gets
+/// created; until then (every test, every headless run) <see cref="Get"/> hands out an inert service that can only write to a temp folder.
 /// </summary>
 internal static class FeedbackHost
 {
-    private const string EmbeddedName = "DeSignMage.feedback-webhook.txt";
-
     private static FeedbackService? _current;
 
     /// <summary>The service in use; tests assign their own (with a fake sender).</summary>
@@ -35,7 +33,7 @@ internal static class FeedbackHost
         new AppPaths(Path.Combine(Path.GetTempPath(), $"DeSignMage-inert-{Environment.ProcessId}")), sender: null);
 
     /// <summary>
-    /// Normal startup: log file, webhook (embedded or beside the exe), outbox, crash hooks. Never throws: feedback is optional.
+    /// Normal startup: log file, the relay sender, outbox, crash hooks. Never throws: feedback is optional.
     /// </summary>
     public static FeedbackService StartForReal(bool backgroundWork)
     {
@@ -46,18 +44,13 @@ internal static class FeedbackHost
         IReportSender? sender = null;
         try
         {
-            var config = WebhookConfig.Load(ReadEmbedded, AppContext.BaseDirectory);
-            if (config.Config is { } webhook)
-            {
-                Redactor.RegisterSecrets(webhook.Secrets());
-                sender = new DiscordSender(webhook, DiscordSender.CreateClient());
-                AppLog.Info("feedback", $"Sending is set up{(webhook.ForumThreads ? " (forum threads)" : "")}");
-            }
-            else AppLog.Info("feedback", config.Problem ?? "Sending isn't set up (no feedback-webhook.txt)");
+            var config = RelayConfig.FromSettings(new SettingsStore(paths.SettingsFile));   // read once, for the optional address override
+            sender = new RelaySender(config, RelaySender.CreateClient());
+            AppLog.Info("feedback", $"Reports go to the relay at {config.Url.Host}");
         }
         catch (Exception ex)
         {
-            AppLog.Error("feedback", "Reading the feedback setup failed", ex);
+            AppLog.Error("feedback", "Setting up the feedback relay failed", ex);
         }
 
         var service = new FeedbackService(paths, sender, new ReportBuilderOptions { ShrinkScreenshot = ScreenshotTools.Shrink });
@@ -67,14 +60,6 @@ internal static class FeedbackHost
         BackgroundWork = backgroundWork;
         IsReal = true;
         return service;
-    }
-
-    private static string? ReadEmbedded()
-    {
-        using var stream = typeof(FeedbackHost).Assembly.GetManifestResourceStream(EmbeddedName);
-        if (stream is null) return null;
-        using var reader = new StreamReader(stream);
-        return reader.ReadToEnd();
     }
 
     // ---------------------------------------------------------------- Avalonia's dispatcher
@@ -112,7 +97,7 @@ internal static class FeedbackHost
     [DllImport("user32.dll", CharSet = CharSet.Unicode, EntryPoint = "MessageBoxW")]
     private static extern int MessageBox(IntPtr hWnd, string text, string caption, uint type);
 
-    /// <summary>The program is about to die: say so, and say where her design went. (The report itself is sent the next time she starts it.)</summary>
+    /// <summary>The program is about to die: say so, and say where her design went. (Nothing is sent now: the next start asks whether to send the report.)</summary>
     private static void ShowFatalNotice(CrashRecord record)
     {
         try
@@ -120,8 +105,11 @@ internal static class FeedbackHost
             string where = record.Recovered.Count > 0
                 ? $"Your design was saved to:\n{record.Directory}\n\n"
                 : "";
+            string later = _current?.AlwaysSendCrashes == true
+                ? "A report will be sent the next time you start the program."
+                : "The next time you start the program it will ask whether to send a report.";
             MessageBox(IntPtr.Zero,
-                $"DeSign Mage had an unexpected problem and has to close.\n\n{where}A report will be sent automatically the next time you start the program.",
+                $"DeSign Mage had an unexpected problem and has to close.\n\n{where}{later}",
                 "DeSign Mage", 0x10 /* MB_ICONERROR */);
         }
         catch (Exception) { }

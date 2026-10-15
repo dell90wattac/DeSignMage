@@ -1,0 +1,16 @@
+{
+  "name": "designmage-feedback-relay",
+  "private": true,
+  "version": "1.0.0",
+  "description": "Cloudflare Worker that relays DeSign Mage feedback reports to a Discord webhook kept as a Worker secret.",
+  "license": "GPL-3.0-only",
+  "type": "module",
+  "scripts": {
+    "test": "node --test tests/",
+    "deploy": "wrangler deploy",
+    "dev": "wrangler dev"
+  },
+  "devDependencies": {
+    "wrangler": "^4"
+  }
+}

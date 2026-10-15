@@ -1,4 +1,4 @@
-using System.Globalization;
+﻿using System.Globalization;
 using Avalonia;
 using Avalonia.Controls;
 using Avalonia.Input;
@@ -20,7 +20,7 @@ public partial class MainWindow : Window
     /// <summary>Menu bar layout. Most entries arrive with later tasks.</summary>
     private static readonly MenuNode[] MenuLayout =
     [
-        MenuNode.Menu("_File", "file.new", "file.open", "-", "file.save", "file.saveAs", "-", "file.import", "file.export", "-", "file.loadPalettes", "file.loadPaletteFile", "-", "file.exit"),
+        MenuNode.Menu("_File", "file.new", "file.open", "-", "file.save", "file.saveAs", "-", "file.import", "file.export", "-", "file.exit"),
         MenuNode.Menu("_Edit", "edit.undo", "edit.redo", "-", "edit.cut", "edit.copy", "edit.paste", "edit.delete", "-", "edit.selectAll", "-",
             // Edit > Vector/Node submenu (enabled while the Vector Edit tool has an object open), plus the Loop Edit tool's.
             MenuNode.Menu("Vector/Node", "vector.insert", "vector.toLine", "vector.toArc", "vector.toBezier", "vector.makeSharp", "-",
@@ -150,13 +150,9 @@ public partial class MainWindow : Window
 
         ToolboxHost.Children.Clear();
         Shell.Toolbox.Populate(ToolboxHost, session);
-        // Colors (C.3): the Palette Strip, the Color Mixer and the Project Color Bar share one state (palette, target, units).
-        _colorState = new Shell.ColorUiState(_colorState)
-        {
-            LoadFolderRequested = () => _ = LoadPaletteFolderAsync(),
-            LoadFilesRequested = () => _ = LoadPaletteFilesAsync(),
-        };
-        Shell.PaletteStrip.Populate(PaletteStripHost, session, _colorState);
+        // Colors (C.3): the Palette Strip, the Color Mixer and the Project Color Bar share one state (target, slider model, Project Color Bar visibility).
+        _colorState = new Shell.ColorUiState(_colorState);
+        Shell.PaletteStrip.Populate(PaletteStripHost, session);
         ProjectColorBarHost.Children.Clear();
         ColorMixerHost.Children.Clear();
         _refreshables.Clear();
@@ -202,8 +198,6 @@ public partial class MainWindow : Window
         Add("file.save", "_Save", () => _ = SaveAsync(), glyph: "\uE74E");
         Add("file.saveAs", "Save _As...", () => _ = SaveAsAsync());
         Add("file.export", "_Export...", () => _ = ExportAsync());
-        Add("file.loadPalettes", "Load Color _Palettes...", () => _ = LoadPaletteFolderAsync());   // no shortcut
-        Add("file.loadPaletteFile", "Load Color Palette _File...", () => _ = LoadPaletteFilesAsync());
         Add("file.exit", "E_xit", Close);
 
         Add("edit.undo", "_Undo", () => _session.Undo(), "\uE7A7", () => _session.History.CanUndo);
@@ -348,24 +342,7 @@ public partial class MainWindow : Window
         _session.ChangeOrder(absolute ? (up ? StackMove.ToFront : StackMove.ToBack) : (up ? StackMove.Forward : StackMove.Backward));
     }
 
-    private void ShowAbout()
-    {
-        var w = new Window
-        {
-            Title = "About",
-            SizeToContent = SizeToContent.Height,
-            WindowStartupLocation = WindowStartupLocation.CenterOwner,
-            Content = DialogScale.Scrollable(new TextBlock
-            {
-                Margin = UiScale.Space(16),
-                TextWrapping = Avalonia.Media.TextWrapping.Wrap,
-                Text = "DeSign Mage: a vector graphic design program.\n" +
-                       ".NET 10 · Avalonia · SkiaSharp",
-            }),
-        };
-        DialogScale.Attach(w, 380);
-        w.ShowDialog(this);
-    }
+    private void ShowAbout() => new Updates.AboutDialog().ShowDialog(this);
 
     // ---- Object context menu (left double-click, R1; "Part/Group Editing Tools" popups) ----
 

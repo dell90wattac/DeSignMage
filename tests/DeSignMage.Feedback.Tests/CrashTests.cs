@@ -144,7 +144,7 @@ public class CrashTests
         var sender = new ScriptedSender(new SendResult(SendStatus.Sent));
 
         // a new run of the program
-        using var service = new FeedbackService(dir.Paths, sender);
+        using var service = new FeedbackService(dir.Paths, sender) { AlwaysSendCrashes = true };
         var notice = await service.RecoverFromCrashAsync();
 
         Assert.NotNull(notice);
@@ -162,7 +162,7 @@ public class CrashTests
         using var dir = new TempDir();
         Reporter(dir).Report(Thrown(), "AppDomain", fatal: true);
         var sender = new ScriptedSender(new SendResult(SendStatus.Offline, "no network"), new SendResult(SendStatus.Sent));
-        using var service = new FeedbackService(dir.Paths, sender);
+        using var service = new FeedbackService(dir.Paths, sender) { AlwaysSendCrashes = true };
 
         var notice = await service.RecoverFromCrashAsync();
 
@@ -177,11 +177,11 @@ public class CrashTests
     }
 
     [Fact]
-    public async Task Without_a_webhook_the_crash_report_is_saved_and_the_notice_says_sending_is_not_set_up()
+    public async Task Without_a_sender_the_crash_report_is_saved_and_the_notice_says_sending_is_not_set_up()
     {
         using var dir = new TempDir();
         Reporter(dir).Report(Thrown(), "AppDomain", fatal: true);
-        using var service = new FeedbackService(dir.Paths, sender: null);
+        using var service = new FeedbackService(dir.Paths, sender: null) { AlwaysSendCrashes = true };
 
         var notice = await service.RecoverFromCrashAsync();
 
@@ -195,8 +195,32 @@ public class CrashTests
     public async Task No_crash_folder_means_no_notice()
     {
         using var dir = new TempDir();
-        using var service = new FeedbackService(dir.Paths, new ScriptedSender(new SendResult(SendStatus.Sent)));
+        using var service = new FeedbackService(dir.Paths, new ScriptedSender(new SendResult(SendStatus.Sent))) { AlwaysSendCrashes = true };
         Assert.Null(await service.RecoverFromCrashAsync());
+    }
+
+    [Fact]
+    public async Task A_crash_report_carries_the_design_only_when_designs_were_allowed()
+    {
+        // Not allowed (the default until the person ticks "include my design" once): the design stays on her computer.
+        using (var dir = new TempDir())
+        {
+            Reporter(dir).Report(Thrown(), "AppDomain", fatal: true);
+            using var service = new FeedbackService(dir.Paths, sender: null) { AlwaysSendCrashes = true };
+            Assert.False(service.IncludeDesign);
+            await service.RecoverFromCrashAsync();
+            var item = service.Outbox.List().Single();
+            Assert.DoesNotContain(item.Report.Files, f => f.FileName.EndsWith(".dsm"));
+            Assert.Contains(item.Report.Notes, n => n.Contains("Design not attached"));
+        }
+        // Allowed: attached as before.
+        using (var dir = new TempDir())
+        {
+            Reporter(dir).Report(Thrown(), "AppDomain", fatal: true);
+            using var service = new FeedbackService(dir.Paths, sender: null) { IncludeDesign = true, AlwaysSendCrashes = true };
+            await service.RecoverFromCrashAsync();
+            Assert.Contains(service.Outbox.List().Single().Report.Files, f => f.FileName.EndsWith(".dsm"));
+        }
     }
 
     [Fact]

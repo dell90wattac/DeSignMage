@@ -16,7 +16,7 @@ using Xunit;
 
 namespace DeSignMage.App.Tests;
 
-/// <summary>No test ever reaches the real webhook: until Program.Main runs, the feedback service is inert (temp folder, no sender).</summary>
+/// <summary>No test ever reaches the real relay: until Program.Main runs, the feedback service is inert (temp folder, no sender).</summary>
 internal static class FeedbackTestSetup
 {
     [ModuleInitializer]
@@ -123,12 +123,12 @@ public class FeedbackShellTests
         Assert.True(d.BugRadio.IsChecked);
         Assert.False(d.FeatureRadio.IsChecked);
         Assert.Equal("Mum", d.NameBox.Text);                     // remembered
-        Assert.True(d.DesignCheck.IsChecked);                    // default on
-        Assert.True(d.ScreenshotCheck.IsChecked);
+        Assert.False(d.DesignCheck.IsChecked);                   // attachments are opt-in: off until ticked once
+        Assert.False(d.ScreenshotCheck.IsChecked);
         Assert.True(d.DesignCheck.IsVisible && d.ScreenshotCheck.IsVisible);
         Assert.False(d.SendButton.IsEnabled);                    // nothing typed yet
         Assert.True(d.CancelButton.IsEnabled);
-        Assert.True(d.SetupNote.IsVisible);                      // no webhook in this test: "Sending isn't set up yet"
+        Assert.True(d.SetupNote.IsVisible);                      // no sender in this test: "Sending isn't set up yet"
         Assert.Contains("Sending isn't set up yet", d.SetupNote.Text);
 
         d.DescriptionBox.Text = "It crashes when I rotate";
@@ -161,6 +161,8 @@ public class FeedbackShellTests
         Assert.False(d.SetupNote.IsVisible);
         d.DescriptionBox.Text = "Rulers look wrong after zoom";
         d.NameBox.Text = "Mum";
+        d.DesignCheck.IsChecked = true;                           // opt in to both attachments
+        d.ScreenshotCheck.IsChecked = true;
         await d.SendAsync();
 
         Assert.Equal("Thanks, sent.", d.StatusText.Text);
@@ -204,52 +206,64 @@ public class FeedbackShellTests
     }
 
     [AvaloniaFact]
-    public void Design_and_screenshot_boxes_are_always_on_for_a_new_bug_report_and_never_remembered()
+    public void Design_and_screenshot_boxes_start_off_for_a_new_person()
     {
         var (w, service, _) = Open();
-        // A settings file that holds stray values (or none) for these must not matter: nothing is read back or written for them.
-        service.Settings.Set("feedback.includeDesign", false);
-        service.Settings.Set("feedback.includeScreenshot", false);
-        service.Settings.Set("includeDesign", false);
+        Assert.False(service.IncludeDesign);
+        Assert.False(service.IncludeScreenshot);
 
-        for (int round = 0; round < 2; round++)
-        {
-            Click(Find<Button>(w, "FeedbackButton"));
-            Dispatcher.UIThread.RunJobs();
-            var d = w.LastFeedbackDialog!;
-            Assert.True(d.DesignCheck.IsChecked);
-            Assert.True(d.ScreenshotCheck.IsChecked);
-            d.DesignCheck.IsChecked = false;        // she unticks them this time ...
-            d.ScreenshotCheck.IsChecked = false;
-            d.Close();                              // ... and the next report starts with both on again
-            Dispatcher.UIThread.RunJobs();
-        }
+        Click(Find<Button>(w, "FeedbackButton"));
+        Dispatcher.UIThread.RunJobs();
+        var d = w.LastFeedbackDialog!;
+        Assert.False(d.DesignCheck.IsChecked);
+        Assert.False(d.ScreenshotCheck.IsChecked);
+        d.DesignCheck.IsChecked = true;               // ticking without sending changes nothing for next time
+        d.Close();
+        Dispatcher.UIThread.RunJobs();
+        Assert.False(service.IncludeDesign);
         w.Close();
     }
 
     [AvaloniaFact]
-    public async Task Sending_does_not_change_the_default_of_the_next_bug_report()
+    public async Task What_was_ticked_when_sending_is_remembered_for_the_next_bug_report()
     {
         var (w, service, _) = Open(new RecordingSender());
         Click(Find<Button>(w, "FeedbackButton"));
         Dispatcher.UIThread.RunJobs();
         var first = w.LastFeedbackDialog!;
         first.DescriptionBox.Text = "one";
-        first.DesignCheck.IsChecked = false;
-        first.ScreenshotCheck.IsChecked = false;
+        first.DesignCheck.IsChecked = true;           // design yes, screenshot no
         await first.SendAsync();
         first.Close();
         Dispatcher.UIThread.RunJobs();
-        Assert.DoesNotContain("includeDesign", File.Exists(service.Paths.SettingsFile) ? File.ReadAllText(service.Paths.SettingsFile) : "");
+        Assert.True(service.IncludeDesign);
+        Assert.False(service.IncludeScreenshot);
+        Assert.Contains(FeedbackSettings.IncludeDesign, File.ReadAllText(service.Paths.SettingsFile));
 
         Click(Find<Button>(w, "FeedbackButton"));
         Dispatcher.UIThread.RunJobs();
         Assert.True(w.LastFeedbackDialog!.DesignCheck.IsChecked);
-        Assert.True(w.LastFeedbackDialog.ScreenshotCheck.IsChecked);
+        Assert.False(w.LastFeedbackDialog.ScreenshotCheck.IsChecked);
         w.LastFeedbackDialog.Close();
         w.Close();
     }
 
+    [AvaloniaFact]
+    public async Task A_feature_request_does_not_change_the_remembered_attachment_choices()
+    {
+        var (w, service, _) = Open(new RecordingSender());
+        service.IncludeDesign = true;
+        Click(Find<Button>(w, "FeedbackButton"));
+        Dispatcher.UIThread.RunJobs();
+        var d = w.LastFeedbackDialog!;
+        d.DesignCheck.IsChecked = false;
+        d.FeatureRadio.IsChecked = true;
+        d.DescriptionBox.Text = "an idea";
+        await d.SendAsync();
+        Assert.True(service.IncludeDesign);
+        d.Close();
+        w.Close();
+    }
     [AvaloniaFact]
     public async Task Unticking_the_boxes_leaves_the_design_and_screenshot_out_and_says_so()
     {
@@ -312,13 +326,13 @@ public class FeedbackShellTests
     }
 
     [AvaloniaFact]
-    public async Task Without_a_webhook_the_report_is_saved_and_the_dialog_says_sending_is_not_set_up()
+    public async Task Without_a_sender_the_report_is_saved_and_the_dialog_says_sending_is_not_set_up()
     {
         var (w, service, _) = Open(sender: null);
         Click(Find<Button>(w, "FeedbackButton"));
         Dispatcher.UIThread.RunJobs();
         var d = w.LastFeedbackDialog!;
-        d.DescriptionBox.Text = "no webhook";
+        d.DescriptionBox.Text = "no sender";
 
         await d.SendAsync();
 
@@ -328,6 +342,101 @@ public class FeedbackShellTests
         w.Close();
     }
 
+    private static void LeaveACrash(FeedbackService service)
+    {
+        Exception ex;
+        try { throw new InvalidOperationException("boom"); }
+        catch (Exception caught) { ex = caught; }
+        new CrashReporter(service.Paths) { Documents = () => [new CrashDocument("Sign.dsm", path => File.WriteAllBytes(path, new byte[300]))] }
+            .Report(ex, "AppDomain", fatal: true);
+    }
+
+    [AvaloniaFact]
+    public async Task A_crash_from_last_time_is_sent_only_after_Send_is_pressed()
+    {
+        var sender = new RecordingSender();
+        var (w, service, _) = Open(sender);
+        LeaveACrash(service);
+
+        var asking = w.AskAboutCrashesAsync(service.FindCrashesToAsk()!);
+        Dispatcher.UIThread.RunJobs();
+        var d = w.LastCrashPrompt!;
+        Assert.Contains("closed unexpectedly last time", d.MessageText.Text);
+        Assert.Contains("Nothing is sent unless you press Send", d.DetailText.Text);
+        Assert.Contains("does not include your design", d.DetailText.Text);
+        Assert.Contains("A copy of your design was saved to", d.DetailText.Text);
+        Assert.False(d.AlwaysCheck.IsChecked);
+        Assert.Empty(sender.Sent);                       // the prompt is showing and nothing has gone out
+
+        Click(d.SendButton);
+        await asking;
+        Dispatcher.UIThread.RunJobs();
+
+        Assert.Single(sender.Sent);
+        Assert.Equal(ReportKind.Crash, sender.Sent[0].Report.Kind);
+        Assert.False(service.AlwaysSendCrashes);
+        Assert.StartsWith("A crash report from last time was sent.", w.NoticeMessage);
+        w.Close();
+    }
+
+    [AvaloniaFact]
+    public async Task Dont_send_sends_nothing_and_the_notice_says_so()
+    {
+        var sender = new RecordingSender();
+        var (w, service, _) = Open(sender);
+        LeaveACrash(service);
+
+        var asking = w.AskAboutCrashesAsync(service.FindCrashesToAsk()!);
+        Dispatcher.UIThread.RunJobs();
+        w.LastCrashPrompt!.AlwaysCheck.IsChecked = true;   // only counts together with Send
+        Click(w.LastCrashPrompt.DontSendButton);
+        await asking;
+        Dispatcher.UIThread.RunJobs();
+
+        Assert.Empty(sender.Sent);
+        Assert.False(service.AlwaysSendCrashes);
+        Assert.StartsWith("A crash report from last time was not sent (as you chose).", w.NoticeMessage);
+        Assert.Null(service.FindCrashesToAsk());          // not asked again
+        w.Close();
+    }
+
+    [AvaloniaFact]
+    public async Task Always_send_ticked_with_Send_is_remembered()
+    {
+        var sender = new RecordingSender();
+        var (w, service, _) = Open(sender);
+        LeaveACrash(service);
+
+        var asking = w.AskAboutCrashesAsync(service.FindCrashesToAsk()!);
+        Dispatcher.UIThread.RunJobs();
+        w.LastCrashPrompt!.AlwaysCheck.IsChecked = true;
+        Click(w.LastCrashPrompt.SendButton);
+        await asking;
+
+        Assert.True(service.AlwaysSendCrashes);
+        Assert.Single(sender.Sent);
+        Assert.Contains("\"feedback.alwaysSendCrashes\": true", File.ReadAllText(service.Paths.SettingsFile));
+        w.Close();
+    }
+
+    [AvaloniaFact]
+    public async Task Closing_the_prompt_sends_nothing_and_keeps_the_question_for_next_time()
+    {
+        var sender = new RecordingSender();
+        var (w, service, _) = Open(sender);
+        LeaveACrash(service);
+
+        var asking = w.AskAboutCrashesAsync(service.FindCrashesToAsk()!);
+        Dispatcher.UIThread.RunJobs();
+        w.LastCrashPrompt!.Close();
+        await asking;
+        Dispatcher.UIThread.RunJobs();
+
+        Assert.Empty(sender.Sent);
+        Assert.NotNull(service.FindCrashesToAsk());
+        Assert.Null(w.NoticeMessage);
+        w.Close();
+    }
     [AvaloniaFact]
     public void Crash_notice_is_one_line_with_the_recovered_folder()
     {

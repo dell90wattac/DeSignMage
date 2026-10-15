@@ -13,8 +13,8 @@ internal sealed record FeedbackInput(ReportKind Kind, string Description, string
 
 /// <summary>
 /// "Feedback / Bug": type (bug or feature/feedback), a description, an optional remembered name, and for bugs the two attachment
-/// choices (both on by default). Send builds the report through <paramref name="send"/> and shows "Thanks, sent" or
-/// "Saved, will send when online".
+/// choices (off until ticked; the program remembers what was chosen last). Send builds the report through <paramref name="send"/>
+/// and shows "Thanks, sent" or "Saved, will send when online".
 /// </summary>
 internal sealed class FeedbackDialog : Window
 {
@@ -31,8 +31,8 @@ internal sealed class FeedbackDialog : Window
         PlaceholderText = "What happened? What did you expect?",
     }.ScaledMinHeight(140).ScaledMaxHeight(220);
     public TextBox NameBox { get; } = new TextBox { PlaceholderText = "Your name (optional)" }.ScaledWidth(240);
-    public CheckBox DesignCheck { get; } = new() { Content = "Include my current design", IsChecked = true };
-    public CheckBox ScreenshotCheck { get; } = new() { Content = "Include a screenshot of the DeSign window", IsChecked = true };
+    public CheckBox DesignCheck { get; } = new() { Content = "Include my current design" };
+    public CheckBox ScreenshotCheck { get; } = new() { Content = "Include a screenshot of the DeSign window" };
     public Button SendButton { get; } = new Button { Content = "Send", HorizontalContentAlignment = HorizontalAlignment.Center, IsEnabled = false }.ScaledMinWidth(90);
     public Button CancelButton { get; } = new Button { Content = "Cancel", IsCancel = true, HorizontalContentAlignment = HorizontalAlignment.Center }.ScaledMinWidth(90);
     public TextBlock StatusText { get; } = new() { TextWrapping = TextWrapping.Wrap, FontWeight = FontWeight.SemiBold };
@@ -41,9 +41,13 @@ internal sealed class FeedbackDialog : Window
     /// <summary>What happened to the report once Send finished (null before).</summary>
     public SubmitResult? Result { get; private set; }
 
-    public FeedbackDialog(bool canSend, string? savedName, Func<FeedbackInput, Task<SubmitResult>> send)
+    /// <param name="includeDesign">Start with "Include my current design" ticked (what the person chose last time; off the first time).</param>
+    /// <param name="includeScreenshot">Same for the screenshot.</param>
+    public FeedbackDialog(bool canSend, string? savedName, Func<FeedbackInput, Task<SubmitResult>> send, bool includeDesign = false, bool includeScreenshot = false)
     {
         _send = send;
+        DesignCheck.IsChecked = includeDesign;
+        ScreenshotCheck.IsChecked = includeScreenshot;
         Title = "Send Feedback";
         DialogScale.Attach(this, 520);
         SizeToContent = SizeToContent.Height;
@@ -67,7 +71,9 @@ internal sealed class FeedbackDialog : Window
         var bugNote = new TextBlock
         {
             Foreground = Shell.AppTheme.Brush("Ui.Muted"), TextWrapping = TextWrapping.Wrap,
-            Text = "A bug report also sends a log of recent actions (never the text in your design), your undo history, and basic facts about this computer.",
+            Text = "A bug report also sends a log of recent actions (never the text in your design), your undo history, and basic facts about this computer. " +
+                   "The design and the screenshot are optional: the design is your whole current design, the screenshot shows only this window. " +
+                   "They go to the developer and nobody else, and your choice is remembered for next time.",
         };
         _bugOptions.Children.Add(DesignCheck);
         _bugOptions.Children.Add(ScreenshotCheck);

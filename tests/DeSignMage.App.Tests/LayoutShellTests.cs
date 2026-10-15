@@ -10,6 +10,7 @@ using DeSignMage.Core.Commands;
 using DeSignMage.Core.Editing;
 using DeSignMage.Core.Geometry;
 using DeSignMage.Core.Model;
+using DeSignMage.Feedback;
 using Xunit;
 
 namespace DeSignMage.App.Tests;
@@ -17,12 +18,13 @@ namespace DeSignMage.App.Tests;
 /// <summary>Layout ▸ Guides ▸, Layout Properties... and Size to Fit in the real window.</summary>
 public class LayoutShellTests : IDisposable
 {
-    // The "new layouts" size is a program setting shared by every test in the process: put it back.
-    public void Dispose()
-    {
-        AppSettings.Store.Set(MainWindow.DefaultWidthSetting, 24.0);
-        AppSettings.Store.Set(MainWindow.DefaultHeightSetting, 12.0);
-    }
+    // The "new layouts" size is a program setting shared by every test in the process: each test gets its own empty in-memory store
+    // (so the result never depends on which test ran before), and the previous store is put back afterwards.
+    private readonly SettingsStore _oldStore = AppSettings.Store;
+
+    public LayoutShellTests() => AppSettings.Store = new SettingsStore(null);
+
+    public void Dispose() => AppSettings.Store = _oldStore;
 
     private static MainWindow Open()
     {

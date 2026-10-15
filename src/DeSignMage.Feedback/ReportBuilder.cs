@@ -1,4 +1,4 @@
-﻿using System.Globalization;
+using System.Globalization;
 using System.Text;
 
 namespace DeSignMage.Feedback;
@@ -105,7 +105,7 @@ public static class ReportBuilder
 
         string firstWords = TextUtil.FirstWords(r.Kind == ReportKind.Crash ? (r.CrashSummary ?? description) : description, 90);
         string title = TextUtil.Truncate($"{LabelOf(r.Kind)}: {(firstWords.Length > 0 ? firstWords : "(no description)")}", TitleLimit);
-        string footer = $"Report {id} · {created:yyyy-MM-dd HH:mm} UTC";
+        string footer = string.Create(CultureInfo.InvariantCulture, $"Report {id} · {created:yyyy-MM-dd HH:mm} UTC");
 
         string embedSource = r.Kind == ReportKind.Crash ? CrashEmbedText(r, description) : description;
         if (embedSource.Length == 0) embedSource = "(no description)";

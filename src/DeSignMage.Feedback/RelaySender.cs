@@ -6,19 +6,20 @@ using System.Text.Json;
 namespace DeSignMage.Feedback;
 
 /// <summary>
-/// Posts a report to a Discord webhook as <c>multipart/form-data</c> (<c>payload_json</c> + <c>files[n]</c>). Handles 429 rate limits
-/// (waits <c>retry_after</c> when it is short), timeouts and being offline; never writes the address anywhere.
+/// Posts a report to the feedback relay as <c>multipart/form-data</c> (<c>payload_json</c> in the shape of a chat message, plus
+/// <c>files[n]</c>). The relay checks it and passes it on, so nothing here ever holds a channel address. Handles rate limits (waits
+/// <c>retry_after</c> when it is short), timeouts and being offline.
 /// </summary>
-public sealed class DiscordSender : IReportSender
+public sealed class RelaySender : IReportSender
 {
     public const string BotName = "DeSign Mage feedback";
 
-    private readonly WebhookConfig _config;
+    private readonly RelayConfig _config;
     private readonly HttpClient _http;
     private readonly Func<TimeSpan, CancellationToken, Task> _delay;
 
     /// <param name="delay">How to wait out a rate limit (tests pass an instant one).</param>
-    public DiscordSender(WebhookConfig config, HttpClient http, Func<TimeSpan, CancellationToken, Task>? delay = null)
+    public RelaySender(RelayConfig config, HttpClient http, Func<TimeSpan, CancellationToken, Task>? delay = null)
     {
         _config = config;
         _http = http;
@@ -50,7 +51,9 @@ public sealed class DiscordSender : IReportSender
             try
             {
                 using var content = BuildContent(item, withFiles);
-                response = await _http.PostAsync(_config.Url, content, ct).ConfigureAwait(false);
+                using var request = new HttpRequestMessage(HttpMethod.Post, _config.Url) { Content = content };
+                request.Headers.Add(RelayConfig.ClientHeader, RelayConfig.ClientValue);
+                response = await _http.SendAsync(request, ct).ConfigureAwait(false);
             }
             catch (OperationCanceledException)
             {
@@ -58,7 +61,6 @@ public sealed class DiscordSender : IReportSender
             }
             catch (Exception ex) when (ex is HttpRequestException or IOException or InvalidOperationException)
             {
-                // The message names the host at most, but scrub anyway: the address is a secret.
                 return new SendResult(SendStatus.Offline, Redactor.Scrub(ex.Message));
             }
 
@@ -77,10 +79,10 @@ public sealed class DiscordSender : IReportSender
                     continue;
                 }
 
-                // Too big or malformed with attachments: say what we can, without them, rather than lose the report.
-                if (withFiles && item.Report.Files.Count > 0 && response.StatusCode is HttpStatusCode.BadRequest or HttpStatusCode.RequestEntityTooLarge)
+                // Too big with attachments: say what we can, without them, rather than lose the report.
+                if (withFiles && item.Report.Files.Count > 0 && response.StatusCode is HttpStatusCode.RequestEntityTooLarge)
                 {
-                    AppLog.Warn("discord", $"HTTP {code} with attachments; retrying without them");
+                    AppLog.Warn("relay", $"HTTP {code} with attachments; retrying without them");
                     withFiles = false;
                     continue;
                 }
@@ -98,18 +100,30 @@ public sealed class DiscordSender : IReportSender
         var report = item.Report;
         var files = withFiles ? report.Files : [];
         var multipart = new MultipartFormDataContent("dsm-" + Guid.NewGuid().ToString("N"));
-        multipart.Add(new StringContent(BuildPayloadJson(report, files, _config.ForumThreads, withFiles), Encoding.UTF8, "application/json"), "payload_json");
+        AddPart(multipart, new StringContent(BuildPayloadJson(report, files, withFiles), Encoding.UTF8, "application/json"), "payload_json", null);
         for (int i = 0; i < files.Count; i++)
         {
             var bytes = new ByteArrayContent(item.ReadFile(files[i].FileName));
             bytes.Headers.ContentType = MediaTypeHeaderValue.TryParse(files[i].ContentType, out var type) ? type : new MediaTypeHeaderValue("application/octet-stream");
-            multipart.Add(bytes, $"files[{i}]", files[i].FileName);
+            AddPart(multipart, bytes, $"files[{i}]", files[i].FileName);
         }
         return multipart;
     }
 
-    /// <summary>The <c>payload_json</c> part. Public for tests: it is where the embed limits and the thread name show.</summary>
-    public static string BuildPayloadJson(OutgoingReport report, IReadOnlyList<OutgoingFile> files, bool forumThreads, bool filesIncluded = true)
+    /// <summary>
+    /// Adds a part with its name (and file name) in quotes: <c>name="files[0]"; filename="report.txt"</c>. The framework leaves them bare
+    /// when it can, which the relay's host cannot read, and it adds a second <c>filename*</c> form that is not needed (names are plain ASCII).
+    /// </summary>
+    private static void AddPart(MultipartFormDataContent multipart, HttpContent content, string name, string? fileName)
+    {
+        var disposition = new ContentDispositionHeaderValue("form-data") { Name = $"\"{name}\"" };
+        if (fileName is not null) disposition.FileName = $"\"{fileName}\"";
+        content.Headers.ContentDisposition = disposition;
+        multipart.Add(content);
+    }
+
+    /// <summary>The <c>payload_json</c> part. Public for tests: it is where the embed limits show.</summary>
+    public static string BuildPayloadJson(OutgoingReport report, IReadOnlyList<OutgoingFile> files, bool filesIncluded = true)
     {
         using var ms = new MemoryStream();
         using (var w = new Utf8JsonWriter(ms))
@@ -120,13 +134,12 @@ public sealed class DiscordSender : IReportSender
             w.WriteStartArray("parse");
             w.WriteEndArray();
             w.WriteEndObject();
-            if (forumThreads) w.WriteString("thread_name", TextUtil.Truncate(report.Title, 100));
 
             w.WriteStartArray("embeds");
             w.WriteStartObject();
             w.WriteString("title", TextUtil.Truncate(report.Title, ReportBuilder.TitleLimit));
             var description = report.Description;
-            if (!filesIncluded && report.Files.Count > 0) description += "\n\n(Attachments were left out: Discord refused the upload.)";
+            if (!filesIncluded && report.Files.Count > 0) description += "\n\n(Attachments were left out: the feedback service refused the upload.)";
             w.WriteString("description", TextUtil.Truncate(description, 4096));
             w.WriteNumber("color", report.Color);
             if (report.Fields.Count > 0)

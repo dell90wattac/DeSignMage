@@ -1,0 +1,194 @@
+name: Release
+
+# Runs when a version tag (v0.3.7, v1.0.0, ...) is pushed. Release binaries are built here, on a GitHub-hosted runner, from the tagged commit:
+#   build + test  ->  publish the portable win-x64 folder  ->  (optional) code signing by SignPath  ->  zip  ->  GitHub Release.
+# Signing runs only when the SignPath settings below exist; without them the release is created unsigned, so this works before signing is set up.
+#   Secret:     SIGNPATH_API_TOKEN
+#   Variables:  SIGNPATH_ORGANIZATION_ID, SIGNPATH_PROJECT_SLUG, SIGNPATH_SIGNING_POLICY_SLUG
+#   Optional variable: SIGNPATH_ARTIFACT_CONFIGURATION_SLUG (default: the project's default configuration, see .signpath/)
+# Every signing request has to be approved by hand in SignPath; the job waits for it (see RELEASING.md).
+
+on:
+  push:
+    tags: ['v*']
+
+permissions:
+  contents: write   # create the GitHub Release
+
+jobs:
+  release:
+    runs-on: windows-latest
+    timeout-minutes: 150
+    env:
+      TAG: ${{ github.ref_name }}
+    steps:
+      - name: Check out
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0   # full history, to check that the tag is on main
+
+      - name: Check the tag
+        shell: pwsh
+        run: |
+          # Releases are made from commits on main only.
+          git fetch origin main
+          git merge-base --is-ancestor HEAD origin/main
+          if ($LASTEXITCODE -ne 0) { throw "Tag $env:TAG is not on main." }
+          if ($env:TAG -notmatch '^v\d+\.\d+\.\d+([-+][0-9A-Za-z.-]+)?$') { throw "Tag $env:TAG is not a version like v1.2.3." }
+
+      - name: Set up .NET 10
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 10.0.x
+
+      - name: Check that the tag matches the program version
+        shell: pwsh
+        run: |
+          $version = (dotnet msbuild src/DeSignMage.App/DeSignMage.App.csproj -getProperty:Version).Trim()
+          if ("v$version" -ne $env:TAG) { throw "Tag $env:TAG does not match Version $version in Directory.Build.props." }
+          "VERSION=$version" | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8
+
+      - name: Build (warnings are errors)
+        run: |
+          dotnet restore DeSignMage.slnx
+          dotnet build DeSignMage.slnx -c Release --no-restore -warnaserror
+
+      # Every test project except the speed tests (wall-clock budgets a shared runner cannot promise; CI reports them).
+      - name: Test
+        shell: pwsh
+        run: |
+          $failed = @()
+          foreach ($project in Get-ChildItem tests -Recurse -Filter *.csproj | Where-Object { $_.BaseName -ne 'DeSignMage.Perf.Tests' }) {
+            dotnet test $project.FullName -c Release --no-build
+            if ($LASTEXITCODE -ne 0) { $failed += $project.BaseName }
+          }
+          if ($failed) { throw "Failed test projects: $($failed -join ', ')" }
+
+      - name: Publish the portable build
+        shell: pwsh
+        run: ./publish-portable.ps1 -Output "$env:RUNNER_TEMP\publish\DeSignMage"
+
+      - name: Check that the build contains no secrets
+        shell: pwsh
+        run: ./tools/check-no-secrets.ps1 -Folder "$env:RUNNER_TEMP\publish\DeSignMage"
+
+      - name: Check that third-party files are identical to their packages
+        shell: pwsh
+        run: ./tools/check-third-party-unchanged.ps1 -Folder "$env:RUNNER_TEMP\publish\DeSignMage"
+
+      # The default upload is a ZIP of the folder; the SignPath artifact configuration (.signpath/artifact-configuration.xml) expects that.
+      - name: Upload the unsigned build
+        id: upload-unsigned
+        uses: actions/upload-artifact@v4
+        with:
+          name: DeSignMage-unsigned
+          path: ${{ runner.temp }}\publish\DeSignMage
+          if-no-files-found: error
+          retention-days: 30
+
+      - name: Is code signing set up?
+        id: signing
+        shell: pwsh
+        env:
+          SIGNPATH_API_TOKEN: ${{ secrets.SIGNPATH_API_TOKEN }}
+          SIGNPATH_ORGANIZATION_ID: ${{ vars.SIGNPATH_ORGANIZATION_ID }}
+          SIGNPATH_PROJECT_SLUG: ${{ vars.SIGNPATH_PROJECT_SLUG }}
+          SIGNPATH_SIGNING_POLICY_SLUG: ${{ vars.SIGNPATH_SIGNING_POLICY_SLUG }}
+        run: |
+          $ready = $env:SIGNPATH_API_TOKEN -and $env:SIGNPATH_ORGANIZATION_ID -and $env:SIGNPATH_PROJECT_SLUG -and $env:SIGNPATH_SIGNING_POLICY_SLUG
+          "enabled=$(if ($ready) { 'true' } else { 'false' })" | Out-File -FilePath $env:GITHUB_OUTPUT -Append -Encoding utf8
+          if (-not $ready) { Write-Host "::notice::SignPath is not configured; this release will not be code signed." }
+
+      - name: Sign with SignPath (waits for the manual approval)
+        if: steps.signing.outputs.enabled == 'true'
+        uses: signpath/github-action-submit-signing-request@v3
+        with:
+          api-token: ${{ secrets.SIGNPATH_API_TOKEN }}
+          organization-id: ${{ vars.SIGNPATH_ORGANIZATION_ID }}
+          project-slug: ${{ vars.SIGNPATH_PROJECT_SLUG }}
+          signing-policy-slug: ${{ vars.SIGNPATH_SIGNING_POLICY_SLUG }}
+          artifact-configuration-slug: ${{ vars.SIGNPATH_ARTIFACT_CONFIGURATION_SLUG }}
+          github-artifact-id: ${{ steps.upload-unsigned.outputs.artifact-id }}
+          wait-for-completion: true
+          wait-for-completion-timeout-in-seconds: 7200
+          output-artifact-directory: ${{ runner.temp }}\signed
+
+      - name: Check the signed files
+        if: steps.signing.outputs.enabled == 'true'
+        shell: pwsh
+        run: |
+          $unsigned = "$env:RUNNER_TEMP\publish\DeSignMage"
+          $signed = "$env:RUNNER_TEMP\signed"
+          # Same files, ours signed by SignPath, nothing else touched.
+          $a = Get-ChildItem $unsigned -Recurse -File | ForEach-Object { $_.FullName.Substring($unsigned.Length) } | Sort-Object
+          $b = Get-ChildItem $signed -Recurse -File | ForEach-Object { $_.FullName.Substring($signed.Length) } | Sort-Object
+          $diff = Compare-Object $a $b
+          if ($diff) { $diff | Out-String | Write-Host; throw "The signed build does not contain the same files as the unsigned build." }
+          $bad = 0
+          foreach ($file in Get-ChildItem $signed -Recurse -File -Include *.exe, *.dll) {
+            $ours = $file.Name -eq 'DeSignMage.exe' -or $file.Name -like 'DeSignMage*.dll'
+            $sig = Get-AuthenticodeSignature $file.FullName
+            if ($ours -and $sig.Status -ne 'Valid') { Write-Host "::error::$($file.Name) is not validly signed: $($sig.Status)"; $bad++ }
+            if ($ours -and $sig.SignerCertificate.Subject -notmatch 'SignPath') { Write-Host "::error::$($file.Name) is not signed by SignPath Foundation: $($sig.SignerCertificate.Subject)"; $bad++ }
+            if (-not $ours -and (Get-FileHash $file.FullName).Hash -ne (Get-FileHash ($unsigned + $file.FullName.Substring($signed.Length))).Hash) {
+              Write-Host "::error::$($file.Name) is not ours but was changed"; $bad++
+            }
+          }
+          if ($bad) { throw "$bad problem(s) in the signed build." }
+          ./tools/check-third-party-unchanged.ps1 -Folder $signed
+          if ($LASTEXITCODE -ne 0) { throw "Third-party files in the signed build differ from their packages." }
+          Write-Host "Signed build is complete: $((Get-AuthenticodeSignature "$signed\DeSignMage.exe").SignerCertificate.Subject)"
+
+      # The installer and the update packages for installed copies (Velopack, see RELEASING.md): made from the folder that was signed, or from the
+      # plain publish folder when signing is off. Packing changes no file in it (tools/pack-release.ps1 compares every file with the package).
+      # Velopack's own Setup.exe / Update.exe are not ours and are not signed. The earlier release is fetched so a small delta package can be made.
+      - name: Build the installer and the update packages
+        shell: pwsh
+        env:
+          TOKEN: ${{ github.token }}
+        run: |
+          $source = if ('${{ steps.signing.outputs.enabled }}' -eq 'true') { "$env:RUNNER_TEMP\signed" } else { "$env:RUNNER_TEMP\publish\DeSignMage" }
+          ./tools/pack-release.ps1 -PublishDir $source -OutputDir "$env:RUNNER_TEMP\velopack" -Version $env:VERSION -DownloadPrevious -Repo "https://github.com/$env:GITHUB_REPOSITORY" -Token $env:TOKEN
+          # Only this release's own files go onto its page (installed copies find earlier packages on the earlier pages).
+          $packId = (dotnet msbuild src/DeSignMage.App/DeSignMage.App.csproj -getProperty:UpdatePackId).Trim()
+          $files = Get-ChildItem "$env:RUNNER_TEMP\velopack" -File | Where-Object {
+            $_.Name -like '*Setup.exe' -or $_.Name -like "$packId-$env:VERSION-*.nupkg" -or $_.Name -in 'releases.win.json', 'RELEASES', 'assets.win.json' }
+          if (-not ($files | Where-Object Name -like '*Setup.exe') -or -not ($files | Where-Object Name -like '*-full.nupkg')) { throw 'The installer or the full package is missing.' }
+          "UPDATE_FILES=$(($files.FullName) -join '|')" | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8
+          $files | Select-Object Name, Length
+
+      - name: Zip
+        shell: pwsh
+        run: |
+          $source = if ('${{ steps.signing.outputs.enabled }}' -eq 'true') { "$env:RUNNER_TEMP\signed" } else { "$env:RUNNER_TEMP\publish\DeSignMage" }
+          $zip = "DeSignMage-$env:VERSION-win-x64.zip"
+          Compress-Archive -Path "$source\*" -DestinationPath $zip -CompressionLevel Optimal
+          (Get-FileHash $zip -Algorithm SHA256).Hash.ToLower() + "  $zip" | Out-File "$zip.sha256" -Encoding ascii
+          "ZIP=$zip" | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8
+          Get-Item $zip, "$zip.sha256" | Select-Object Name, Length
+
+      - name: Create the GitHub Release
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+          SIGNED: ${{ steps.signing.outputs.enabled }}
+        run: |
+          $repo = $env:GITHUB_REPOSITORY
+          $status = if ($env:SIGNED -eq 'true') { 'Free code signing provided by SignPath.io, certificate by SignPath Foundation.' }
+                    else { 'These program files are **not** digitally signed.' }
+          @"
+          **Installer (recommended):** download ``DeSignMageApp-win-Setup.exe`` and run it once. It installs for you only (no administrator needed), adds a Start menu and Desktop shortcut, and afterwards DeSign Mage updates itself: it looks for new versions in the background and asks you to update when you open it. The installer itself is not digitally signed, so Windows may show a warning the first time (More info, then Run anyway).
+
+          **Portable build** for 64-bit Windows: unzip the ``.zip`` anywhere and run ``DeSignMage.exe``. No installer, no .NET needed; it does not update itself.
+
+          **$status**
+
+          Built by GitHub Actions from tag ``$env:TAG``. SHA-256 checksum: see the ``.sha256`` file.
+
+          See the [code signing policy](https://github.com/$repo/blob/$env:TAG/CODE-SIGNING-POLICY.md) for who signs and approves releases, and the [privacy policy](https://github.com/$repo/blob/$env:TAG/PRIVACY.md) for what the program sends over the network.
+          "@ | Out-File notes.md -Encoding utf8
+          $extra = @()
+          if ($env:TAG -match '-') { $extra += '--prerelease' }   # v1.2.3-beta.1 is marked as a pre-release
+          $update = $env:UPDATE_FILES -split '\|'
+          gh release create $env:TAG $env:ZIP "$env:ZIP.sha256" @update --title "DeSign Mage $env:VERSION" --notes-file notes.md --generate-notes --verify-tag @extra
+          if ($LASTEXITCODE -ne 0) { throw "gh release create failed ($LASTEXITCODE)" }

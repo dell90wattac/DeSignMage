@@ -3,15 +3,16 @@ using System.Text;
 
 namespace DeSignMage.Feedback.Tests;
 
-/// <summary>A made-up address in the right shape. It is not a real webhook, and no test ever sends to the network.</summary>
+/// <summary>Made-up addresses. No test ever sends to the network: a fake handler stands in for the relay.</summary>
 internal static class Fake
 {
     public const string Id = "123456789012345678";
     public const string Token = "FAKEtokenFAKEtokenFAKEtoken_abc-123456";
+
+    /// <summary>A chat webhook address in the right shape (made up): the program must never print one if it ever meets one.</summary>
     public const string Url = $"https://discord.com/api/webhooks/{Id}/{Token}";
 
-    public static WebhookConfig Config(bool forum = false) =>
-        WebhookConfig.Parse(Url + (forum ? "\nforumThreads: true" : "")).Config!;
+    public static RelayConfig Relay { get; } = new(new Uri("https://relay.test/"));
 
     public const string BugId = "20261012-101500-abc123";
 
@@ -56,12 +57,13 @@ internal sealed class FakeHandler(params Func<HttpResponseMessage>[] answers) : 
 {
     public List<Recorded> Requests { get; } = [];
 
-    public sealed record Recorded(string Url, string ContentType, string Body, byte[] Raw);
+    public sealed record Recorded(string Url, string ContentType, string Body, byte[] Raw, string? Client = null);
 
     protected override async Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken)
     {
         var raw = request.Content is null ? [] : await request.Content.ReadAsByteArrayAsync(cancellationToken);
-        Requests.Add(new Recorded(request.RequestUri!.ToString(), request.Content?.Headers.ContentType?.ToString() ?? "", Encoding.UTF8.GetString(raw), raw));
+        Requests.Add(new Recorded(request.RequestUri!.ToString(), request.Content?.Headers.ContentType?.ToString() ?? "", Encoding.UTF8.GetString(raw), raw,
+            request.Headers.TryGetValues(RelayConfig.ClientHeader, out var client) ? string.Join(",", client) : null));
         int index = Math.Min(Requests.Count, answers.Length) - 1;
         return answers[index]();
     }

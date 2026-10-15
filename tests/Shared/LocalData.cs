@@ -3,9 +3,8 @@ using System.Text.Json;
 namespace DeSignMage.TestSupport;
 
 /// <summary>
-/// Files that are not part of the repository: sample layouts, palettes and the like live in two untracked folders next to
-/// <c>DeSignMage.slnx</c> (see the README): <c>local-testdata/</c> (inputs the tests read) and <c>local-assets/</c> (files
-/// the app copies next to the exe when they exist). Tests that need them are skipped, not failed, when they are missing.
+/// Files that are not part of the repository: sample layouts and the like live in the untracked folder <c>local-testdata/</c>
+/// next to <c>DeSignMage.slnx</c> (see the README). Tests that need them are skipped, not failed, when they are missing.
 /// This file is linked into every test project that uses it.
 /// </summary>
 internal static class LocalData
@@ -14,8 +13,6 @@ internal static class LocalData
     public static string? Root { get; } = FindRoot();
 
     public static string TestData => Path.Combine(Root ?? AppContext.BaseDirectory, "local-testdata");
-
-    public static string Assets => Path.Combine(Root ?? AppContext.BaseDirectory, "local-assets");
 
     /// <summary>The layout most tests open (<c>local-testdata/layouts/sample.lyt</c>).</summary>
     public const string SampleName = "sample.lyt";
@@ -41,18 +38,16 @@ internal static class LocalData
 
     /// <summary>
     /// Why the tests that need <paramref name="needs"/> cannot run, or null when everything is there. Each entry is a path below
-    /// <c>local-testdata/</c>, or below <c>local-assets/</c> when it starts with <c>assets:</c>.
+    /// <c>local-testdata/</c>.
     /// </summary>
     public static string? Missing(params string[] needs)
     {
         if (Root is null) return "the repository folder (DeSignMage.slnx) was not found";
         foreach (var need in needs)
         {
-            bool asset = need.StartsWith("assets:", StringComparison.Ordinal);
-            string rel = asset ? need["assets:".Length..] : need;
-            string full = Path.Combine(asset ? Assets : TestData, rel.Replace('/', Path.DirectorySeparatorChar));
+            string full = Path.Combine(TestData, need.Replace('/', Path.DirectorySeparatorChar));
             if (!File.Exists(full) && !Directory.Exists(full))
-                return $"needs {(asset ? "local-assets" : "local-testdata")}/{rel} (see the README)";
+                return $"needs local-testdata/{need} (see the README)";
         }
         return null;
     }

@@ -62,40 +62,39 @@ public class ColorShellTests
     private static Control CellFor(MainWindow w, string name) =>
         StripCells(w).First(c => c.Tag is SolidPaint { Color.Name: { } n } && n == name);
 
-    // ---- Palettes and the Palette Strip ----
+    // ---- The Palette Strip ----
 
     [AvaloniaFact]
-    public void The_designer_palette_is_active_and_fills_the_strip()
+    public void The_strip_shows_the_built_in_colors_under_the_red_X()
     {
-        Assert.SkipUnless(LocalData.Has("assets:palettes/Designer.PAL"), "needs local-assets/palettes/Designer.PAL (see the README)");
         var (w, _) = Open();
-        Assert.Equal("Designer", w.ColorState.ActivePalette.Name);
-        Assert.Equal(17, w.ColorState.Palettes.Count);
         var cells = StripCells(w);
-        Assert.True(cells.Count > 15);
-        Assert.Equal(new DocColor(0, 0, 0, 255, "Black", "Major Print Colors"), ((SolidPaint)cells[0].Tag!).Color);   // no "no color" cell: the red X above the strip does that
+        Assert.True(cells.Count >= 10);
+        Assert.Equal(new DocColor(0, 0, 0, 255, "Black"), ((SolidPaint)cells[0].Tag!).Color);   // no "no color" cell: the red X above the strip does that
+        Assert.Contains(cells, c => c.Tag is SolidPaint { Color.Name: "White" });
         Assert.DoesNotContain(cells, c => c.Tag is null);
+        Assert.Equal(PaletteStrip.BuiltInColors.Count, PaletteStrip.BuiltInColors.Select(c => c.ToHex()).Distinct().Count());   // no duplicates
+        Assert.NotNull(w.GetVisualDescendants().OfType<Button>().FirstOrDefault(b => b.Name == "PaletteStripNoColor"));
         w.Close();
     }
 
     [AvaloniaFact]
     public void Left_click_on_a_swatch_sets_the_fill_and_right_click_the_stroke_in_one_step_each()
     {
-        Assert.SkipUnless(LocalData.Has("assets:palettes/Designer.PAL"), "needs local-assets/palettes/Designer.PAL (see the README)");
         var (w, _) = Open();
         var a = Draw(w, 0, 0);
         w.Session.Selection.Set(a);
         int steps = w.Session.History.UndoList.Count;
-        var cell = CellFor(w, "Slate Grey BW98");
-        var slate = ((SolidPaint)cell.Tag!).Color;
+        var cell = CellFor(w, "Grey");
+        var grey = ((SolidPaint)cell.Tag!).Color;
 
         Click(w, cell, MouseButton.Left);
-        Assert.Equal(slate, Fill(a));
-        Assert.Equal("Major Print Colors", Fill(a)!.Value.Vendor);        // the vinyl identity travels with the color
+        Assert.Equal(grey, Fill(a));
+        Assert.Equal("Grey", Fill(a)!.Value.Name);                        // the swatch's name travels with the color
         Assert.Equal(steps + 1, w.Session.History.UndoList.Count);
 
         Click(w, cell, MouseButton.Right);
-        Assert.Equal(slate, Stroke(a));
+        Assert.Equal(grey, Stroke(a));
         Assert.Equal(2, a.Style.Stroke!.Width);                           // the stroke keeps its width
         Assert.Equal(steps + 2, w.Session.History.UndoList.Count);
 
@@ -115,35 +114,29 @@ public class ColorShellTests
         w.Close();
     }
 
+    /// <summary>Saves palette-strip-builtin.png into the folder named by DSM_SHOTS (docs only; does nothing without it).</summary>
     [AvaloniaFact]
-    public void Switching_palette_changes_the_strip_and_a_cmyk_swatch_keeps_its_model()
+    public void Screenshot_of_the_strip_with_its_built_in_colors_when_DSM_SHOTS_is_set()
     {
-        Assert.SkipUnless(LocalData.Has("assets:palettes/Designer.PAL"), "needs local-assets/palettes/Designer.PAL (see the README)");
+        string? dir = Environment.GetEnvironmentVariable("DSM_SHOTS");
+        if (string.IsNullOrEmpty(dir)) return;
         var (w, _) = Open();
-        var a = Draw(w, 0, 0);
+        var a = Draw(w, 120, 120, new ObjectStyle(new SolidPaint(PaletteStrip.BuiltInColors[5]), StrokeStyle.Solid(DocColor.Black, 3)));
         w.Session.Selection.Set(a);
-        var combo = w.ColorMixer.PaletteCombo;
-        combo.SelectedIndex = w.ColorState.Palettes.ToList().FindIndex(p => p.Name.StartsWith("Roland"));
         Flush();
-        Assert.StartsWith("Roland", w.ColorState.ActivePalette.Name);
-
-        var first = StripCells(w)[0];
-        Click(w, first);
-        var color = Fill(a)!.Value;
-        Assert.Equal(ColorModel.Cmyk, color.Model);
-        Assert.Equal("RVW-PR35D", color.Name);
-        Assert.Equal(new Cmyk(0, 30, 0, 0), color.Cmyk);
+#pragma warning disable CS0618 // the replacement overload's options type is not needed for a plain PNG
+        w.CaptureRenderedFrame()!.Save(Path.Combine(dir, "palette-strip-builtin.png"));
+#pragma warning restore CS0618
         w.Close();
     }
 
     [AvaloniaFact]
     public void Swatch_tooltip_shows_the_color_name_and_values()
     {
-        Assert.SkipUnless(LocalData.Has("assets:palettes/Designer.PAL"), "needs local-assets/palettes/Designer.PAL (see the README)");
         var (w, _) = Open();
-        var tip = ToolTip.GetTip(CellFor(w, "Slate Grey BW98")) as string;
-        Assert.Contains("Major Print Colors Slate Grey BW98", tip);
-        Assert.Contains("R 127  G 127  B 127", tip);
+        var tip = ToolTip.GetTip(CellFor(w, "Grey")) as string;
+        Assert.Contains("Grey", tip);
+        Assert.Contains("R 128  G 128  B 128", tip);
         w.Close();
     }
 
@@ -311,47 +304,32 @@ public class ColorShellTests
     }
 
     [AvaloniaFact]
-    public void Picking_a_name_in_the_search_box_applies_that_palette_color()
-    {
-        Assert.SkipUnless(LocalData.Has("assets:palettes/Designer.PAL"), "needs local-assets/palettes/Designer.PAL (see the README)");
-        var (w, _) = Open();
-        var a = Draw(w, 0, 0);
-        w.Session.Selection.Set(a);
-        Flush();
-        w.ColorMixer.NameBox.SelectedItem = "Major Print Colors Light Grey BW104";
-        Flush();
-        Assert.Equal("Light Grey BW104", Fill(a)!.Value.Name);
-        Assert.Equal(new DocColor(229, 229, 229, 255, "Light Grey BW104", "Major Print Colors"), Fill(a));
-        w.Close();
-    }
-
-    [AvaloniaFact]
-    public void Adjustment_controls_off_shows_the_palette_as_a_list()
+    public void The_Color_Mixer_shows_a_name_only_for_a_named_color_and_has_no_palette_choice()
     {
         var (w, _) = Open();
-        var a = Draw(w, 0, 0);
-        w.Session.Selection.Set(a);
+        var named = Draw(w, 0, 0, ObjectStyle.FillOnly(new DocColor(10, 20, 30, 255, "Navy", "Oracal 651")));
+        var plain = Draw(w, 100, 0, ObjectStyle.FillOnly(new DocColor(10, 20, 30)));
+        w.Session.Selection.Set(named);
         Flush();
-        Assert.False(w.ColorMixer.List.IsVisible);
-        w.ColorMixer.Adjustment.IsChecked = false;
+        Assert.True(w.ColorMixer.NameBox.IsVisible);
+        Assert.Equal("Oracal 651 Navy", w.ColorMixer.NameBox.Text);
+        w.Session.Selection.Set(plain);
         Flush();
-        Assert.True(w.ColorMixer.List.IsVisible);
-        w.ColorMixer.List.SelectedItem = w.ColorState.ActivePalette.Colors[2];
-        Flush();
-        Assert.Equal(w.ColorState.ActivePalette.Colors[2], Fill(a));
-        Assert.Null(w.ColorMixer.List.SelectedItem);
+        Assert.False(w.ColorMixer.NameBox.IsVisible);
+        Assert.Null(w.FindControl<ComboBox>("PaletteCombo"));
+        Assert.Null(w.FindControl<ListBox>("PaletteList"));
+        Assert.Null(w.FindControl<Button>("PaletteMenuButton"));
         w.Close();
     }
 
     [AvaloniaFact]
     public void With_nothing_selected_the_panel_sets_the_default_for_new_objects_without_undo()
     {
-        Assert.SkipUnless(LocalData.Has("assets:palettes/Designer.PAL"), "needs local-assets/palettes/Designer.PAL (see the README)");
         var (w, c) = Open();
         w.Session.Selection.Clear();
         Flush();
         int steps = w.Session.History.UndoList.Count;
-        Click(w, CellFor(w, "Slate Grey BW98"));
+        Click(w, CellFor(w, "Grey"));
         Assert.Equal(steps, w.Session.History.UndoList.Count);
 
         var green = w.ColorMixer.Rows[1];
@@ -359,7 +337,7 @@ public class ColorShellTests
         green.Box.Text = "99";
         w.KeyPress(Key.Enter, RawInputModifiers.None, PhysicalKey.Enter, null);
         Flush();
-        Assert.Equal(new DocColor(127, 99, 127), (w.Session.DefaultStyle.Fill as SolidPaint)!.Color);
+        Assert.Equal(new DocColor(128, 99, 128), (w.Session.DefaultStyle.Fill as SolidPaint)!.Color);
         Assert.Equal(steps, w.Session.History.UndoList.Count);
 
         w.Session.SetTool("rectangle");
@@ -368,7 +346,7 @@ public class ColorShellTests
         w.MouseMove(tl + new Point(60, 40));
         w.MouseUp(tl + new Point(120, 80), MouseButton.Left);
         var r = Assert.IsType<RectangleObject>(w.Session.Document.ActiveLayer.Children[^1]);
-        Assert.Equal(new DocColor(127, 99, 127), Fill(r));
+        Assert.Equal(new DocColor(128, 99, 128), Fill(r));
         w.Close();
     }
 
@@ -549,7 +527,6 @@ public class ColorShellTests
     [AvaloniaFact]
     public void A_swatch_click_recolors_a_whole_group_a_combined_object_and_live_text()
     {
-        Assert.SkipUnless(LocalData.Has("assets:palettes/Designer.PAL"), "needs local-assets/palettes/Designer.PAL (see the README)");
         var (w, _) = Open();
         var a = Draw(w, 0, 0); var b = Draw(w, 100, 0);
         var group = w.Session.GroupObjects([a, b])!;
@@ -560,7 +537,7 @@ public class ColorShellTests
         var combined = w.Session.CombineSelection()!;
         Flush();
 
-        var cell = CellFor(w, "Slate Grey BW98");
+        var cell = CellFor(w, "Grey");
         var slate = ((SolidPaint)cell.Tag!).Color;
         w.Session.Selection.Set([group, t, combined]);
         Flush();
@@ -581,7 +558,6 @@ public class ColorShellTests
     [AvaloniaFact]
     public void The_job_palette_lists_the_colors_in_use_and_follows_add_recolor_and_delete()
     {
-        Assert.SkipUnless(LocalData.Has("assets:palettes/Designer.PAL"), "needs local-assets/palettes/Designer.PAL (see the README)");
         var (w, _) = Open();
         Flush();
         Assert.Empty(JobColorsShown(w));
@@ -594,15 +570,15 @@ public class ColorShellTests
         Assert.Equal([gold, DocColor.White, new DocColor(1, 2, 3)], JobColorsShown(w));
 
         w.Session.Selection.Set(b);
-        Click(w, CellFor(w, "Slate Grey BW98"));                                      // recolor: (1,2,3) stops being used
+        Click(w, CellFor(w, "Grey"));                                                 // recolor: (1,2,3) stops being used
         Flush();
         Assert.DoesNotContain(new DocColor(1, 2, 3), JobColorsShown(w));
-        Assert.Contains(JobColorsShown(w), c => c.Name == "Slate Grey BW98");
+        Assert.Contains(JobColorsShown(w), c => c.Name == "Grey");
 
         w.Session.Selection.Set(a);
         w.KeyPress(Key.Delete, RawInputModifiers.None, PhysicalKey.Delete, null);
         Flush();
-        Assert.Equal(["Slate Grey BW98"], JobColorsShown(w).Select(c => c.Name!).ToArray());
+        Assert.Equal(["Grey"],JobColorsShown(w).Select(c => c.Name!).ToArray());
 
         w.KeyPress(Key.Z, RawInputModifiers.Control, PhysicalKey.Z, "z");
         Flush();
@@ -629,8 +605,7 @@ public class ColorShellTests
         Assert.Equal(navy, Stroke(target));
         Assert.Equal(steps + 2, w.Session.History.UndoList.Count);
 
-        Assert.Null(w.FindControl<ComboBox>("BarPaletteCombo"));                      // palette choice lives in the Color Mixer
-        Assert.NotNull(w.ColorMixer.PaletteCombo);
+        Assert.Null(w.FindControl<ComboBox>("BarPaletteCombo"));                      // no palette choice anywhere
         w.Close();
     }
 
