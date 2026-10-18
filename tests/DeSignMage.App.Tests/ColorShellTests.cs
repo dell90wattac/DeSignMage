@@ -493,15 +493,18 @@ public class ColorShellTests
     }
 
     [AvaloniaFact]
-    public void The_Project_Color_Bar_sets_join_and_cap()
+    public void Join_and_cap_are_set_in_the_Color_Mixer_and_the_Project_Color_Bar_has_no_buttons_for_them()
     {
         var (w, _) = Open();
         var a = Draw(w, 0, 0);
         w.Session.Selection.Set(a);
         Flush();
+        w.CaptureRenderedFrame();
 
-        Click(w, w.ProjectColorBar.JoinButtons[1]);
-        Click(w, w.ProjectColorBar.CapButtons[2]);
+        var bar = w.FindControl<BarRow>("ProjectColorBarHost")!;
+        Assert.DoesNotContain(bar.GetVisualDescendants().OfType<Button>(), b => ToolTip.GetTip(b) is string tip && (tip.Contains("corners") || tip.Contains("line ends")));
+        Click(w, w.ColorMixer.JoinButtons[1]);
+        Click(w, w.ColorMixer.CapButtons[2]);
         Assert.Equal(LineJoin.Round, a.Style.Stroke!.Join);
         Assert.Equal(LineCap.Square, a.Style.Stroke!.Cap);
         Assert.Equal(LineJoin.Round, w.Session.CurrentStyle.Stroke!.Join);

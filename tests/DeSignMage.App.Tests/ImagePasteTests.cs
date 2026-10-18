@@ -413,11 +413,11 @@ public class ImagePasteTests : IDisposable
         ScreenIs(w, tool, 450, 320);
         Assert.Empty(w.Session.Document.ActiveLayer.Children);
 
-        w.MouseDown(P(w, 480, 340), MouseButton.Left);                         // the click puts it down
+        var expected = w.Session.Viewport.ToDoc(new Vec2(480, 340));           // the document point under the click (the Context Bar may take a
+        w.MouseDown(P(w, 480, 340), MouseButton.Left);                         // second line for the placed picture afterwards; the drawing stays put)
         w.MouseUp(P(w, 480, 340), MouseButton.Left);
 
         var img = Assert.IsType<ImageObject>(Assert.Single(w.Session.Document.ActiveLayer.Children));
-        var expected = w.Session.Viewport.ToDoc(new Vec2(480, 340));
         Assert.Equal(expected.X, img.GetWorldBounds().Center.X, 3);
         Assert.Equal(expected.Y, img.GetWorldBounds().Center.Y, 3);
         Assert.Single(w.Session.History.UndoList);

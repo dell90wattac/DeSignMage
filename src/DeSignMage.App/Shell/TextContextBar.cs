@@ -21,10 +21,11 @@ public sealed record FontItem(string Name, bool Missing)
 /// Font controls for live text (family, style, size, spacing, alignment, Convert to Curves). They act on the text in
 /// the selection (also text inside selected groups) as one undo step, or set what new text starts with when no text
 /// is selected. A requested font that isn't installed shows as "(missing)" in red while the object keeps its name.
-/// With <c>twoRows</c> the font, size and spacing are on the first row and the alignment, Convert to Curves and the note on the
-/// second; without it everything flows in one row (inside the selection bar's second row).
+/// With <c>twoRows</c> the font, size and spacing are one row and the alignment, Convert to Curves and the note another, which share
+/// one line when the bar is wide enough (<see cref="TwoLinePanel"/>); without it everything flows in one row (inside the selection bar's
+/// second row).
 /// </summary>
-public sealed class TextFormatPanel : StackPanel, IRefreshable
+public sealed class TextFormatPanel : TwoLinePanel, IRefreshable
 {
     private readonly EditorSession _session;
     private readonly FontPicker _family = new();
@@ -42,7 +43,6 @@ public sealed class TextFormatPanel : StackPanel, IRefreshable
     public TextFormatPanel(EditorSession session, bool twoRows = true)
     {
         _session = session;
-        this.Spaced(SpacingProperty, ContextBars.LineSpacing);
 
         // The list shows each font in its own font; with text selected, that text in each font (R12).
         _family.SampleProvider = () => _session.SelectedTexts().FirstOrDefault()?.Text;
@@ -81,8 +81,7 @@ public sealed class TextFormatPanel : StackPanel, IRefreshable
         bottom.Children.Add(ContextBars.Separator());
         bottom.Children.Add(_convert);
         bottom.Children.Add(_note);
-        Children.Add(top);
-        if (twoRows) Children.Add(bottom);
+        SetRows(top, twoRows ? bottom : null);
     }
     private ToggleButton AlignButton(string glyph, string tip, TextAlignment alignment)
     {
@@ -158,7 +157,7 @@ public sealed class TextFormatPanel : StackPanel, IRefreshable
     }
 }
 
-/// <summary>The text tool's Context Bar: the font controls on two rows (the status line explains how to type).</summary>
+/// <summary>The text tool's Context Bar: the font controls, on one line when they fit (the status line explains how to type).</summary>
 public sealed class TextToolContextBar : StackPanel, IRefreshable
 {
     private readonly TextFormatPanel _panel;

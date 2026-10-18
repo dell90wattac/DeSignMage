@@ -164,9 +164,14 @@ public class TransparencyShellTests
 
             Press(w, button);                                                    // pressed: on, and the pressed look
             Assert.True(AppTheme.ShowTransparency);
+            Assert.Null(w.OpenMenuStrip);                                        // (the strip closes once a command ran, like a menu)
+            Press(w, strip.Tab("Tools"));
+            w.CaptureRenderedFrame();
             Assert.Contains("on", button.Classes);
             Press(w, button);
             Assert.False(AppTheme.ShowTransparency);
+            Press(w, strip.Tab("Tools"));
+            w.CaptureRenderedFrame();
             Assert.DoesNotContain("on", button.Classes);
 
             // switched from the menu, the strip button follows

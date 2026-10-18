@@ -17,7 +17,7 @@ using Xunit;
 
 namespace DeSignMage.App.Tests;
 
-/// <summary>The "no color by default" start and the compact Context Bar that flows in one row.</summary>
+/// <summary>The "no color by default" start and the compact Context Bar: one line, or two when its controls don't fit side by side.</summary>
 [Collection("app-settings")]   // these swap the program-wide settings store and text size: one class at a time
 public class ContextBarLayoutTests
 {
@@ -40,7 +40,14 @@ public class ContextBarLayoutTests
     private static List<BarRow> ContextRows(MainWindow w)
     {
         var bar = (Control)w.FindControl<ContentControl>("ContextBarHost")!.Content!;
-        return bar.GetVisualDescendants().OfType<BarRow>().Where(r => r.IsEffectivelyVisible && r.Parent is StackPanel sp && (ReferenceEquals(sp, bar) || sp is TextFormatPanel)).ToList();
+        return bar.GetVisualDescendants().OfType<BarRow>().Where(r => r.IsEffectivelyVisible && r.Parent is TwoLinePanel).ToList();
+    }
+
+    /// <summary>True when the bar's rows are on two lines (the bar itself, or the text tool's font panel, did not fit on one).</summary>
+    private static bool Stacked(MainWindow w)
+    {
+        var bar = (Control)w.FindControl<ContentControl>("ContextBarHost")!.Content!;
+        return bar.GetSelfAndVisualDescendants().OfType<TwoLinePanel>().Any(p => p.Stacked);
     }
 
     // ---------------------------------------------------------------- no color by default
@@ -152,9 +159,9 @@ public class ContextBarLayoutTests
     }
 
     [AvaloniaFact]
-    public void The_Context_Bar_of_every_tool_is_two_rows_tall_whatever_is_in_it()
+    public void On_a_wide_window_the_Context_Bar_of_every_tool_is_one_line()
     {
-        var w = Open();
+        var w = Open(1700);
         var r = new RectangleObject(100, 80) { Style = ObjectStyle.FillOnly(DocColor.Black) };
         w.Session.History.Execute(new AddObjectCommand(w.Session.Document.ActiveLayer, r));
         w.Session.Selection.Set(r);
@@ -174,24 +181,83 @@ public class ContextBarLayoutTests
                 foreach (var child in row.Children.Where(c => c.IsVisible && c.Bounds.Width > 0.5))
                     Assert.True(child.Bounds.Height <= rowHeight + 0.5, $"{tool}: {child.GetType().Name} is {child.Bounds.Height} px tall in a {rowHeight} px row");
             }
-            Assert.Equal(ContextBars.BarHeight, w.FindControl<Border>("ContextBarBorder")!.Bounds.Height, 1);
+            Assert.False(Stacked(w), $"{tool}: two lines on a wide window");
+            Assert.Equal(ContextBars.OneLineHeight, w.FindControl<Border>("ContextBarBorder")!.Bounds.Height, 1);
         }
+        w.Close();
+    }
+
+    [AvaloniaFact]
+    public void At_1280_wide_a_bar_that_does_not_fit_takes_a_second_line_and_gives_it_back_afterwards()
+    {
+        var w = Open(1280);
+        var rect = new RectangleObject(100, 80) { Transform = Affine2.Translation(100, 100), Style = ObjectStyle.FillOnly(DocColor.Black) };
+        w.Session.History.Execute(new AddObjectCommand(w.Session.Document.ActiveLayer, rect));
+        var text = new TextObject("Hello", "Arial", 40) { Transform = Affine2.Translation(100, 300) };
+        w.Session.History.Execute(new AddObjectCommand(w.Session.Document.ActiveLayer, text));
+
+        w.Session.Selection.Set(rect);                       // a shape: position, size and its buttons fit on one line
+        Flush();
+        var (oneBar, oneCanvas) = Metrics(w);
+        Assert.False(Stacked(w));
+        Assert.Equal(ContextBars.OneLineHeight, oneBar, 1);
+
+        w.Session.Selection.Set(text);                       // text adds the font controls: too long for one line
+        Flush();
+        var (twoBar, twoCanvas) = Metrics(w);
+        Assert.True(Stacked(w));
+        Assert.Equal(ContextBars.TwoLineHeight, twoBar, 1);
+        Assert.Equal(twoBar - oneBar, twoCanvas.Y - oneCanvas.Y, 1);   // the canvas moves down by exactly the second line
+
+        w.Session.Selection.Set(rect);                       // and back
+        Flush();
+        var (backBar, backCanvas) = Metrics(w);
+        Assert.False(Stacked(w));
+        Assert.Equal(oneBar, backBar, 1);
+        Assert.Equal(oneCanvas.Y, backCanvas.Y, 1);
+        w.Close();
+    }
+
+    [AvaloniaFact]
+    public void When_the_window_gets_wider_the_bar_goes_back_to_one_line()
+    {
+        var w = Open(1280);
+        var text = new TextObject("Hello", "Arial", 40) { Transform = Affine2.Translation(100, 300) };
+        w.Session.History.Execute(new AddObjectCommand(w.Session.Document.ActiveLayer, text));
+        w.Session.Selection.Set(text);
+        Flush();
+        w.CaptureRenderedFrame();
+        Assert.True(Stacked(w));
+        w.Width = 3200;                                      // wide enough for everything side by side
+        Flush();
+        w.CaptureRenderedFrame();
+        Flush();
+        w.CaptureRenderedFrame();
+        Assert.False(Stacked(w));
+        Assert.Equal(ContextBars.OneLineHeight, w.FindControl<Border>("ContextBarBorder")!.Bounds.Height, 1);
         w.Close();
     }
 
     [AvaloniaFact]
     public void A_Context_Bar_row_that_is_too_long_scrolls_sideways_instead_of_wrapping_and_the_height_stays()
     {
+        // selected text: the position fields on one line, the font and arrange controls on a second that is long on its own
+        static void SelectText(MainWindow w)
+        {
+            var text = new TextObject("Hello", "Arial", 40) { Transform = Affine2.Translation(100, 300) };
+            w.Session.History.Execute(new AddObjectCommand(w.Session.Document.ActiveLayer, text));
+            w.Session.Selection.Set(text);
+            Flush();
+        }
         var wide = Open(1400);
-        wide.Session.SetTool("vector");
-        Flush();
+        SelectText(wide);
         var (barWide, canvasWide) = Metrics(wide);
         Assert.All(ContextRows(wide), row => Assert.InRange(Lines(row), 0, 1));   // an empty row has no line at all (R26)
+        Assert.True(Stacked(wide));
         wide.Close();
 
         var narrow = Open(700);
-        narrow.Session.SetTool("vector");
-        Flush();
+        SelectText(narrow);
         var (barNarrow, canvasNarrow) = Metrics(narrow);
         Assert.All(ContextRows(narrow), row => Assert.InRange(Lines(row), 0, 1));   // no third row
         Assert.Equal(barWide, barNarrow, 1);
@@ -205,9 +271,9 @@ public class ContextBarLayoutTests
     }
 
     [AvaloniaFact]
-    public async Task The_Context_Bar_never_changes_height_and_the_canvas_never_moves_across_tools_and_selections()
+    public async Task On_a_window_wide_enough_the_Context_Bar_never_changes_height_and_the_canvas_never_moves_across_tools_and_selections()
     {
-        var w = Open();
+        var w = Open(3400);
         var dir = Directory.CreateTempSubdirectory("dsm-bar-").FullName;
         try
         {

@@ -18,7 +18,7 @@ using Xunit;
 
 namespace DeSignMage.App.Tests;
 
-/// <summary>The Image, Effects and Tools tabs in the Context Bar and their strips of icon buttons (R25).</summary>
+/// <summary>The Image, Effects and Tools tabs in the top row and their strips of buttons that drop down over the canvas (R25).</summary>
 [Collection("app-settings")]   // dark mode and the text size are program-wide: one class at a time
 public class MenuStripTests : IDisposable
 {
@@ -71,6 +71,16 @@ public class MenuStripTests : IDisposable
 
     private static ToggleButton TabOf(MainWindow w, string name) => StripOf(w).Tab(name);
 
+    /// <summary>The text on a tab (its name; a small down arrow sits beside it).</summary>
+    private static string TabText(ToggleButton tab) => ((StackPanel)tab.Content!).Children.OfType<TextBlock>().Single().Text!;
+
+    /// <summary>Opens a strip unless it is open already (a button closes its strip once it has run).</summary>
+    private static void OpenStrip(MainWindow w, string name)
+    {
+        if (w.OpenMenuStrip != name) Press(w, TabOf(w, name));
+        w.CaptureRenderedFrame();
+    }
+
     private static RectangleObject AddRect(MainWindow w, double x, double y)
     {
         var r = new RectangleObject(100, 60) { Transform = DeSignMage.Core.Geometry.Affine2.Translation(x, y), Style = ObjectStyle.FillOnly(DocColor.FromHex("#E53935")) };
@@ -106,28 +116,56 @@ public class MenuStripTests : IDisposable
     // ---------------------------------------------------------------- in the window
 
     [AvaloniaFact]
-    public async Task The_tabs_are_Image_Effects_and_Tools_in_the_right_part_of_the_Context_Bar_and_every_strip_starts_closed()
+    public async Task The_tabs_are_Image_Effects_and_Tools_in_the_top_row_and_every_strip_starts_closed()
     {
         await WithTheme(() =>
         {
             var w = Open();
             var strip = StripOf(w);
-            var bar = w.FindControl<Border>("ContextBarBorder")!;
+            var top = w.FindControl<Border>("TopRowBorder")!;
             Assert.Equal(["Image", "Effects", "Tools"], strip.TabNames);
-            Assert.Equal(["Image", "Effects", "Tools"], strip.Tabs.Children.OfType<ToggleButton>().Select(t => (string)t.Content!));
+            Assert.Equal(["Image", "Effects", "Tools"], strip.Tabs.Children.OfType<ToggleButton>().Select(TabText));
             Assert.All(strip.TabNames, n => Assert.False(strip.Tab(n).IsChecked));
             Assert.Null(w.OpenMenuStrip);
             Assert.False(strip.Panel.IsVisible);
             Assert.All(strip.TabNames, n => Assert.All(strip.ButtonsOf(n), b => Assert.False(b.GetVisualAncestors().OfType<BarRow>().First().IsVisible)));   // every strip's row is hidden
 
-            // inside the Context Bar, at its right end, much narrower than the half it takes when open
-            var topLeft = strip.TranslatePoint(new Point(0, 0), w)!.Value;
-            var barLeft = bar.TranslatePoint(new Point(0, 0), w)!.Value;
-            Assert.True(topLeft.X > barLeft.X + bar.Bounds.Width / 2);
-            Assert.InRange(topLeft.X + strip.Bounds.Width, barLeft.X + bar.Bounds.Width - 1.5, barLeft.X + bar.Bounds.Width + bar.Padding.Right + 1.5);   // it runs to the bar's right edge
-            Assert.True(topLeft.Y >= barLeft.Y && topLeft.Y + strip.Bounds.Height <= barLeft.Y + bar.Bounds.Height + 0.5);
+            // in the top row, after the Main Toolbar and before Feedback / Bug; the Context Bar keeps its whole width for the tool controls
+            Point At(Control c) => c.TranslatePoint(new Point(0, 0), w)!.Value;
+            Assert.True(At(strip).Y >= At(top).Y - 0.5 && At(strip).Y + strip.Bounds.Height <= At(top).Y + top.Bounds.Height + 0.5);
+            var toolbar = w.FindControl<ScrollViewer>("MainToolbarScroll")!;
+            Assert.True(At(strip).X >= At(toolbar).X + toolbar.Bounds.Width - 0.5);
+            Assert.True(At(strip).X + strip.Bounds.Width <= At(w.FindControl<Button>("FeedbackButton")!).X);
+            Assert.Empty(w.FindControl<Border>("ContextBarBorder")!.GetVisualDescendants().OfType<MenuStrip>());
             // the Dock is a different thing and stays closed
             Assert.Null(w.OpenDockPanel);
+            w.Close();
+            return Task.CompletedTask;
+        });
+    }
+
+    [AvaloniaFact]
+    public async Task Picking_a_command_or_pressing_on_the_canvas_closes_the_open_strip()
+    {
+        await WithTheme(() =>
+        {
+            var w = Open();
+            var strip = StripOf(w);
+            OpenStrip(w, "Tools");
+            var tools = strip.CommandsOf("Tools").ToList();
+            Press(w, strip.ButtonsOf("Tools")[tools.FindIndex(c => c.Id == "tool.rectangle")]);
+            Assert.Equal("rectangle", w.Session.ActiveTool.Id);   // the command ran ...
+            Assert.Null(w.OpenMenuStrip);                         // ... and the strip went away, like a menu
+            Assert.False(strip.Panel.IsVisible);
+
+            w.Session.SetTool("select");
+            OpenStrip(w, "Effects");
+            var canvas = w.FindControl<DesignCanvas>("Surface")!;
+            var p = canvas.TranslatePoint(new Point(canvas.Bounds.Width - 40, canvas.Bounds.Height - 40), w)!.Value;   // away from the strip
+            w.MouseDown(p, Avalonia.Input.MouseButton.Left);
+            w.MouseUp(p, Avalonia.Input.MouseButton.Left);
+            Flush();
+            Assert.Null(w.OpenMenuStrip);
             w.Close();
             return Task.CompletedTask;
         });
@@ -266,10 +304,12 @@ public class MenuStripTests : IDisposable
 
             Press(w, Knife());                                      // runs Effects > Knife: the same command
             Assert.IsType<KnifeTool>(w.Session.ActiveTool);
+            OpenStrip(w, "Effects");                                // (the strip closed once the command ran)
             Assert.Contains("on", Knife().Classes);                 // and shows as pressed while its tool is active
             w.Session.SetTool("select");
             Flush();
 
+            OpenStrip(w, "Effects");
             Press(w, Weld());                                       // Weld runs in the background; the two shapes become one
             var watch = System.Diagnostics.Stopwatch.StartNew();
             while (w.Session.Document.ActiveLayer.Children.Count > 1 && watch.ElapsedMilliseconds < 15000) { Flush(); await Task.Delay(10); }
@@ -277,11 +317,11 @@ public class MenuStripTests : IDisposable
             Assert.Equal("Weld", w.Session.History.UndoDescription);
 
             // Tools: a button changes the tool just as the menu item does
-            Press(w, TabOf(w, "Tools"));
-            w.CaptureRenderedFrame();
+            OpenStrip(w, "Tools");
             var tools = strip.CommandsOf("Tools").ToList();
             Press(w, strip.ButtonsOf("Tools")[tools.FindIndex(c => c.Id == "tool.vector")]);
             Assert.IsType<VectorEditTool>(w.Session.ActiveTool);
+            OpenStrip(w, "Tools");
             Press(w, strip.ButtonsOf("Tools")[tools.FindIndex(c => c.Id == "tool.select")]);
             Assert.IsType<SelectTool>(w.Session.ActiveTool);
             w.Close();
@@ -320,8 +360,10 @@ public class MenuStripTests : IDisposable
             Assert.True(B("image.crop").IsEnabled);
             Press(w, B("image.rotateCW"));
             Assert.Equal("Rotate 90 Degrees Clockwise", w.Session.History.UndoDescription);
+            OpenStrip(w, "Image");
             Press(w, B("image.flipV"));
             Assert.Equal("Flip Vertical", w.Session.History.UndoDescription);
+            OpenStrip(w, "Image");
             Press(w, B("image.crop"));
             Assert.IsType<CropTool>(w.Session.ActiveTool);
             Assert.NotNull(img);
@@ -343,7 +385,7 @@ public class MenuStripTests : IDisposable
             var band = w.FindControl<Grid>("DockBand")!;
             double barH = bar.Bounds.Height, topH = top.Bounds.Height, canvasH = canvas.Bounds.Height, canvasW = canvas.Bounds.Width;
             var canvasAt = canvas.TranslatePoint(default, w)!.Value;
-            Assert.InRange(barH, ContextBars.BarHeight - 1, ContextBars.BarHeight + 1);
+            Assert.InRange(barH, ContextBars.OneLineHeight - 1, ContextBars.OneLineHeight + 1);
 
             void Check()
             {
@@ -365,149 +407,45 @@ public class MenuStripTests : IDisposable
                     Press(w, TabOf(w, name)); Check();            // close
                 }
             }
-            // and the strip's own content stays inside the bar
-            Press(w, TabOf(w, "Image"));
-            w.CaptureRenderedFrame();
-            var panel = StripOf(w).Panel;
-            double panelBottom = panel.TranslatePoint(new Point(0, panel.Bounds.Height), w)!.Value.Y;
-            double barBottom = bar.TranslatePoint(new Point(0, bar.Bounds.Height), w)!.Value.Y;
-            Assert.True(panelBottom <= barBottom + 0.5, $"strip bottom {panelBottom} vs bar bottom {barBottom}");
-            foreach (var b in StripOf(w).ButtonsOf("Image"))
-            {
-                double bottom = b.TranslatePoint(new Point(0, b.Bounds.Height), w)!.Value.Y;
-                Assert.True(bottom <= panelBottom + 0.5);
-            }
             w.Close();
             return Task.CompletedTask;
         });
     }
 
-    [AvaloniaFact]
-    public async Task The_menu_area_has_a_fixed_share_of_the_bar_with_its_tabs_on_its_left_whether_or_not_a_strip_is_open()
+    [AvaloniaTheory]
+    [InlineData(1600, 900)]
+    [InlineData(1280, 640)]
+    public async Task An_open_strip_drops_down_under_its_tab_over_the_canvas_and_stays_inside_the_window(double width, double height)
     {
         await WithTheme(() =>
         {
-            var w = Open(1600, 860);
+            var w = Open(width, height);
             var strip = StripOf(w);
-            var bar = w.FindControl<Border>("ContextBarBorder")!;
-            var left = w.FindControl<ScrollViewer>("ContextBarScroll")!;
-            double VisibleWidth() => strip.Bounds.Width - bar.Padding.Right;       // the area reaches out through the bar's right padding
-            double share = bar.Bounds.Width * 0.38;
+            var top = w.FindControl<Border>("TopRowBorder")!;
+            var canvas = w.FindControl<DesignCanvas>("Surface")!;
             Point At(Control c) => c.TranslatePoint(default, w)!.Value;
-            double TabX(string n) => At(TabOf(w, n)).X;
-            var tabsClosed = strip.TabNames.Select(TabX).ToArray();
-            double areaLeft = At(strip).X;
-            double closedWidth = strip.Bounds.Width;
-
-            Assert.InRange(VisibleWidth(), share - 2, share + 2);                    // it is there with no strip open: its width is not the tabs' width
-            Assert.True(left.Bounds.Right <= areaLeft + 0.5);                        // the tool controls end where the area begins
-            Assert.True(left.Bounds.Width >= bar.Bounds.Width * 0.6 - 16, "the tool controls keep about 62% of the bar");
-            // the tabs start at the area's left edge (left aligned), one margin in
-            Assert.InRange(tabsClosed[0], areaLeft + UiScale.Sp(8) - 1, areaLeft + UiScale.Sp(8) + 1);
-            Assert.True(tabsClosed.SequenceEqual(tabsClosed.OrderBy(x => x)));       // Image, Effects, Tools left to right
-
+            double topBottom = At(top).Y + top.Bounds.Height;
             foreach (var name in strip.TabNames)
             {
-                Press(w, TabOf(w, name));
-                w.CaptureRenderedFrame();
-                Assert.InRange(strip.Bounds.Width, closedWidth - 0.5, closedWidth + 0.5);        // the same width open: nothing around it moves
-                Assert.Equal(areaLeft, At(strip).X, 0.5);
-                Assert.Equal(tabsClosed, strip.TabNames.Select(TabX).ToArray());                // the tabs stay put
-                Assert.True(left.Bounds.Right <= areaLeft + 0.5);
-                Assert.Equal(ContextBars.BarHeight, bar.Bounds.Height, 1.0);
-                // the strip panel lines up with the tabs on the left
-                Assert.InRange(At(strip.Panel).X, tabsClosed[0] - 0.5, tabsClosed[0] + 0.5);
-                Press(w, TabOf(w, name));
-                w.CaptureRenderedFrame();
-                Assert.InRange(strip.Bounds.Width, closedWidth - 0.5, closedWidth + 0.5);
-            }
-            w.Close();
-            return Task.CompletedTask;
-        });
-    }
-
-    [AvaloniaFact]
-    public async Task A_divider_runs_the_full_height_of_the_bar_at_the_split_and_the_menu_area_is_tinted_in_light_and_dark()
-    {
-        await WithTheme(() =>
-        {
-            var w = Open(1600, 860);
-            var strip = StripOf(w);
-            var bar = w.FindControl<Border>("ContextBarBorder")!;
-            Point At(Control c) => c.TranslatePoint(default, w)!.Value;
-            foreach (bool dark in new[] { false, true })
-            {
-                AppTheme.SetDarkMenus(dark);
-                Flush();
-                foreach (var open in new[] { false, true })
+                OpenStrip(w, name);
+                var panel = strip.Panel;
+                var tab = TabOf(w, name);
+                Assert.True(panel.IsEffectivelyVisible);
+                // right under the top row, over the Context Bar and the top of the canvas
+                Assert.InRange(At(panel).Y, topBottom - 0.5, topBottom + 4);
+                Assert.True(At(panel).Y + panel.Bounds.Height < At(canvas).Y + canvas.Bounds.Height, "it hangs over the canvas, not past it");
+                // under its tab, or moved left just enough to stay inside the window
+                Assert.True(At(panel).X <= At(tab).X + 0.5);
+                Assert.True(At(panel).X >= 0 && At(panel).X + panel.Bounds.Width <= w.Bounds.Width + 0.5);
+                if (At(tab).X + panel.Bounds.Width < w.Bounds.Width - 10) Assert.Equal(At(tab).X, At(panel).X, 0.5);
+                // every button is inside the panel
+                foreach (var b in strip.ButtonsOf(name))
                 {
-                    if (open != (w.OpenMenuStrip is not null)) Press(w, TabOf(w, "Image"));
-                    w.CaptureRenderedFrame();
-                    var divider = strip.Divider;
-                    Assert.True(divider.IsEffectivelyVisible);
-                    Assert.Equal(1, divider.Bounds.Width);
-                    // full height: from the top of the bar to its bottom edge, at the left edge of the menu area
-                    Assert.InRange(At(divider).Y, At(bar).Y - 0.5, At(bar).Y + 0.5);
-                    Assert.InRange(divider.Bounds.Height, bar.Bounds.Height - 1.5, bar.Bounds.Height + 1.5);
-                    Assert.Equal(At(strip).X, At(divider).X, 0.5);
-                    // a visible line: its color is the bar's line color, which differs from the area it divides
-                    var line = ((ISolidColorBrush)divider.Background!).Color;
-                    var area = ((ISolidColorBrush)strip.Background!).Color;
-                    var barColor = ((ISolidColorBrush)bar.Background!).Color;
-                    Assert.Equal(AppTheme.ColorIn("Ui.ChromeBorder", dark), line);
-                    Assert.Equal(AppTheme.ColorIn("Ui.MenuArea", dark), area);
-                    Assert.NotEqual(barColor, area);                                      // the area has its own background
-                    Assert.NotEqual(area, line);
-                    Assert.True(Math.Abs(area.R - barColor.R) >= 3 && area.R == area.G && area.G == area.B, "a slightly different, neutral grey");
-                    // the pixels agree: left of the divider is the bar's color, right of it the area's
-                    using var shot = Pixels(w);
-                    var sk = shot.GetPixel((int)At(strip).X - 6, (int)(At(bar).Y + bar.Bounds.Height - 4));
-                    var sa = shot.GetPixel((int)At(strip).X + 4, (int)(At(bar).Y + bar.Bounds.Height - 4));
-                    Assert.Equal(barColor, Color.FromRgb(sk.Red, sk.Green, sk.Blue));
-                    Assert.Equal(area, Color.FromRgb(sa.Red, sa.Green, sa.Blue));
+                    var p = b.TranslatePoint(default, panel)!.Value;
+                    Assert.True(p.X >= -0.5 && p.X + b.Bounds.Width <= panel.Bounds.Width + 0.5, $"{name}: a button sticks out sideways");
                 }
+                Press(w, tab);
             }
-            w.Close();
-            return Task.CompletedTask;
-        });
-    }
-
-    private static SkiaSharp.SKBitmap Pixels(MainWindow w)
-    {
-        Flush();
-        using var ms = new MemoryStream();
-#pragma warning disable CS0618 // the replacement overload's options type is not needed for a plain PNG
-        w.CaptureRenderedFrame()!.Save(ms);
-#pragma warning restore CS0618
-        ms.Position = 0;
-        return SkiaSharp.SKBitmap.Decode(ms);
-    }
-    [AvaloniaFact]
-    public async Task The_tabs_sit_on_top_and_the_strip_directly_below_them_as_one_framed_panel()
-    {
-        await WithTheme(() =>
-        {
-            var w = Open(1600, 860);
-            var strip = StripOf(w);
-            var bar = w.FindControl<Border>("ContextBarBorder")!;
-            Press(w, TabOf(w, "Image"));
-            w.CaptureRenderedFrame();
-            var panel = strip.Panel;
-            Point At(Control c) => c.TranslatePoint(default, w)!.Value;
-            double tabTop = At(strip.Tabs).Y, tabBottom = tabTop + strip.Tabs.Bounds.Height;
-            // the tab row is the top of the bar, the panel starts where the tabs end (they overlap by the one pixel that melts them together)
-            Assert.InRange(tabTop, At(bar).Y, At(bar).Y + bar.Padding.Top + 2);
-            Assert.InRange(At(panel).Y, tabBottom - 2, tabBottom + 0.5);
-            // the panel runs to the bottom of the bar, so tabs and strip use the bar's whole two-row height
-            double panelBottom = At(panel).Y + panel.Bounds.Height, barBottom = At(bar).Y + bar.Bounds.Height - bar.Padding.Bottom;
-            Assert.InRange(panelBottom, barBottom - 1.5, barBottom + 0.5);
-            // all the buttons are inside that panel, none outside it, on at most two lines
-            var buttons = strip.ButtonsOf("Image");
-            Assert.All(buttons, b => Assert.InRange(At(b).Y, At(panel).Y, panelBottom));
-            Assert.InRange(buttons.Select(b => Math.Round(At(b).Y)).Distinct().Count(), 1, 2);
-            // the tabs reach to the right end of the panel (a tab is never wider than its panel)
-            Assert.True(At(strip.Tabs).X + strip.Tabs.Bounds.Width <= At(panel).X + panel.Bounds.Width + 0.5);
-            Assert.True(At(strip.Tabs).X >= At(panel).X - 0.5);
             w.Close();
             return Task.CompletedTask;
         });
@@ -569,10 +507,10 @@ public class MenuStripTests : IDisposable
                 Press(w, TabOf(w, name));
                 w.CaptureRenderedFrame();
                 Assert.NotNull(scroll);
-                // everything is visible at once: no scrolling, on one line or two
+                // everything is visible at once: no scrolling, on a few lines
                 Assert.True(scroll!.Extent.Height <= scroll.Viewport.Height + 1, $"{name} at {window} px and {text * 100}%: {scroll.Extent.Height} high needed, {scroll.Viewport.Height} there");
                 Assert.True(scroll.Extent.Width <= scroll.Viewport.Width + 1);
-                Assert.InRange(strip.ButtonsOf(name).Select(b => Math.Round(b.TranslatePoint(default, strip.Panel)!.Value.Y)).Distinct().Count(), 1, 2);
+                Assert.InRange(strip.ButtonsOf(name).Select(b => Math.Round(b.TranslatePoint(default, strip.Panel)!.Value.Y)).Distinct().Count(), 1, 4);
                 // no button is clipped by the panel
                 var panel = strip.Panel;
                 foreach (var b in strip.ButtonsOf(name))
@@ -589,23 +527,26 @@ public class MenuStripTests : IDisposable
     }
 
     [AvaloniaFact]
-    public async Task A_strip_that_does_not_fit_even_on_two_lines_scrolls_and_never_hides_buttons()
+    public async Task A_strip_too_tall_for_a_small_window_scrolls_and_never_hides_buttons()
     {
         await WithTheme(() =>
         {
-            var w = Open(900, 800);                                         // a narrow window: the Image strip needs more than two lines in its share
+            var w = Open(420, 300);                                         // a tiny window: the Image strip needs more lines than the panel may have
             var strip = StripOf(w);
-            Press(w, TabOf(w, "Image"));
-            w.CaptureRenderedFrame();
+            double barH = w.FindControl<Border>("ContextBarBorder")!.Bounds.Height;
+            OpenStrip(w, "Image");
             var scroll = (ScrollViewer)strip.Panel.Child!;
-            Assert.True(scroll.Extent.Height > scroll.Viewport.Height + 5, "the strip needs more lines than its panel has");
+            Assert.True(strip.Panel.Bounds.Height <= w.Bounds.Height * 0.6 + 1 || strip.Panel.Bounds.Height <= 121, "the panel never takes over the window");
             Assert.Equal(0, scroll.Extent.Width - Math.Min(scroll.Extent.Width, scroll.Viewport.Width + 1), 1);   // it wraps; it never runs sideways out of the panel
             Assert.Equal(strip.CommandsOf("Image").Count, strip.ButtonsOf("Image").Count);   // every button is still there ...
             Assert.All(strip.ButtonsOf("Image"), b => Assert.True(b.IsVisible));
-            scroll.Offset = new Vector(0, 12);                              // ... and reachable by scrolling down
-            Flush();
-            Assert.True(scroll.Offset.Y > 0);
-            Assert.Equal(ContextBars.BarHeight, w.FindControl<Border>("ContextBarBorder")!.Bounds.Height, 1.0);   // no height jump either way
+            if (scroll.Extent.Height > scroll.Viewport.Height + 1)
+            {
+                scroll.Offset = new Vector(0, 12);                          // ... and reachable by scrolling down
+                Flush();
+                Assert.True(scroll.Offset.Y > 0);
+            }
+            Assert.Equal(barH, w.FindControl<Border>("ContextBarBorder")!.Bounds.Height, 1.0);   // the strip floats: no height jump
             w.Close();
             return Task.CompletedTask;
         });
@@ -630,18 +571,18 @@ public class MenuStripTests : IDisposable
             var bar = w.FindControl<Border>("ContextBarBorder")!;
             var panel = strip.Panel;
             double panelBottom = panel.TranslatePoint(new Point(0, panel.Bounds.Height), w)!.Value.Y;
-            double barBottom = bar.TranslatePoint(new Point(0, bar.Bounds.Height), w)!.Value.Y;
-            Assert.True(panelBottom <= barBottom + 0.5, $"at {text}: strip bottom {panelBottom} vs bar bottom {barBottom}");
-            double buttonBottom = first.TranslatePoint(new Point(0, first.Bounds.Height), w)!.Value.Y;
-            Assert.True(buttonBottom <= panelBottom + 0.5, $"at {text}: the buttons fit inside the strip");
-            Assert.InRange(bar.Bounds.Height, ContextBars.BarHeight - 1, ContextBars.BarHeight + 1);
+            Assert.All(strip.ButtonsOf("Image"), b =>
+                Assert.True(b.TranslatePoint(new Point(0, b.Bounds.Height), w)!.Value.Y <= panelBottom + 0.5, $"at {text}: the buttons fit inside the strip"));
+            Assert.Equal(MenuStrip.LabelSize * text, firstLabel.FontSize, 3);
+            Assert.True(panel.Bounds.Width <= MainWindow.MenuStripWidth * text + 1);   // the strip widens with the text, so its words fit
+            Assert.InRange(bar.Bounds.Height, ContextBars.OneLineHeight - 1, ContextBars.OneLineHeight + 1);
             w.Close();
             return Task.CompletedTask;
         });
     }
 
     [AvaloniaFact]
-    public async Task Dark_Menus_darkens_the_tabs_the_strip_and_its_icons_and_the_open_tab_melts_into_the_strip()
+    public async Task Dark_Menus_darkens_the_tabs_the_strip_and_its_icons_and_the_open_tab_looks_pressed()
     {
         await WithTheme(() =>
         {
@@ -653,17 +594,15 @@ public class MenuStripTests : IDisposable
             Color PanelColor() => ((ISolidColorBrush)strip.Panel.Background!).Color;
             Color OpenTabColor() => ((ISolidColorBrush)TabOf(w, "Effects").GetVisualDescendants().OfType<ContentPresenter>().First(p => p.Name == "PART_ContentPresenter").Background!).Color;
             Color ClosedTabColor() => ((ISolidColorBrush)TabOf(w, "Image").GetVisualDescendants().OfType<ContentPresenter>().First(p => p.Name == "PART_ContentPresenter").Background!).Color;
-            Assert.Equal(AppTheme.ColorIn("Ui.Panel", dark: false), PanelColor());
-            Assert.Equal(PanelColor(), OpenTabColor());                                // the open tab and the strip are one color
-            Assert.NotEqual(PanelColor(), ClosedTabColor());
-            Assert.Equal(0, TabOf(w, "Effects").BorderThickness.Bottom);                // no line between the open tab and its strip
-
-            AppTheme.SetDarkMenus(true);
-            Flush();
-            w.CaptureRenderedFrame();
-            Assert.Equal(AppTheme.ColorIn("Ui.Panel", dark: true), PanelColor());
-            Assert.Equal(PanelColor(), OpenTabColor());
-            Assert.NotEqual(PanelColor(), ClosedTabColor());
+            foreach (bool dark in new[] { false, true })
+            {
+                AppTheme.SetDarkMenus(dark);
+                Flush();
+                w.CaptureRenderedFrame();
+                Assert.Equal(AppTheme.ColorIn("Ui.Panel", dark), PanelColor());
+                Assert.Equal(AppTheme.ColorIn("Ui.OnBack", dark), OpenTabColor());       // the open tab looks pressed, like a switched-on button
+                Assert.Equal(AppTheme.ColorIn("Ui.TabBack", dark), ClosedTabColor());
+            }
             // the icons are drawn with the themed brush, which is now the light one: visible on the dark strip
             var icon = strip.ButtonsOf("Effects")[0].GetVisualDescendants().OfType<Avalonia.Controls.Shapes.Path>().First(p => p.Stroke is not null || p.Fill is not null);
             var ink = ((ISolidColorBrush)(icon.Fill ?? icon.Stroke)!).Color;
@@ -709,14 +648,14 @@ public class MenuStripTests : IDisposable
             {
                 AppTheme.SetDarkMenus(dark, remember: false);
                 w.Session.Selection.Set(w.Session.Document.AllObjects().OfType<ImageObject>().First());
-                Save($"menu-strip-v3-closed-{(dark ? "dark" : "light")}");                 // no strip open: the menu area and its divider are still there
+                Save($"menu-strip-v4-closed-{(dark ? "dark" : "light")}");                 // no strip open: only the tabs in the top row
                 foreach (var name in new[] { "Image", "Effects", "Tools" })
                 {
                     if (name == "Image") w.Session.Selection.Set(w.Session.Document.AllObjects().OfType<ImageObject>().First());
                     else if (name == "Effects") w.Session.Selection.Set([a, b]);
                     Flush();
                     Press(w, TabOf(w, name));
-                    Save($"menu-strip-v3-{name.ToLowerInvariant()}-{(dark ? "dark" : "light")}");
+                    Save($"menu-strip-v4-{name.ToLowerInvariant()}-{(dark ? "dark" : "light")}");
                     Press(w, TabOf(w, name));
                 }
             }

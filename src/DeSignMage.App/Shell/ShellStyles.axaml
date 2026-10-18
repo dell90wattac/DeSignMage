@@ -89,6 +89,34 @@
     <Setter Property="BorderBrush" Value="{DynamicResource Ui.TabBorder}" />
     <Setter Property="Foreground" Value="{DynamicResource Ui.TabTextOpen}" />
   </Style>
+  <!-- Menu tabs (Image, Effects, Tools) in the top row: small rounded buttons with a down arrow; pressed while their strip is down. -->
+  <Style Selector="ToggleButton.mtab">
+    <Setter Property="Height" Value="{DynamicResource Ui.DockTabHeight}" />
+    <Setter Property="MinHeight" Value="0" />
+    <Setter Property="MinWidth" Value="0" />
+    <Setter Property="Padding" Value="9,0,7,0" />
+    <Setter Property="FontSize" Value="{DynamicResource Ui.FontSize}" />
+    <Setter Property="CornerRadius" Value="4" />
+    <Setter Property="VerticalAlignment" Value="Center" />
+    <Setter Property="VerticalContentAlignment" Value="Center" />
+    <Setter Property="Background" Value="{DynamicResource Ui.TabBack}" />
+    <Setter Property="BorderBrush" Value="{DynamicResource Ui.TabBorder}" />
+    <Setter Property="BorderThickness" Value="1" />
+    <Setter Property="Foreground" Value="{DynamicResource Ui.TabText}" />
+  </Style>
+  <Style Selector="ToggleButton.mtab /template/ ContentPresenter#PART_ContentPresenter">
+    <Setter Property="Background" Value="{DynamicResource Ui.TabBack}" />
+    <Setter Property="BorderBrush" Value="{DynamicResource Ui.TabBorder}" />
+  </Style>
+  <Style Selector="ToggleButton.mtab:pointerover /template/ ContentPresenter#PART_ContentPresenter">
+    <Setter Property="Background" Value="{DynamicResource Ui.TabHoverBack}" />
+    <Setter Property="BorderBrush" Value="{DynamicResource Ui.TabHoverBorder}" />
+  </Style>
+  <Style Selector="ToggleButton.mtab:checked /template/ ContentPresenter#PART_ContentPresenter">
+    <Setter Property="Background" Value="{DynamicResource Ui.OnBack}" />
+    <Setter Property="BorderBrush" Value="{DynamicResource Ui.OnBorder}" />
+    <Setter Property="Foreground" Value="{DynamicResource Ui.TabTextOpen}" />
+  </Style>
   <Style Selector="Button.act">
     <Setter Property="Padding" Value="{DynamicResource Ui.ActPadding}" />
     <Setter Property="MinHeight" Value="{DynamicResource Ui.NumMinHeight}" />
@@ -135,7 +163,7 @@
   <Style Selector="TabItem:pointerover">
     <Setter Property="Foreground" Value="{DynamicResource Ui.TabItemTextHover}" />
   </Style>
-  <!-- Icon buttons of the Context Bar's menu strip (R25): dimmed while their command is not available (the drawn icons do not follow Foreground). -->
+  <!-- Buttons of a menu strip (R25): dimmed while their command is not available (the drawn icons do not follow Foreground). -->
   <Style Selector="Button.tb.strip">
     <Setter Property="MinWidth" Value="0" />
     <Setter Property="MinHeight" Value="0" />

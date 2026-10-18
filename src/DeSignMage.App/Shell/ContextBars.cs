@@ -1,7 +1,9 @@
 using System.Globalization;
+using Avalonia;
 using Avalonia.Controls;
 using Avalonia.Input;
 using Avalonia.Layout;
+using Avalonia.VisualTree;
 using DeSignMage.Core.Commands;
 using DeSignMage.Core.Editing;
 using DeSignMage.Core.Editing.Tools;
@@ -19,8 +21,8 @@ public interface IRefreshable
 /// <summary>
 /// The Context Bar: the row under the Main Toolbar that changes with the active tool and the selection. One bar class per tool.
 /// A bar is two <see cref="BarRow"/>s (see <see cref="ContextBarBase"/>): the fields on the first, the buttons and options on the second,
-/// flowing left to right in groups divided by thin separators. A row only wraps when the window is too narrow for it, and a bar's
-/// height follows its content.
+/// flowing left to right in groups divided by thin separators. The two share one line whenever they fit side by side, and only a bar
+/// that is too long for the window takes a second line (<see cref="TwoLinePanel"/>), so small screens keep more room for the canvas.
 /// </summary>
 public static class ContextBars
 {
@@ -57,8 +59,14 @@ public static class ContextBars
     /// <summary>Height of one Context Bar row at 100% interface text (it grows with the text size, never with the content).</summary>
     public const double RowHeightBase = 30;
 
-    /// <summary>Height of the whole Context Bar now: two rows, the gap between them and the bar's own padding (6 px above and below at 100%; gaps grow at a third of the text rate). Constant for a given text size.</summary>
-    public static double BarHeight => 2 * RowHeightBase * UiScale.Scale + UiScale.Sp(LineSpacing + 12);
+    /// <summary>The Context Bar's own padding above and below its rows at 100% (gaps grow at a third of the text rate).</summary>
+    public const double BarPaddingY = 3;
+
+    /// <summary>Height of the Context Bar when its rows share one line: one row, the bar's padding and its one-pixel bottom line.</summary>
+    public static double OneLineHeight => RowHeightBase * UiScale.Scale + UiScale.Sp(2 * BarPaddingY) + 1;
+
+    /// <summary>Height of the Context Bar when its rows need two lines: two rows, the gap between them, the bar's padding and its bottom line.</summary>
+    public static double TwoLineHeight => 2 * RowHeightBase * UiScale.Scale + UiScale.Sp(LineSpacing + 2 * BarPaddingY) + 1;
 
     /// <summary>A row for a Context Bar (or one section of it): a fixed height, so a bar's height never depends on what is in it.</summary>
     internal static BarRow NewRow(params Control[] items)
@@ -151,18 +159,94 @@ public static class ContextBars
         double.TryParse(box.Text, NumberStyles.Float, CultureInfo.CurrentCulture, out value);
 }
 
+/// <summary>
+/// Two bar rows that share one line, divided by a separator, whenever they fit side by side in the width the bar has, and stack on two
+/// lines when they don't. The rows themselves never wrap: a row that is longer than the bar even on its own line scrolls sideways with
+/// the bar. Inside the Context Bar's sideways scrolling the width offered is unlimited, so the panel compares with the width of the
+/// scroll viewer it sits in; the window asks it to look again when that width changes.
+/// </summary>
+public class TwoLinePanel : Panel
+{
+    private readonly BarSeparator _join = ContextBars.Separator();
+    private BarRow? _first, _second;
+
+    public TwoLinePanel() => Children.Add(_join);
+
+    /// <summary>Sets the rows once, from the constructor of the bar; <paramref name="second"/> may be null for a single row.</summary>
+    protected void SetRows(BarRow first, BarRow? second)
+    {
+        _first = first;
+        _second = second;
+        Children.Add(first);
+        if (second is not null) Children.Add(second);
+    }
+
+    /// <summary>True while the rows are on two lines (the bar did not fit on one).</summary>
+    public bool Stacked { get; private set; }
+
+    /// <summary>The width the rows have to fit in: the width offered, or the scroll viewer's when the offer is unlimited.</summary>
+    private double FitWidth(Size available)
+    {
+        if (!double.IsInfinity(available.Width)) return available.Width;
+        if (this.FindAncestorOfType<ScrollViewer>() is { } scroll)
+        {
+            double w = scroll.Viewport.Width > 0 ? scroll.Viewport.Width : scroll.Bounds.Width;
+            if (w > 0) return w;
+        }
+        return double.PositiveInfinity;
+    }
+
+    private double Gap => ContextBars.RowSpacing * UiScale.SpaceScale;
+
+    protected override Size MeasureOverride(Size availableSize)
+    {
+        if (_first is null) return default;
+        _first.Measure(Size.Infinity);
+        _second?.Measure(Size.Infinity);
+        _join.Measure(Size.Infinity);
+        double w1 = _first.DesiredSize.Width, w2 = _second?.DesiredSize.Width ?? 0;
+        double h1 = _first.DesiredSize.Height, h2 = _second?.DesiredSize.Height ?? 0;
+        bool both = w1 > 0.5 && w2 > 0.5;
+        double oneLine = both ? w1 + Gap + _join.DesiredSize.Width + Gap + w2 : Math.Max(w1, w2);
+        Stacked = both && oneLine > FitWidth(availableSize) + 0.5;
+        return Stacked
+            ? new Size(Math.Max(w1, w2), h1 + UiScale.Sp(ContextBars.LineSpacing) + h2)
+            : new Size(oneLine, Math.Max(h1, h2));
+    }
+
+    protected override Size ArrangeOverride(Size finalSize)
+    {
+        if (_first is null) return finalSize;
+        double w1 = _first.DesiredSize.Width, w2 = _second?.DesiredSize.Width ?? 0;
+        double h1 = _first.DesiredSize.Height, h2 = _second?.DesiredSize.Height ?? 0;
+        if (Stacked)
+        {
+            _first.Arrange(new Rect(0, 0, w1 + 1, h1));
+            _second?.Arrange(new Rect(0, h1 + UiScale.Sp(ContextBars.LineSpacing), w2 + 1, h2));
+            _join.Arrange(default);
+            return finalSize;
+        }
+        double h = Math.Max(h1, h2), x = 0;
+        _first.Arrange(new Rect(0, 0, w1 + 1, h));
+        if (w1 > 0.5 && w2 > 0.5)
+        {
+            x = w1 + Gap;
+            _join.Arrange(new Rect(x, 0, _join.DesiredSize.Width, h));
+            x += _join.DesiredSize.Width + Gap;
+        }
+        else _join.Arrange(default);
+        _second?.Arrange(new Rect(x, 0, w2 + 1, h));
+        return finalSize;
+    }
+}
+
 /// <summary>The two rows every Context Bar is made of; a bar adds its controls to <see cref="Row1"/> and <see cref="Row2"/>.</summary>
-public abstract class ContextBarBase : StackPanel
+public abstract class ContextBarBase : TwoLinePanel
 {
     protected BarRow Row1 { get; } = ContextBars.NewRow();
     protected BarRow Row2 { get; } = ContextBars.NewRow();
 
-    protected ContextBarBase()
-    {
-        this.Spaced(SpacingProperty, ContextBars.LineSpacing);
-        Children.Add(Row1);
-        Children.Add(Row2);
-    }
+    protected ContextBarBase() => SetRows(Row1, Row2);
 }
 
 /// <summary>The bar of a tool that has no options: its name, and its hint below.</summary>

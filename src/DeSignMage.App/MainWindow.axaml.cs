@@ -1,10 +1,11 @@
-﻿using System.Globalization;
+using System.Globalization;
 using Avalonia;
 using Avalonia.Controls;
 using Avalonia.Input;
 using Avalonia.Interactivity;
 using Avalonia.Media.Imaging;
 using Avalonia.Threading;
+using Avalonia.VisualTree;
 using DeSignMage.App.Shell;
 using DeSignMage.Feedback;
 using DeSignMage.Core.Commands;
@@ -64,6 +65,9 @@ public partial class MainWindow : Window
     private readonly List<ToolBarButton> _toolbarButtons = [];
     private EditorSession _session = null!;
     private bool _refreshQueued;
+
+    /// <summary>The bottom bar shows the frame times only when it is at least this wide.</summary>
+    internal const double PerfTextMinWindow = 1500;
     private List<DocObject?> _layerRows = [];
     private bool _syncingLayers;
 
@@ -114,6 +118,19 @@ public partial class MainWindow : Window
             ContextBarScroll.Offset = new Vector(Math.Max(0, ContextBarScroll.Offset.X - e.Delta.Y * 48), 0);
             e.Handled = true;
         };
+        // One line or two: the Context Bar decides again whenever its width changes.
+        ContextBarScroll.SizeChanged += (_, e) =>
+        {
+            if (Math.Abs(e.NewSize.Width - e.PreviousSize.Width) < 0.5) return;
+            foreach (var panel in ContextBarHost.GetVisualDescendants().OfType<TwoLinePanel>()) panel.InvalidateMeasure();
+        };
+        // When the Context Bar takes or gives back its second line, the canvas below gets shorter or taller at its top: the drawing stays put.
+        ContextBarBorder.SizeChanged += (_, e) =>
+        {
+            if (e.PreviousSize.Height > 0) Surface.TopEdgeMoving(e.NewSize.Height - e.PreviousSize.Height);
+        };
+        // The frame times are for the developer: on a narrow window their room goes to the tool hint.
+        BottomBar.SizeChanged += (_, e) => PerfText.IsVisible = e.NewSize.Width >= PerfTextMinWindow;
 
         var perfTimer = new DispatcherTimer { Interval = TimeSpan.FromMilliseconds(500) };
         perfTimer.Tick += (_, _) => PerfText.Text =
@@ -330,8 +347,8 @@ public partial class MainWindow : Window
         TopRuler.IsVisible = LeftRuler.IsVisible = show;
         if (TopRuler.Parent is Grid g)
         {
-            g.RowDefinitions[0].Height = new GridLength(show ? 20 : 0);
-            g.ColumnDefinitions[0].Width = new GridLength(show ? 20 : 0);
+            g.RowDefinitions[0].Height = new GridLength(show ? Canvas.Ruler.Breadth : 0);
+            g.ColumnDefinitions[0].Width = new GridLength(show ? Canvas.Ruler.Breadth : 0);
         }
     }
 

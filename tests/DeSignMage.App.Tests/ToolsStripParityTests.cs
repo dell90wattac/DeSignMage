@@ -155,6 +155,8 @@ public class ToolsStripParityTests
             for (int i = 0; i < Toolbox.Buttons.Length; i++)
             {
                 Press(w, buttons[i]);
+                Assert.Null(w.OpenMenuStrip);                                                    // picking a tool closes the strip, like a menu
+                Press(w, strip.Tab("Tools"));                                                    // open it again to look
                 w.CaptureRenderedFrame();
                 Assert.Equal(Toolbox.Buttons[i].ToolId, w.Session.ActiveTool.Id);
                 Assert.Equal([commands[i]!],PressedInStrip());
@@ -220,6 +222,8 @@ public class ToolsStripParityTests
             w.CaptureRenderedFrame();
             Press(w, strip.ButtonsOf("Tools")[1]);
             Assert.Equal("vector", w.Session.ActiveTool.Id);
+            Press(w, strip.Tab("Tools"));                                                        // the strip closed once the tool was picked
+            w.CaptureRenderedFrame();
             Assert.Contains("on", strip.ButtonsOf("Tools")[1].Classes);
             // every tool button has an icon beside its label
             Assert.All(strip.ButtonsOf("Tools"), b => Assert.IsType<StackPanel>(b.Content));

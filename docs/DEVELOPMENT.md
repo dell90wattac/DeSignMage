@@ -28,14 +28,14 @@ The parts of the main window have fixed names, used in tooltips, menus, code and
 | Name | Where / what |
 |---|---|
 | **Main Toolbar** | the icons on the top row with the menus, Feedback / Bug at the far right |
-| **Context Bar** | the two-row band under it that changes with the tool and the selection |
-| **Menu Tabs** | Image, Effects and Tools tabs in the right part of the Context Bar; each opens a strip of buttons |
+| **Context Bar** | the band under it that changes with the tool and the selection: one line, or two when its controls do not fit side by side |
+| **Menu Tabs** | Image, Effects and Tools tabs on the top row; each drops a strip of buttons down over the canvas |
 | **Toolbox** | the column of tool buttons on the left |
-| **Info Line** | the line of counts and sizes above the ruler |
+| **Info Line** | the counts and sizes in the bottom bar, after the Project Color Bar |
 | **Dock** / **Dock Tabs** | the right column (Color Mixer, Layers, History), one panel at a time |
 | **Color Mixer** | wheel, sliders, Fill / Stroke target, eyedropper |
 | **Palette Strip** | the far-right column of swatches, with the red X (remove all color) on top |
-| **Project Color Bar** | the bottom bar: colors used in the design, Fill and Stroke |
+| **Project Color Bar** | the left part of the bottom bar: colors used in the design, Fill and Stroke |
 | **Layers Panel** | the Dock's Layers panel |
 
 ## Source layout

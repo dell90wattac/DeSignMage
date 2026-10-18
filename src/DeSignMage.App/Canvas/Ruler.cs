@@ -16,7 +16,10 @@ namespace DeSignMage.App.Canvas;
 /// </summary>
 public sealed class Ruler : Control
 {
-    private static readonly double[] Steps = [1 / 16.0, 1 / 8.0, 1 / 4.0, 1 / 2.0, 1, 2, 5, 10, 20, 50, 100, 200, 500, 1000];
+    /// <summary>How thick the rulers are (the top one's height, the left one's width).</summary>
+    public const double Breadth = 16;
+
+    private static readonly double[] Steps =[1 / 16.0, 1 / 8.0, 1 / 4.0, 1 / 2.0, 1, 2, 5, 10, 20, 50, 100, 200, 500, 1000];
     // The rulers are part of the chrome: their colors follow Dark Menus (the themed brushes change in place, and the ruler redraws).
     private static readonly IBrush Background = AppTheme.Brush("Ui.RulerBack");
     private static readonly IBrush Ink = AppTheme.Brush("Ui.RulerTick");
@@ -156,19 +159,19 @@ public sealed class Ruler : Control
             double v = i * minor;
             double s = Math.Floor(ToScreen(v)) + 0.5;
             bool isMajor = i % subdivisions == 0;
-            double tick = isMajor ? thickness : (i % (subdivisions / 2) == 0 ? thickness * 0.45 : thickness * 0.25);
+            double tick = isMajor ? thickness : (i % (subdivisions / 2) == 0 ? thickness * 0.4 : thickness * 0.22);
             if (Vertical) ctx.DrawLine(TickPen, new Point(thickness - tick, s), new Point(thickness, s));
             else ctx.DrawLine(TickPen, new Point(s, thickness - tick), new Point(s, thickness));
 
             if (isMajor)
             {
-                var label = new FormattedText(Format(v), CultureInfo.InvariantCulture, FlowDirection.LeftToRight, Face, 9, Ink);
+                var label = new FormattedText(Format(v), CultureInfo.InvariantCulture, FlowDirection.LeftToRight, Face, 8.5, Ink);
                 if (Vertical)
                 {
-                    using (ctx.PushTransform(Matrix.CreateRotation(-Math.PI / 2) * Matrix.CreateTranslation(1, s - 2)))
+                    using (ctx.PushTransform(Matrix.CreateRotation(-Math.PI / 2) * Matrix.CreateTranslation(0, s - 2)))
                         ctx.DrawText(label, new Point(0, 0));
                 }
-                else ctx.DrawText(label, new Point(s + 2, 0));
+                else ctx.DrawText(label, new Point(s + 2, -1));
             }
         }
 

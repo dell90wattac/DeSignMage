@@ -5,9 +5,9 @@ using DeSignMage.App.Shell;
 namespace DeSignMage.App;
 
 /// <summary>
-/// The menu tabs in the right half of the Context Bar (R25). The tabs and strips are built from <see cref="MenuLayout"/>, so they list what
-/// the Image, Effects and Tools menus list. The program starts with every strip closed. Only the strip's width changes when one opens (the
-/// bar's height is fixed), so nothing else on the window moves.
+/// The menu tabs in the top row (R25). The tabs and strips are built from <see cref="MenuLayout"/>, so they list what the Image, Effects and
+/// Tools menus list. The program starts with every strip closed. An open strip drops down over the top of the canvas, under its tab, so
+/// nothing else on the window moves; picking a command, clicking the tab again or pressing on the canvas closes it.
 /// </summary>
 public partial class MainWindow
 {
@@ -44,30 +44,38 @@ public partial class MainWindow
     {
         MenuStrip.Pressed = ToolButtonPressed;
         MenuStrip.Populate(StripMenus(), _commands);
-        ContextBarBorder.SizeChanged += (_, _) => FitMenuStrip();
-        UiScale.Changed += FitMenuStrip;
+        OverlayLayer.Children.Add(MenuStrip.StripPanel);
+        MenuStrip.Changed += (_, _) => PlaceMenuStrip();
+        SizeChanged += (_, _) => PlaceMenuStrip();
+        UiScale.Changed += PlaceMenuStrip;
         AppTheme.Changed += MenuStrip.Refresh;   // a switch changed from the menu or its own button: the strip button follows (pressed or not)
-        Closed += (_, _) => { UiScale.Changed -= FitMenuStrip; AppTheme.Changed -= MenuStrip.Refresh; };
-        FitMenuStrip();
+        Closed += (_, _) => { UiScale.Changed -= PlaceMenuStrip; AppTheme.Changed -= MenuStrip.Refresh; };
+        // Pressing on the canvas closes an open strip (the press still does its own work there).
+        Surface.AddHandler(PointerPressedEvent, (_, _) => MenuStrip.Close(), Avalonia.Interactivity.RoutingStrategies.Tunnel, handledEventsToo: true);
     }
 
     /// <summary>The menu name of the strip that is open, or null (tests).</summary>
     internal string? OpenMenuStrip => MenuStrip.Open;
 
-    /// <summary>The share of the Context Bar's width the menu area always has (the tool controls keep the rest); the mockup split the bar at about 62%.</summary>
-    internal const double MenuStripShare = 0.38;
+    /// <summary>Widest an open strip gets at 100% interface text; its buttons wrap onto more lines inside it.</summary>
+    internal const double MenuStripWidth = 560;
 
     /// <summary>
-    /// The menu area has the same width whether a strip is open, closed or swapped, and never less than its own tabs: the divider and the left-aligned
-    /// tabs stay where they are, and only the panel under them comes and goes. A longer strip wraps onto a second line inside the panel.
+    /// Puts the open strip right under the top row, its left edge under the open tab, moved left as far as needed to stay inside the window.
     /// </summary>
-    private void FitMenuStrip()
+    private void PlaceMenuStrip()
     {
-        var pad = ContextBarBorder.Padding;
-        MenuStrip.FitTo(pad);
-        MenuStrip.Tabs.Measure(Size.Infinity);
-        double tabs = MenuStrip.Tabs.DesiredSize.Width + MenuStrip.Tabs.Margin.Left + MenuStrip.Tabs.Margin.Right;
-        // the area reaches out through the bar's right padding, which its own width must make up for
-        MenuStrip.Width = Math.Max(tabs, ContextBarBorder.Bounds.Width * MenuStripShare) + pad.Right;
+        var panel = MenuStrip.StripPanel;
+        if (MenuStrip.Open is not { } open || Bounds.Width <= 0) return;
+        double margin = UiScale.Sp(6);
+        double width = Math.Min(MenuStripWidth * UiScale.Scale, Math.Max(200, Bounds.Width - 2 * margin));
+        panel.Width = width;
+        panel.MaxHeight = Math.Max(120, Bounds.Height * 0.6);
+        var tab = MenuStrip.Tab(open);
+        double left = tab.TranslatePoint(new Point(0, 0), this)?.X ?? margin;
+        left = Math.Max(margin, Math.Min(left, Bounds.Width - width - margin));
+        double top = TopRowBorder.TranslatePoint(new Point(0, TopRowBorder.Bounds.Height), this)?.Y ?? TopRowBorder.Bounds.Height;
+        Avalonia.Controls.Canvas.SetLeft(panel, left);
+        Avalonia.Controls.Canvas.SetTop(panel, top + 2);
     }
 }

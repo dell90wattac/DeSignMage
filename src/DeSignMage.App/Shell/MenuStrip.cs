@@ -8,11 +8,11 @@ using Avalonia.Media;
 namespace DeSignMage.App.Shell;
 
 /// <summary>
-/// The menu tabs of the Context Bar (requirement R25): a tab for each of a few menus (Image, Effects, Tools), in the right half of the bar
-/// that the tool and selection controls rarely use. A click on a tab opens a strip of icon buttons, one per command of that menu, right
-/// below it; a click on the open tab closes it. One strip is open at a time (<see cref="DockLayout"/> decides, as for the Dock), and the
-/// program starts with none open. The normal drop-down menus stay. A button runs the very command its menu item runs and is enabled when
-/// the item is. The strip lives inside the Context Bar's fixed height, so opening or closing it never moves anything.
+/// The menu tabs (requirement R25): a tab for each of a few menus (Image, Effects, Tools), in the top row beside the Main Toolbar. A click
+/// on a tab drops a strip of buttons, one per command of that menu, down over the top of the canvas; a click on the open tab, on one of
+/// its buttons or on the canvas closes it. One strip is open at a time (<see cref="DockLayout"/> decides, as for the Dock), and the program
+/// starts with none open. The normal drop-down menus stay. A button runs the very command its menu item runs and is enabled when the item
+/// is. The strip floats over the canvas (the window places <see cref="StripPanel"/>), so opening or closing it never moves anything.
 /// </summary>
 public sealed class MenuStrip : Grid
 {
@@ -40,25 +40,14 @@ public sealed class MenuStrip : Grid
 
     public MenuStrip()
     {
-        RowDefinitions = new RowDefinitions("Auto,*");
-        // The menu area is its own region of the Context Bar: a slightly different background and a divider line down its left edge, full
-        // height, so the split from the tool controls is always visible, with or without a strip open.
-        this.Bind(BackgroundProperty, this.GetResourceObservable("Ui.MenuArea"));
-        Divider = new Border { Name = "MenuDivider", Width = 1, HorizontalAlignment = HorizontalAlignment.Left, IsHitTestVisible = false };
-        Divider.Bind(Border.BackgroundProperty, Divider.GetResourceObservable("Ui.ChromeBorder"));
-        SetRowSpan(Divider, 2);
-        Children.Add(Divider);
-        Tabs = new StackPanel { Orientation = Orientation.Horizontal, HorizontalAlignment = HorizontalAlignment.Left, ZIndex = 1 }
-            .Spaced(StackPanel.SpacingProperty, 2);
-        // the open tab overlaps the panel's top line by one pixel, so tab and panel read as one piece (as in the Dock)
-        Tabs.Margin = new Thickness(0, 0, 0, -1);
-        SetRow(Tabs, 0);
+        Tabs = new StackPanel { Orientation = Orientation.Horizontal, VerticalAlignment = VerticalAlignment.Center }
+            .Spaced(StackPanel.SpacingProperty, 3);
         Children.Add(Tabs);
 
         _scroll = new ScrollViewer
         {
-            HorizontalScrollBarVisibility = ScrollBarVisibility.Disabled,   // the buttons wrap onto a second line instead (the panel is two button lines tall)
-            VerticalScrollBarVisibility = ScrollBarVisibility.Auto,       // and a third line, if a strip ever needs one, scrolls: no button is hidden
+            HorizontalScrollBarVisibility = ScrollBarVisibility.Disabled,   // the buttons wrap onto more lines instead
+            VerticalScrollBarVisibility = ScrollBarVisibility.Auto,       // and a strip taller than the window allows scrolls: no button is hidden
             Content = _rowHost,
         };
         _panel = new Border
@@ -66,35 +55,27 @@ public sealed class MenuStrip : Grid
             Name = "MenuStripPanel",
             IsVisible = false,
             BorderThickness = new Thickness(1),
-            CornerRadius = new CornerRadius(3),
-            Padding = UiScale.Space(3, 1),
+            CornerRadius = new CornerRadius(5),
             Child = _scroll,
             ClipToBounds = true,
+            BoxShadow = BoxShadows.Parse("0 4 14 0 #40000000"),
         };
         _panel.Bind(Border.BackgroundProperty, _panel.GetResourceObservable("Ui.Panel"));
         _panel.Bind(Border.BorderBrushProperty, _panel.GetResourceObservable("Ui.TabBorder"));
-        _panel.SpacedThickness(Border.PaddingProperty, new Thickness(3, 1));
-        SetRow(_panel, 1);
-        Children.Add(_panel);
-    }
-
-    /// <summary>The divider line down the menu area's left edge.</summary>
-    internal Border Divider { get; }
-
-    /// <summary>
-    /// The window calls this with the Context Bar's padding. The menu area reaches to the bar's top, right and bottom edges (it bleeds out
-    /// through that padding, so the divider runs the full height), and its tabs and panel keep the bar's own margins inside.
-    /// </summary>
-    public void FitTo(Thickness barPadding)
-    {
-        Margin = new Thickness(0, -barPadding.Top, -barPadding.Right, -barPadding.Bottom);
-        double side = UiScale.Sp(8);
-        Tabs.Margin = new Thickness(side, barPadding.Top, side, -1);
-        _panel.Margin = new Thickness(side, 0, side, barPadding.Bottom);
+        _panel.SpacedThickness(Border.PaddingProperty, new Thickness(6, 5));
     }
 
     /// <summary>The tab row (for the window to place and for tests).</summary>
     public StackPanel Tabs { get; }
+
+    /// <summary>The drop-down panel with the open strip's buttons: the window puts it in a layer over the canvas, under the tabs.</summary>
+    public Border StripPanel => _panel;
+
+    /// <summary>Closes the open strip, if any.</summary>
+    public void Close()
+    {
+        if (_layout.Open is { } open) _layout.Toggle(open);
+    }
 
     /// <summary>The tab that is open now ("Image", "Effects", "Tools"), or null.</summary>
     public string? Open => _layout.Open;
@@ -123,14 +104,24 @@ public sealed class MenuStrip : Grid
         foreach (var menu in menus)
         {
             string name = NameOf(menu.Header);
-            var tab = new ToggleButton { Name = $"MenuTab{name}", Content = name, Focusable = false };
-            tab.Classes.Add("dtab");
-            ToolTip.SetTip(tab, $"Open or close the {name} buttons");
+            // the name with a small down arrow: the buttons drop down from it
+            var chevron = new Avalonia.Controls.Shapes.Path
+            {
+                Data = Avalonia.Media.Geometry.Parse("M0,0 L3.5,3.5 L7,0"), StrokeThickness = 1.3, VerticalAlignment = VerticalAlignment.Center,
+            };
+            chevron.Bind(Avalonia.Controls.Shapes.Shape.StrokeProperty, chevron.GetResourceObservable("Ui.TabText"));
+            var header = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 5 };
+            header.Children.Add(new TextBlock { Text = name, VerticalAlignment = VerticalAlignment.Center });
+            header.Children.Add(chevron);
+            var tab = new ToggleButton { Name = $"MenuTab{name}", Content = header, Focusable = false };
+            tab.Classes.Add("mtab");
+            ToolTip.SetTip(tab, $"Show or hide the {name} buttons");
+            Avalonia.Automation.AutomationProperties.SetName(tab, name);
             tab.Click += (_, _) => _layout.Toggle(name);
             Tabs.Children.Add(tab);
             _tabs[name] = tab;
 
-            var row = new BarRow { IsVisible = false, LineSpacing = 1 }.Spaced(BarRow.SpacingProperty, 0);
+            var row = new BarRow { IsVisible = false }.Spaced(BarRow.SpacingProperty, 0).Spaced(BarRow.LineSpacingProperty, 3);
             var entries = new List<Entry>();
             foreach (var node in menu.Children ?? [])
             {
@@ -153,7 +144,7 @@ public sealed class MenuStrip : Grid
 
     private static string NameOf(string header) => header.Replace("_", "");
 
-    private static Button MakeButton(AppCommand c)
+    private Button MakeButton(AppCommand c)
     {
         // Text first (user): the short label is the button, with a small icon beside it; the tooltip has the full command name.
         var label = new TextBlock { Text = MenuStripIcons.LabelFor(c), VerticalAlignment = VerticalAlignment.Center, TextWrapping = TextWrapping.NoWrap }.ScaledFont(LabelSize);
@@ -170,7 +161,11 @@ public sealed class MenuStrip : Grid
         b.Classes.Add("strip");
         ToolTip.SetTip(b, c.ToolTip);
         Avalonia.Automation.AutomationProperties.SetName(b, c.ToolTip);
-        b.Click += (_, _) => { if (c.CanExecute()) c.Execute(); };
+        b.Click += (_, _) =>
+        {
+            Close();   // the strip covers the canvas: it goes away once a command is picked, like a menu
+            if (c.CanExecute()) c.Execute();
+        };
         return b;
     }
 

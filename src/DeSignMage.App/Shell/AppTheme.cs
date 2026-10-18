@@ -32,7 +32,6 @@ public static class AppTheme
         ("Ui.WindowBack", "#FFFFFF", "#2E2E2E"),
         ("Ui.Chrome", "#F0F0F0", "#333333"),          // Main Toolbar, Context Bar, Toolbox, Palette Strip, Project Color Bar, status line
         ("Ui.ChromeBorder", "#C8C8C8", "#4A4A4A"),
-        ("Ui.MenuArea", "#E8E8E8", "#2B2B2B"),         // the Context Bar's menu area (R25): a little different from the bar, so the divide shows
         ("Ui.Panel", "#F7F7F7", "#3C3C3C"),            // the Dock's panels, and the open Dock Tab
         ("Ui.Splitter", "#D8D8D8", "#454545"),
         ("Ui.PopupBack", "#FFFFFF", "#2F2F2F"),

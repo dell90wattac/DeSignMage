@@ -85,7 +85,7 @@ public class DockAndSpacingTests
             var dock = w.FindControl<Grid>("DockGrid")!;
             var top = w.FindControl<Border>("TopRowBorder")!;
             double height = bar.Bounds.Height;
-            Assert.InRange(height, ContextBars.BarHeight - 1, ContextBars.BarHeight + 1);
+            Assert.InRange(height, ContextBars.OneLineHeight - 1, ContextBars.OneLineHeight + 1);   // nothing selected: one line
 
             Point At(Control c) => c.TranslatePoint(new Point(0, 0), w)!.Value;
             // the band holds the tabs and is exactly as tall as the Context Bar, right beside it
@@ -282,8 +282,8 @@ public class DockAndSpacingTests
             Assert.DoesNotContain(w.GetVisualDescendants().OfType<TextBlock>(), t => t.Text == "Stroke width" || t.Text == "Width");
             Assert.DoesNotContain(buttons, b => b.Name is "NoColorButton" or "BarNoColorButton");   // only the Palette Strip X is left
             Assert.Single(buttons, b => b.Name == "PaletteStripNoColor");
-            // what stays: the corner and line-end buttons and the Fill / Stroke targets
-            Assert.Equal(3, w.ProjectColorBar.JoinButtons.Length);
+            // what stays: the corner and line-end buttons (in the Color Mixer) and the Fill / Stroke targets
+            Assert.Equal(3, w.ColorMixer.JoinButtons.Length);
             Assert.NotNull(w.ColorMixer.StrokeRadio);
             w.Close();
             return Task.CompletedTask;
@@ -336,7 +336,7 @@ public class DockAndSpacingTests
             w.CaptureRenderedFrame();
 
             // gaps: one third of the text's growth
-            Assert.Equal(new Thickness(8 * sp, 6 * sp), w.FindControl<Border>("ContextBarBorder")!.Padding);
+            Assert.Equal(new Thickness(8 * sp, 3 * sp), w.FindControl<Border>("ContextBarBorder")!.Padding);
             Assert.Equal(8 * sp, w.FindControl<BarRow>("ProjectColorBarHost")!.Spacing, 6);
             Assert.Equal(6 * sp, w.FindControl<StackPanel>("ColorMixerHost")!.Spacing, 6);
             Assert.Equal(2 * sp, w.FindControl<StackPanel>("ToolboxHost")!.Spacing, 6);
@@ -349,16 +349,17 @@ public class DockAndSpacingTests
             Assert.Equal(70 * text, bar.X.Bounds.Width, 1);
             Assert.Equal(30 * text, row.Bounds.Height, 1);
 
-            // the fixed heights hold: the Context Bar is two rows plus the (slowly growing) gaps, whatever the tool
+            // the heights hold: on a wide window the Context Bar is one row plus the (slowly growing) padding, whatever the tool
             double top = w.FindControl<Border>("TopRowBorder")!.Bounds.Height;
-            Assert.InRange(w.FindControl<Border>("ContextBarBorder")!.Bounds.Height, ContextBars.BarHeight - 1, ContextBars.BarHeight + 1);   // layout rounds to whole pixels
-            Assert.Equal(2 * 30 * text + 16 * sp, ContextBars.BarHeight, 3);
+            Assert.InRange(w.FindControl<Border>("ContextBarBorder")!.Bounds.Height, ContextBars.OneLineHeight - 1, ContextBars.OneLineHeight + 1);   // layout rounds to whole pixels
+            Assert.Equal(30 * text + 6 * sp + 1, ContextBars.OneLineHeight, 3);
+            Assert.Equal(2 * 30 * text + 10 * sp + 1, ContextBars.TwoLineHeight, 3);
             foreach (var tool in new[] { "vector", "text", "outline", "select" })
             {
                 w.Session.SetTool(tool);
                 Flush();
                 w.CaptureRenderedFrame();
-                Assert.InRange(w.FindControl<Border>("ContextBarBorder")!.Bounds.Height, ContextBars.BarHeight - 1, ContextBars.BarHeight + 1);   // layout rounds to whole pixels
+                Assert.InRange(w.FindControl<Border>("ContextBarBorder")!.Bounds.Height, ContextBars.OneLineHeight - 1, ContextBars.OneLineHeight + 1);   // layout rounds to whole pixels
                 Assert.Equal(top, w.FindControl<Border>("TopRowBorder")!.Bounds.Height, 1);
             }
 

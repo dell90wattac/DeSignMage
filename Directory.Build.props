@@ -11,7 +11,7 @@
   <!-- Identity of every assembly we build (file properties of the exe and the dlls, bug reports, the .dsm "writer" field).
        One version for the whole program: bump it here for each release; a release tag must match it (see RELEASING.md). -->
   <PropertyGroup>
-    <Version>0.4.1</Version>
+    <Version>0.4.2</Version>
     <InformationalVersion>$(Version)</InformationalVersion>
     <Product>DeSign Mage</Product>
     <Company>dell90wattac</Company>

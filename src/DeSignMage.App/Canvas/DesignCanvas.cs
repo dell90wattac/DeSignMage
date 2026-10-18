@@ -29,6 +29,13 @@ public sealed class DesignCanvas : Control
     private bool _fittedOnce;
     private bool _autoFit;        // the view is still the one fitted to the file; a size change refits it until the user moves the view
     private int _ownViewChange;   // > 0 while this control itself sets the view
+    private double _pendingTopMove;   // the bar above just grew by this much: the resize that follows keeps the drawing still
+
+    /// <summary>
+    /// The window calls this when the bar right above the canvas changes height by <paramref name="dy"/> (it is raised before the canvas
+    /// itself is resized): the canvas's top edge is about to move down by that much while its bottom stays.
+    /// </summary>
+    public void TopEdgeMoving(double dy) => _pendingTopMove = dy;
     private EventHandler? _viewChanged;
     private DispatcherTimer? _settleTimer;
 
@@ -107,6 +114,22 @@ public sealed class DesignCanvas : Control
     {
         base.OnSizeChanged(e);
         if (_session is null) return;
+        // Only the top edge moved (the Context Bar above took or gave back a line, see TopEdgeMoving) and the bottom stayed: the drawing
+        // stays where it is on the screen, so nothing jumps; the canvas just shows a little less or more at its top. Not the user's view change.
+        double dy = _pendingTopMove;
+        _pendingTopMove = 0;
+        if (_fittedOnce && Math.Abs(dy) > 0.5 && Math.Abs(e.NewSize.Width - e.PreviousSize.Width) < 0.5
+            && Math.Abs(e.NewSize.Height - e.PreviousSize.Height + dy) < 0.5)
+        {
+            _ownViewChange++;
+            try
+            {
+                _session.Viewport.SetViewSize(new Vec2(e.NewSize.Width, e.NewSize.Height));   // keeps the center: half of the move
+                _session.Viewport.PanBy(new Vec2(0, -dy / 2));                                // the other half
+            }
+            finally { _ownViewChange--; }
+            return;
+        }
         if ((!_fittedOnce || _autoFit) && e.NewSize.Width > 0 && e.NewSize.Height > 0)
         {
             // A file opens fully zoomed out (R1): the page and everything on the pasteboard. The window and its panels may still change size after the file

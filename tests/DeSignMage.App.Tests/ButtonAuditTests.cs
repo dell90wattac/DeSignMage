@@ -654,26 +654,6 @@ public class ButtonAuditTests
     }
 
     [AvaloniaFact]
-    public void Project_Color_Bar_corner_and_end_buttons_work()
-    {
-        var (w, _) = Open();
-        var bar = w.ProjectColorBar;
-        var r = AddRect(w, 100, 100, 100, 60, new ObjectStyle(new SolidPaint(DocColor.Black), StrokeStyle.Solid(DocColor.White, 5)));
-        w.Session.Selection.Set(r);
-        Flush();
-
-        for (int i = 0; i < 3; i++)
-        {
-            Press(w, bar.JoinButtons[i]);
-            Assert.Equal((LineJoin)i, r.Style.Stroke!.Join);
-            Press(w, bar.CapButtons[i]);
-            Assert.Equal((LineCap)i, r.Style.Stroke!.Cap);
-        }
-
-        w.Close();
-    }
-
-    [AvaloniaFact]
     public void Project_Color_Bar_job_colors_set_fill_and_stroke()
     {
         var (w, _) = Open();

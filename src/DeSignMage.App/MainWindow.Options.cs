@@ -47,8 +47,9 @@ public partial class MainWindow
         {
             ApplyDockLayout();   // the right dock's width follows the text size; a closed dock takes none
             PaletteStripBorder.Width = 22 * UiScale.IconScale;
-            // The Context Bar is always two rows tall: its height depends on the text size only, never on the tool or the selection.
-            ContextBarBorder.Height = DockBand.Height = ContextBars.BarHeight;   // the dock's tab band is as tall as the Context Bar
+            // The Context Bar is one line, or two when its controls don't fit side by side (its height follows); the Dock's tab band beside it
+            // takes the same height.
+            ContextBarBorder.MinHeight = ContextBars.OneLineHeight;
 
             // Padding, margins and gaps grow at a third of the text's rate (UiScale.SpaceScale); text and icons keep their own scales.
             double sp = UiScale.SpaceScale;
@@ -57,14 +58,14 @@ public partial class MainWindow
             MainToolbar.Spacing = 0;
             FeedbackButton.Margin = UiScale.Space(4, 0, 8, 0);
             FeedbackButton.Padding = UiScale.Space(12, 3);
-            ContextBarBorder.Padding = UiScale.Space(8, 6);
-            MenuStrip.FitTo(ContextBarBorder.Padding);   // the menu area reaches out through this padding to the bar's edges
-            ProjectColorBarHost.Margin = UiScale.Space(8, 6);
+            ContextBarBorder.Padding = UiScale.Space(8, ContextBars.BarPaddingY);
+            MenuStrip.Margin = UiScale.Space(4, 0, 10, 0);
+            ProjectColorBarHost.Margin = UiScale.Space(8, 3);
             ProjectColorBarHost.Spacing = UiScale.Sp(8);
             ProjectColorBarHost.LineSpacing = UiScale.Sp(4);
             ToolboxHost.Margin = UiScale.Space(4, 8);
             ToolboxHost.Spacing = UiScale.Sp(2);
-            InfoLine.Margin = new Thickness(40, UiScale.Sp(4), 0, UiScale.Sp(4));
+            InfoLine.Margin = UiScale.Space(8, 0);
             ColorMixerPanel.Padding = LayersPanel.Padding = HistoryPanel.Padding = UiScale.Space(8, 8, 8, 4);
             ColorMixerHost.Spacing = UiScale.Sp(6);
             ColorMixerHost.Margin = new Thickness(0, 0, 0, UiScale.Sp(4));        }

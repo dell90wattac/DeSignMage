@@ -13,9 +13,11 @@
     Each region is a named host filled from code, so the layout can be reshaped without touching the logic. Colors come from the themed
     brushes (Ui.*, see AppTheme), so Dark Menus recolors everything here.
   -->
+  <Grid>
   <DockPanel>
-    <!-- Top row: the menus on the left, then the Main Toolbar, and at the far right the Dark Menus / Dark Canvas switches and Feedback / Bug.
-         One fixed height (set from the interface text size); a toolbar that is too long for the window scrolls sideways instead of wrapping. -->
+    <!-- Top row: the menus on the left, then the Main Toolbar, the menu tabs (Image, Effects, Tools; their buttons drop down over the canvas),
+         and at the far right the Dark Menus / Dark Canvas switches and Feedback / Bug. One fixed height (set from the interface text size);
+         a toolbar that is too long for the window scrolls sideways instead of wrapping. -->
     <Border x:Name="TopRowBorder" Classes="bar" DockPanel.Dock="Top" ClipToBounds="True">
       <Grid ColumnDefinitions="Auto,*,Auto">
         <Menu x:Name="MainMenu" Grid.Column="0" VerticalAlignment="Center" />
@@ -23,6 +25,7 @@
           <s:BarRow x:Name="MainToolbar" Margin="8,0" />
         </ScrollViewer>
         <StackPanel x:Name="TopRowRight" Grid.Column="2" Orientation="Horizontal" VerticalAlignment="Center">
+          <s:MenuStrip x:Name="MenuStrip" VerticalAlignment="Center" Margin="4,0,10,0" />
           <ToggleButton x:Name="DarkMenusButton" Classes="tb" Focusable="False" />
           <ToggleButton x:Name="DarkCanvasButton" Classes="tb" Focusable="False" />
           <Button x:Name="FeedbackButton" Content="Feedback / Bug" Focusable="False"
@@ -41,19 +44,17 @@
       </DockPanel>
     </Border>
 
-    <!-- Status bar: tool hint, pointer position, zoom, frame times -->
-    <Border DockPanel.Dock="Bottom" Background="{DynamicResource Ui.Chrome}" BorderBrush="{DynamicResource Ui.ChromeBorder}" BorderThickness="0,1,0,0">
-      <Grid ColumnDefinitions="*,Auto,Auto,Auto" Margin="4,2">
-        <TextBlock x:Name="HintText" Grid.Column="0" VerticalAlignment="Center" TextTrimming="CharacterEllipsis" />
-        <TextBlock x:Name="CursorText" Grid.Column="1" Margin="12,0" MinWidth="150" VerticalAlignment="Center" />
-        <TextBlock x:Name="ZoomText" Grid.Column="2" Margin="12,0" MinWidth="70" VerticalAlignment="Center" />
-        <TextBlock x:Name="PerfText" Grid.Column="3" Margin="12,0,4,0" Classes="muted" VerticalAlignment="Center" />
+    <!-- Bottom bar, one line: the Project Color Bar (colors used in the design, then fill and stroke), the Info Line (selection size,
+         object and group counts), the tool hint, pointer position, zoom and frame times. The hint gives way first when the window is narrow. -->
+    <Border x:Name="BottomBar" DockPanel.Dock="Bottom" Background="{DynamicResource Ui.Chrome}" BorderBrush="{DynamicResource Ui.ChromeBorder}" BorderThickness="0,1,0,0" ClipToBounds="True">
+      <Grid x:Name="StatusGrid" ColumnDefinitions="Auto,Auto,*,Auto,Auto,Auto" Margin="0,0,4,0">
+        <s:BarRow x:Name="ProjectColorBarHost" Grid.Column="0" Margin="8,3" Spacing="8" LineSpacing="4" VerticalAlignment="Center" />
+        <TextBlock x:Name="InfoLine" Grid.Column="1" Classes="small" Margin="8,0" VerticalAlignment="Center" />
+        <TextBlock x:Name="HintText" Grid.Column="2" Margin="8,0" VerticalAlignment="Center" TextTrimming="CharacterEllipsis" />
+        <TextBlock x:Name="CursorText" Grid.Column="3" Margin="8,0" MinWidth="130" VerticalAlignment="Center" />
+        <TextBlock x:Name="ZoomText" Grid.Column="4" Margin="8,0" MinWidth="56" VerticalAlignment="Center" />
+        <TextBlock x:Name="PerfText" Grid.Column="5" Margin="8,0,4,0" Classes="muted" VerticalAlignment="Center" />
       </Grid>
-    </Border>
-
-    <!-- Project Color Bar: colors used in the design, then fill, stroke and stroke width -->
-    <Border DockPanel.Dock="Bottom" Background="{DynamicResource Ui.Chrome}" BorderBrush="{DynamicResource Ui.ChromeBorder}" BorderThickness="0,1,0,0">
-      <s:BarRow x:Name="ProjectColorBarHost" Margin="8,6" Spacing="8" LineSpacing="4" />
     </Border>
 
     <!-- Toolbox -->
@@ -70,17 +71,13 @@
          Dock Tabs (Color Mixer, Layers, History) sit at its top, in the Context Bar's band; one panel is open at a time (see DockLayout).
          With every panel closed the Dock is only its tab strip, and the ruler and canvas run the full width below it. -->
     <Grid x:Name="BodyGrid" RowDefinitions="Auto,*" ColumnDefinitions="*,4,270">
-      <!-- Context Bar: always exactly two rows tall (the height is set from the interface text size, never from the content, so the
-           canvas below never moves). A row that is too long for the window scrolls sideways instead of wrapping. It ends at the Dock's edge. -->
-      <Border x:Name="ContextBarBorder" Grid.Row="0" Grid.Column="0" Grid.ColumnSpan="2" Classes="bar" Padding="8,6" ClipToBounds="True">
-        <!-- Left: the tool's or the selection's controls. Right: the menu tabs (Image, Effects, Tools) and, when one is open, its icon buttons
-             (R25); the menu area has a fixed share of the bar's width, divided from the controls by a line, whether or not a strip is open. -->
-        <Grid ColumnDefinitions="*,Auto">
-          <ScrollViewer x:Name="ContextBarScroll" Grid.Column="0" Margin="0,0,8,0" HorizontalScrollBarVisibility="Auto" VerticalScrollBarVisibility="Disabled">
-            <ContentControl x:Name="ContextBarHost" />
-          </ScrollViewer>
-          <s:MenuStrip x:Name="MenuStrip" Grid.Column="1" />
-        </Grid>
+      <!-- Context Bar: the tool's or the selection's controls on one line, or on two when they don't fit side by side (TwoLinePanel); its
+           height follows from that, never from anything else. A line that is too long for the window scrolls sideways instead of wrapping.
+           It ends at the Dock's edge. -->
+      <Border x:Name="ContextBarBorder" Grid.Row="0" Grid.Column="0" Grid.ColumnSpan="2" Classes="bar" Padding="8,3" ClipToBounds="True">
+        <ScrollViewer x:Name="ContextBarScroll" HorizontalScrollBarVisibility="Auto" VerticalScrollBarVisibility="Disabled">
+          <ContentControl x:Name="ContextBarHost" VerticalAlignment="Center" />
+        </ScrollViewer>
       </Border>
 
       <!-- The Dock Tabs, in the Context Bar's band, always at the band's right edge so they stay where they are when the Dock opens or closes.
@@ -94,10 +91,8 @@
         </StackPanel>
       </Grid>
 
-      <Grid x:Name="WorkArea" Grid.Row="1" Grid.Column="0" RowDefinitions="Auto,*">
-        <!-- Info line: selection size, object/group counts -->
-        <TextBlock x:Name="InfoLine" Classes="small" Grid.Row="0" Margin="40,4,0,4" />
-        <Grid Grid.Row="1" RowDefinitions="20,*" ColumnDefinitions="20,*">
+      <Grid x:Name="WorkArea" Grid.Row="1" Grid.Column="0">
+        <Grid RowDefinitions="16,*" ColumnDefinitions="16,*">
           <Border Grid.Row="0" Grid.Column="0" Background="{DynamicResource Ui.RulerBack}" BorderBrush="{DynamicResource Ui.RulerEdge}" BorderThickness="0,0,1,1" />
           <c:Ruler x:Name="TopRuler" Grid.Row="0" Grid.Column="1" />
           <c:Ruler x:Name="LeftRuler" Grid.Row="1" Grid.Column="0" Vertical="True" />
@@ -123,4 +118,7 @@
       </Grid>
     </Grid>
   </DockPanel>
+  <!-- Things that float over the window: the open menu strip, dropped down under its tab. Only its children take clicks. -->
+  <Canvas x:Name="OverlayLayer" />
+  </Grid>
 </Window>
