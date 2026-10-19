@@ -66,8 +66,9 @@ public static class DsmFormat
     /// <summary>Nesting limit for groups (guards against hostile or corrupted files blowing the stack).</summary>
     public const int MaxGroupDepth = 256;
 
+    /// <summary>The program's release number (only the program carries it; the libraries keep a fixed identity, see Directory.Build.props).</summary>
     internal static string DefaultAppVersion =>
-        (typeof(DsmFormat).Assembly.GetCustomAttribute<AssemblyInformationalVersionAttribute>()?.InformationalVersion ?? "0.1.0").Split('+')[0];
+        ((Assembly.GetEntryAssembly() ?? typeof(DsmFormat).Assembly).GetCustomAttribute<AssemblyInformationalVersionAttribute>()?.InformationalVersion ?? "0.1.0").Split('+')[0];
 }
 
 /// <summary>A file that is not a usable DeSign Mage document (damaged, wrong type, or needs a newer program). The message is for the user.</summary>

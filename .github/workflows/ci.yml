@@ -27,7 +27,7 @@ jobs:
       - name: Set up .NET 10
         uses: actions/setup-dotnet@v4
         with:
-          dotnet-version: 10.0.x
+          global-json-file: global.json   # the same SDK as the release build
 
       - name: Restore
         run: dotnet restore DeSignMage.slnx

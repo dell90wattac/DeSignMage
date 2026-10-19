@@ -11,7 +11,7 @@
   <!-- Identity of every assembly we build (file properties of the exe and the dlls, bug reports, the .dsm "writer" field).
        One version for the whole program: bump it here for each release; a release tag must match it (see RELEASING.md). -->
   <PropertyGroup>
-    <Version>0.4.3</Version>
+    <Version>0.4.4</Version>
     <InformationalVersion>$(Version)</InformationalVersion>
     <Product>DeSign Mage</Product>
     <Company>dell90wattac</Company>
@@ -22,5 +22,22 @@
     <!-- Package id of the installer/updater. The installed copy lives in %LocalAppData%\$(UpdatePackId) and an uninstall deletes that whole folder,
          so it must differ from the data folder %LocalAppData%\DeSignMage (settings, logs, crash files, feedback outbox). Never change it after the first release. -->
     <UpdatePackId>DeSignMageApp</UpdatePackId>
+  </PropertyGroup>
+
+  <!-- Unchanged code must give a byte-identical file in every release (RELEASING.md, "Keep unchanged files identical"). Windows Smart App Control
+       trusts an unsigned file by its exact bytes, so every file that changes is a new file it may block. Only the program itself
+       (DeSignMage.exe / DeSignMage.dll) carries the release number; the libraries keep one fixed identity, so a library whose code did not change
+       comes out exactly the same. These are explicit values (not derived from Version), so a -p:Version=... on the command line does not reach them. -->
+  <PropertyGroup Condition="'$(MSBuildProjectName)' != 'DeSignMage.App'">
+    <AssemblyVersion>1.0.0.0</AssemblyVersion>
+    <FileVersion>1.0.0.0</FileVersion>
+    <InformationalVersion>1.0.0</InformationalVersion>
+    <IncludeSourceRevisionInInformationalVersion>false</IncludeSourceRevisionInInformationalVersion>
+  </PropertyGroup>
+
+  <!-- A library's debug symbols record every referenced library's identity, and the dll stores a fingerprint of them, so with symbols a change in
+       one library would change the files of all libraries that use it. The installed copy ships no .pdb files anyway (the installer leaves them out). -->
+  <PropertyGroup Condition="'$(MSBuildProjectName)' != 'DeSignMage.App' and '$(Configuration)' == 'Release'">
+    <DebugType>none</DebugType>
   </PropertyGroup>
 </Project>

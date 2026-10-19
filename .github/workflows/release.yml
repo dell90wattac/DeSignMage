@@ -39,7 +39,8 @@ jobs:
       - name: Set up .NET 10
         uses: actions/setup-dotnet@v4
         with:
-          dotnet-version: 10.0.x
+          # The exact SDK in global.json: a newer SDK would recompile every one of our files differently (RELEASING.md, "Keep unchanged files identical").
+          global-json-file: global.json
 
       - name: Check that the tag matches the program version
         shell: pwsh
@@ -75,6 +76,14 @@ jobs:
       - name: Check that third-party files are identical to their packages
         shell: pwsh
         run: ./tools/check-third-party-unchanged.ps1 -Folder "$env:RUNNER_TEMP\publish\DeSignMage"
+
+      # Informational: which files differ from the previous release (each changed file is new to Smart App Control). Shown on the run's summary page.
+      - name: List the files that changed since the previous release
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          try { ./tools/compare-with-release.ps1 -Folder "$env:RUNNER_TEMP\publish\DeSignMage" -Repo $env:GITHUB_REPOSITORY } catch { Write-Host "::warning::Could not compare with the previous release: $_" }
 
       # The default upload is a ZIP of the folder; the SignPath artifact configuration (.signpath/artifact-configuration.xml) expects that.
       - name: Upload the unsigned build

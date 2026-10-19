@@ -27,6 +27,25 @@ approval. Background: [CODE-SIGNING-POLICY.md](CODE-SIGNING-POLICY.md).
 A tag with a dash (`v0.4.0-beta.1`) is marked as a pre-release. If a run fails, fix the problem, delete the tag
 (`git push --delete origin v0.3.7`, `git tag -d v0.3.7`) and the draft or release it made, and tag again.
 
+## Keep unchanged files identical
+
+The releases are not code signed yet (signing is on hold). Windows Smart App Control then judges each file by its exact bytes: a file it has
+seen before keeps its standing, and every changed file is new to it and may be blocked (it happened to `DeSignMage.Rendering.dll` in 0.4.3,
+whose code had not changed at all). So **a file should only change when its code has to**:
+
+* **Only the program itself carries the release number** (`DeSignMage.exe`, `DeSignMage.dll`). The libraries (`DeSignMage.Core.dll`,
+  `DeSignMage.Rendering.dll`, ...) have a fixed identity (1.0.0.0) and no debug symbols in Release (Directory.Build.props), and the build is
+  deterministic, so a library whose code did not change comes out byte-for-byte the same in every release.
+* **The SDK is pinned** in `global.json` and the workflows install exactly that one: a newer SDK would recompile every file differently. Move to
+  a newer SDK only on purpose, in its own release, and expect all of our files to change once.
+* **When writing code, don't touch a library you don't need to.** No drive-by reformatting, renaming or tidying in a project the change is
+  not about; leave such clean-ups for when that library has to change anyway. A comment-only edit doesn't change the file, but anything that
+  reaches the compiled code does. Prefer putting a change in the place that is already changing.
+* **Check what a release changes:** the release workflow lists every file that differs from the previous release on the run's summary page
+  (`tools/compare-with-release.ps1`, also runnable by hand on a publish folder). Normally that is `DeSignMage.exe`, `DeSignMage.dll`,
+  `DeSignMage.deps.json`, `DeSignMage.pdb` and the libraries whose code changed. Anything else is worth a look before the release goes out.
+* Third-party files never change: they are published exactly as their packages ship them (`tools/check-third-party-unchanged.ps1`).
+
 ## How a release reaches the people who installed the program
 
 The workflow also makes the installer and the update packages (Velopack, `tools/pack-release.ps1`, run on the signed folder) and puts them on the
@@ -52,7 +71,8 @@ copies read. Nothing in the program folder is changed or re-signed by packing (t
 
 ## Without signing
 
-While the SignPath settings below do not exist, the same workflow still runs and creates a release with the unsigned files; the release notes
+Signing is **on hold** for now (decided 2026-10-18); see "Keep unchanged files identical" above for how unsigned releases limit Smart App
+Control blocks. While the SignPath settings below do not exist, the same workflow still runs and creates a release with the unsigned files; the release notes
 say so. Signing starts working the moment the settings are added.
 
 ## One-time setup
