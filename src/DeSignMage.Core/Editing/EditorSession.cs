@@ -32,6 +32,8 @@ public sealed partial class EditorSession
             // Copied pictures are pasted by asset id, so their pixels must outlive the undo steps that made them.
             ExtraLiveAssets = () => UndoMemory.AssetsOf(_clipboard),
         };
+        History.FollowUp = LiveUpdater = new Effects.LiveEffectUpdater(document, () => BooleanService, () => OffsetService);   // live effects follow their sources
+        LiveUpdater.Settled();   // an opened file's effects are as they were saved: the first edit of a source then rebuilds them
         Document.Changed += (_, _) =>
         {
             Selection.Prune(Document);
@@ -543,7 +545,7 @@ public sealed partial class EditorSession
     public void Copy()
     {
         if (Selection.IsEmpty) return;
-        _clipboard = Stacking.CloneForCopy(Document, Stacking.BottomToTop(Document, Selection.Items));
+        _clipboard = Stacking.CloneForCopy(Document, Stacking.BottomToTop(Document, Selection.Items));   // live effects copied with their sources follow the copies
         ClipboardUpdated();
     }
 
@@ -561,7 +563,7 @@ public sealed partial class EditorSession
     public void Paste()
     {
         if (_clipboard.Count == 0) return;
-        BeginPlacing(_clipboard.Select(o => o.Clone()).ToList(), "Paste");
+        BeginPlacing(Effects.LiveEffects.CloneSet(_clipboard), "Paste");
     }
 
     /// <summary>

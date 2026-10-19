@@ -44,9 +44,11 @@ public sealed class ReplaceObjectsCommand : IDocumentCommand, IUndoMemory
 /// Takes one object out of the document (and its group) and puts <paramref name="replacements"/> in its place, in order
 /// (none = the object is just removed). Cookie Cutter, Knife and "Leave Original off" use it. Undo puts the same object back.
 /// </summary>
-public sealed class SwapObjectCommand(DocObject original, IReadOnlyList<DocObject> replacements, string description = "Replace") : IDocumentCommand, IUndoMemory
+public sealed class SwapObjectCommand(DocObject original, IReadOnlyList<DocObject> replacements, string description = "Replace") : IDocumentCommand, IUndoMemory, IReplacesObjects
 {
     private Removal? _removal;
+
+    public IEnumerable<(DocObject Old, IReadOnlyList<DocObject> New)> Replacements => [(original, replacements)];
 
     public long ApproximateBytes => UndoMemory.BytesOf(original) + UndoMemory.BytesOf(replacements);
     public IEnumerable<string> HeldAssetIds => UndoMemory.AssetsOf(original).Concat(UndoMemory.AssetsOf(replacements));

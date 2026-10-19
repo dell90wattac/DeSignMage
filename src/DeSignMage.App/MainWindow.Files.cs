@@ -121,8 +121,19 @@ public partial class MainWindow
         return fixedPath;
     }
 
+    /// <summary>True for a legacy layout (.lyt). Those files are never written over, by Save, Save As or Export: the program can't yet keep everything they hold.</summary>
+    internal static bool IsLegacyLayout(string path) => Path.GetExtension(path).Equals(".lyt", StringComparison.OrdinalIgnoreCase);
+
     private async Task<bool> SaveToAsync(string path)
     {
+        // Last line of defense: Save only ever writes .dsm, whatever path reached here.
+        if (!Path.GetExtension(path).Equals(DsmFormat.Extension, StringComparison.OrdinalIgnoreCase))
+        {
+            AppLog.Error("file", $"refused to save over {Path.GetFileName(path)}: not a {DsmFormat.Extension} file");
+            LastSaveError = $"Only {DsmFormat.Extension} files are saved; {Path.GetFileName(path)} was left untouched.";
+            _ = ShowDialogAsync("Cannot save", LastSaveError, "OK", null);
+            return false;
+        }
         var document = _session.Document;
         long revision = document.Revision;
         try
@@ -146,7 +157,11 @@ public partial class MainWindow
         _sourceLayoutPath = null;
         _documentTitle = Path.GetFileName(path);
         // Edited during the first moments of the save (before the progress window appeared)? Then the file is not the current design.
-        if (document == _session.Document && document.Revision == revision) _session.History.MarkSaved();
+        if (document == _session.Document && document.Revision == revision)
+        {
+            _session.History.MarkSaved();
+            DropRecoveryCopy();   // the file holds everything now
+        }
         _recent.Add(path);
         RefreshPanels();
         AppLog.Info("file", $"saved {_documentTitle} ({_session.Document.ObjectCount} objects)");
@@ -193,19 +208,47 @@ public partial class MainWindow
             var (label, pattern) = (format.PickerLabel, "*" + format.Extension);
             var basis = _documentPath ?? _sourceLayoutPath;
             IStorageFolder? start = basis is not null && Path.GetDirectoryName(basis) is { } dir ? await StorageProvider.TryGetFolderFromPathAsync(dir) : null;
-            var file = await StorageProvider.SaveFilePickerAsync(new FilePickerSaveOptions
+            bool legacy = request.Format == ExportFormat.Lyt;
+            string suggested = Path.GetFileNameWithoutExtension(_documentTitle) + request.Extension;
+            if (legacy && basis is not null && Path.GetDirectoryName(basis) is { } folder) suggested = Path.GetFileName(FreeLegacyLayoutPath(Path.Combine(folder, suggested)));
+            while (true)
             {
-                Title = "Export",
-                SuggestedFileName = Path.GetFileNameWithoutExtension(_documentTitle) + request.Extension,
-                DefaultExtension = request.Extension.TrimStart('.'),
-                ShowOverwritePrompt = true,
-                SuggestedStartLocation = start,
-                FileTypeChoices = [new FilePickerFileType(label) { Patterns = [pattern] }],
-            });
-            if (file?.TryGetLocalPath() is not { } picked) return;
-            path = picked;
+                var file = await StorageProvider.SaveFilePickerAsync(new FilePickerSaveOptions
+                {
+                    Title = "Export",
+                    SuggestedFileName = suggested,
+                    DefaultExtension = request.Extension.TrimStart('.'),
+                    ShowOverwritePrompt = !legacy,   // a legacy layout is never replaced, so there is nothing to confirm
+                    SuggestedStartLocation = start,
+                    FileTypeChoices = [new FilePickerFileType(label) { Patterns = [pattern] }],
+                });
+                if (file?.TryGetLocalPath() is not { } picked) return;
+                path = picked;
+                string target = WithExportExtension(request, path);
+                if (!IsLegacyLayout(target) || !File.Exists(target)) break;
+                await ShowDialogAsync("Export", LegacyLayoutExistsMessage(target), "Choose another name", null);
+                suggested = Path.GetFileName(FreeLegacyLayoutPath(target));
+                start = Path.GetDirectoryName(target) is { } again ? await StorageProvider.TryGetFolderFromPathAsync(again) : start;
+            }
         }
         await RunExportAsync(request, path);
+    }
+
+    private static string LegacyLayoutExistsMessage(string path) =>
+        $"{Path.GetFileName(path)} already exists. Existing .lyt layouts are never replaced, so nothing in them can be lost.{Environment.NewLine}{Environment.NewLine}Please choose a new name.";
+
+    /// <summary>"name.lyt", or "name (2).lyt", "name (3).lyt"... whichever doesn't exist yet in that folder.</summary>
+    internal static string FreeLegacyLayoutPath(string path)
+    {
+        if (!File.Exists(path)) return path;
+        string folder = Path.GetDirectoryName(path) ?? "";
+        string stem = Path.GetFileNameWithoutExtension(path);
+        string ext = Path.GetExtension(path);
+        for (int n = 2; ; n++)
+        {
+            string candidate = Path.Combine(folder, $"{stem} ({n}){ext}");
+            if (!File.Exists(candidate)) return candidate;
+        }
     }
 
     /// <summary>Writes the export (the file always gets the extension of the chosen format) right here on this thread. True on success. Tests use it; the window uses <see cref="RunExportAsync"/>.</summary>
@@ -253,8 +296,11 @@ public partial class MainWindow
                 warnings.AddRange(result.Warnings);
             }
             else bytes = DocumentExporter.Render(document, request.Format, request.Options with { Title = title });
+            // An existing legacy layout is never replaced (checked again at the very end, so nothing can slip past the dialog).
+            bool legacy = IsLegacyLayout(path);
+            if (legacy && File.Exists(path)) throw new IOException(LegacyLayoutExistsMessage(path));
             File.WriteAllBytes(temp, bytes);
-            File.Move(temp, path, overwrite: true);
+            File.Move(temp, path, overwrite: !legacy);
         }
         finally
         {

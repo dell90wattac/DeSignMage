@@ -142,6 +142,7 @@ public static class DsmReader
                     ctx.Warn($"A layer could not be read completely: {ex.Message}");
                 }
             }
+            ctx.ResolveLiveLinks();   // format 4: live effects find their sources
             if (layers.Count > 0)
             {
                 doc.ActiveLayer = layers[0];   // so the default layer can go

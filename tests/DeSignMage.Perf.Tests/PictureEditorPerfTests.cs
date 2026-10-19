@@ -68,6 +68,26 @@ public class PictureEditorPerfTests(ITestOutputHelper output)
     }
 
     [Fact]
+    public void The_transparency_step_of_a_24_megapixel_photo_is_quick_in_the_preview_and_finishes_at_full_size()
+    {
+        var photo = Photo(6000, 4000);
+        var (work, scale) = PictureProcessor.Reduce(photo);
+        var cut = new CutShape(new ValueList<DeSignMage.Core.Geometry.Vec2>([new(600, 400), new(5000, 500), new(5400, 3500), new(900, 3600)]), Keep: true);
+        var transparency = new PictureTransparency { Colors = new ValueList<int>([0x203040]), Tolerance = 30, EdgeOnly = true, Cuts = new ValueList<CutShape>([cut]), Shrink = 2, Softness = 6 };
+        var recipe = new PictureRecipe(6000, 4000) { Transparency = transparency };
+
+        double preview = Best(3, () => Time(() => PictureProcessor.Render(work, recipe, scale)));
+        // moving the tolerance slider redoes this step each time (the earlier steps are cached in the editor)
+        double slider = Best(3, () => Time(() => PictureProcessor.Render(work, recipe with { Transparency = transparency with { Tolerance = 33 } }, scale)));
+        double full = Time(() => PictureProcessor.Render(photo, recipe));
+        output.WriteLine($"24 MP photo, transparency: preview {preview:0} ms; slider step {slider:0} ms; full size {full:0} ms");
+
+        Assert.True(preview < 1200, $"a transparency preview took {preview:0} ms");
+        Assert.True(slider < 1200, $"a tolerance step took {slider:0} ms");
+        Assert.True(full < 30000, $"the full-size cut-out took {full:0} ms");
+    }
+
+    [Fact]
     public void What_a_preview_costs_does_not_depend_on_the_size_of_the_photo()
     {
         var small = Photo(2400, 1600);

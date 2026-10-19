@@ -202,10 +202,12 @@ public sealed class BreakApartCommand(CombinedObject combined) : IDocumentComman
 /// inside are left whole. The solo objects are copies of the originals (with all their properties), so undo simply puts
 /// the untouched group tree back: the exact original structure.
 /// </summary>
-public sealed class BreakDownGroupCommand : IDocumentCommand, IUndoMemory
+public sealed class BreakDownGroupCommand : IDocumentCommand, IUndoMemory, IReplacesObjects
 {
     private readonly List<(DocObject Leaf, DocObject[] Pieces)> _sets = [];
     private readonly DocObject[] _pieces;
+
+    public IEnumerable<(DocObject Old, IReadOnlyList<DocObject> New)> Replacements => _sets.Select(s => (s.Leaf, (IReadOnlyList<DocObject>)s.Pieces));
 
     public long ApproximateBytes => UndoMemory.BytesOf(_pieces);
     public IEnumerable<string> HeldAssetIds => UndoMemory.AssetsOf(_pieces);

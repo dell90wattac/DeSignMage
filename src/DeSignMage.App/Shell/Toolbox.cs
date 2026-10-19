@@ -102,6 +102,29 @@ public static class Toolbox
         colorMode.Click += (_, _) => session.ShowFillColors = !session.ShowFillColors;
         host.Children.Add(colorMode);
 
+        // One-click guides (user, 2026-10-18): three command buttons in a group of their own, apart from the tools. They are commands, not
+        // tools, so they are plain buttons that never stay pressed and the Tools strip (which mirrors the tools) does not list them.
+        var guideButtons = new List<(Button Button, GuidePlace Place)>();
+        foreach (var (name, place, tip, edge) in GuideButtonSpecs)
+        {
+            var g = new Button { Name = name, Content = UiIcons.Box(GuideEdgeIcon(edge), 20, 20), Focusable = false }
+                .ScaledWidth(30, icon: true).ScaledHeight(30, icon: true);
+            g.Classes.Add("tb");
+            if (guideButtons.Count == 0) g.Margin = new Avalonia.Thickness(0, 6, 0, 0);
+            ToolTip.SetTip(g, tip);
+            g.Click += (_, _) => session.AddGuideOnSelection(place);
+            host.Children.Add(g);
+            guideButtons.Add((g, place));
+        }
+
+        void SyncGuideButtons()
+        {
+            foreach (var (b, place) in guideButtons) b.IsEnabled = session.CanGuideSelection(place);   // nothing selected: nothing to put the guide on
+        }
+        session.Selection.Changed += (_, _) => SyncGuideButtons();
+        session.Document.Changed += (_, _) => SyncGuideButtons();
+        SyncGuideButtons();
+
         void Sync()
         {
             foreach (var (b, id) in buttons) b.IsChecked = session.ActiveTool.Id == id;
@@ -110,6 +133,33 @@ public static class Toolbox
         session.ToolChanged += (_, _) => Sync();
         session.DisplayChanged += (_, _) => Sync();
         Sync();
+    }
+
+    private enum GuideEdge { Top, Center, Bottom, Side }
+
+    private static readonly (string Name, GuidePlace Place, string Tip, GuideEdge Edge)[] GuideButtonSpecs =
+    [
+        ("ToolboxGuideTop", GuidePlace.TopEdge, "Guide at top: put a horizontal guide on the top edge of the selected object or group", GuideEdge.Top),
+        ("ToolboxGuideCenter", GuidePlace.HorizontalCenter, "Guide at center: put a horizontal guide through the middle of the selected object or group", GuideEdge.Center),
+        ("ToolboxGuideBottom", GuidePlace.BottomEdge, "Guide at bottom: put a horizontal guide on the bottom edge of the selected object or group", GuideEdge.Bottom),
+        ("ToolboxGuideSide", GuidePlace.LeftEdge, "Guide at side: put a vertical guide on the left edge of the selected object or group", GuideEdge.Side),
+    ];
+
+    /// <summary>Our own icon for the one-click guides: a box with a dashed guide line along one of its edges.</summary>
+    private static Control GuideEdgeIcon(GuideEdge edge)
+    {
+        var c = new Avalonia.Controls.Canvas { Width = 18, Height = 18 };
+        var box = new Rectangle { Width = 10, Height = 10, Stroke = AppTheme.Brush("Ui.Icon"), StrokeThickness = 1.3 };
+        Avalonia.Controls.Canvas.SetLeft(box, 5);
+        Avalonia.Controls.Canvas.SetTop(box, 4);
+        c.Children.Add(box);
+        string line = edge switch { GuideEdge.Top => "M0,4 H18", GuideEdge.Center => "M0,9 H18", GuideEdge.Bottom => "M0,14 H18", _ => "M5,0 V18" };
+        c.Children.Add(new Avalonia.Controls.Shapes.Path
+        {
+            Data = Avalonia.Media.Geometry.Parse(line), Stroke = AppTheme.Brush("Ui.IconAccent"), StrokeThickness = 1.4,
+            StrokeDashArray = [2.5, 1.5],
+        });
+        return c;
     }
 
     /// <summary>Our own color-mode icon: three color bars (red, green, blue).</summary>

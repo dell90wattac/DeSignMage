@@ -368,11 +368,76 @@ public static class LytParser
             catch (LytFormatException e) { notDecoded = $"fill block: {e.Message}"; }
         }
 
+        // What follows the fill: the three flag words and the optional blocks they announce, of which only the Soft Shadow / Glow record is kept.
+        // A block that is not understood ends the reading there (what comes after it cannot be found), without a warning: the part is complete without it.
+        LytSoftShadow? soft = null;
+        bool softHidden = false, softGlow = false;
+        if (notDecoded is null)
+        {
+            try { ReadAfterFill(r, v7, out soft, out softHidden, out softGlow); }
+            catch (LytFormatException) { /* an older or damaged variant: no soft shadow */ }
+        }
+
         return new LytStyle
         {
             BodyMagic = magic, FontFile = font, CharSpacing = charSpacing, WordSpacing = wordSpacing, LineSpacing = lineSpacing,
             Align = align, LayerId = layerId, Color = color, AlternateColor = alternate, Flags = flags, Fill = fill, NotDecoded = notDecoded,
+            SoftShadow = soft, SoftShadowHidden = softHidden, SoftShadowIsGlow = softGlow,
         };
+    }
+
+    /// <summary>
+    /// The part after the fill block: three flag words (Flags2, Flags3, Flags4), then the blocks their bits announce in a fixed order. The Soft Shadow record is
+    /// announced by bit 0x4000000 of the second word; the Glow and "hidden" marks are bits of the last word of the part, which is only reachable when no block
+    /// before it is unknown.
+    /// </summary>
+    internal static void ReadAfterFill(ByteReader r, bool v7, out LytSoftShadow? soft, out bool hidden, out bool glow)
+    {
+        soft = null; hidden = false; glow = false;
+        uint f69 = r.U32(), f6d = r.U32(), f71 = r.U32();
+        if ((f69 & 0x40000000) != 0) return;                 // an unknown block
+        if ((f6d & 0x1) != 0) r.Skip(8 + 8 + 100);
+        if ((f6d & 0x800000) != 0) return;                   // an unknown block
+        if ((f6d & 0x4000000) != 0) soft = ReadSoftShadow(r);
+        if ((f6d & 0x8000000) != 0) return;                  // an unknown block
+        if ((f71 & 0x200) != 0) r.Skip(260);
+        if ((f71 & 0x800) != 0) r.Skip(4);
+        if ((f71 & 0x200000) != 0) r.Skip(8);
+        if ((f71 & 0x400000) != 0) r.Skip(4 + 4 + 4 + 8);
+        if ((f71 & 0x2000000) != 0) r.Skip(4 * (57 + 16));
+        if ((f71 & 0x80000000) != 0)
+        {
+            uint f75 = r.U32();
+            if ((f75 & 1) != 0) r.Skip(1 + 4 + 300 + 12 + 16 + 4 + 4);
+            if ((f75 & (0x40 | 0x80 | 0x20000)) != 0) return;   // unknown blocks
+        }
+        if (!v7) return;
+        uint f79 = r.U32();
+        hidden = (f79 & 0x400000) != 0;
+        glow = (f79 & 0x2) != 0;
+    }
+
+    /// <summary>The Soft Shadow record (version 3, 4 or 5). Null when its numbers are not plausible (the block is then not what it was taken for).</summary>
+    private static LytSoftShadow? ReadSoftShadow(ByteReader r)
+    {
+        int version = r.U8();
+        float opacity = r.F32(), hs = r.F32(), vs = r.F32(), softness = r.F32();
+        r.Skip(8);                                           // two words that hold leftover memory
+        uint options = r.U32();
+        float inset = r.F32();
+        float slant = 0, height = 1;
+        if (version > 3) { slant = r.F32(); height = r.F32(); }
+        var color = default(LytColor);
+        if (version > 4) color = ReadColor(r);
+        bool plausible = version is >= 3 and <= 5 && (options & 1) != 0
+            && float.IsFinite(opacity) && opacity is >= 0 and <= 1.0001f
+            && float.IsFinite(softness) && softness is >= 0 and <= 10
+            && float.IsFinite(hs) && float.IsFinite(vs) && Math.Abs(hs) < 1e5 && Math.Abs(vs) < 1e5
+            && float.IsFinite(inset) && Math.Abs(inset) < 100
+            && float.IsFinite(slant) && Math.Abs(slant) < 90 && float.IsFinite(height) && height is > 0 and < 100;
+        return plausible
+            ? new LytSoftShadow { Version = version, Opacity = opacity, Hs = hs, Vs = vs, Softness = softness, Inset = inset, Slant = slant, Height = height, Color = color }
+            : null;
     }
 
     /// <summary>The fill/effect block: its own u16 version, then parameters that grow with the version.</summary>
@@ -389,7 +454,7 @@ public static class LytParser
         for (int i = 0; i < 8; i++) blend.Points[i] = r.F32();
         for (int i = 0; i < 8; i++) blend.TransPoints[i] = r.F32();
         r.Skip(1);
-        if (w > 0x1771) { blend.TransMin = r.F32(); r.Skip(4); if (w > 0x1777) r.Skip(4); }
+        if (w > 0x1771) { blend.TransMin = r.F32(); blend.FeatherAmount = r.F32(); if (w > 0x1777) blend.FeatherInset = r.F32(); }
         if (w > 0x1772)
         {
             blend.NodeCount = (int)r.U32();
@@ -470,6 +535,13 @@ public static class LytParser
         {
             throw new NotDecodedException("multi-bitmap fills are not imported yet");
         }
+        else if (r.Remaining >= 260)
+        {
+            r.Skip(260);                                     // the legacy text buffer every other fill type carries (empty here)
+        }
+
+        // The last field of the block: Alternate Colors. Read leniently (a block that ends early just has none), so the fill is never lost for it.
+        if (r.Remaining >= 4) blend.AlternateColors = r.U32() == 1;
         return new LytFill { Version = w, Type = type, Image = image, ImageMediaType = mediaType, LinkedImagePath = link, Blend = blend };
     }
 

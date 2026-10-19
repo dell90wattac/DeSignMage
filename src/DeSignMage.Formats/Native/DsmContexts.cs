@@ -18,6 +18,9 @@ public sealed class DsmWriteContext
     /// <summary>Where each group stands in the file's <c>groups</c> list. Objects and groups refer to the group they belong to by this number.</summary>
     internal Dictionary<GroupObject, int> GroupIndexes { get; } = [];
 
+    /// <summary>The number of every object a live effect follows (format 4): the source is written with <c>linkId</c>, the effect refers to it.</summary>
+    internal Dictionary<DocObject, int> LinkIds { get; } = new(ReferenceEqualityComparer.Instance);
+
     /// <summary>Writes <c>"name": [ object, object, ... ]</c>.</summary>
     public void WriteObjectList(string name, IEnumerable<DocObject> objects)
     {
@@ -39,6 +42,8 @@ public sealed class DsmWriteContext
         // Membership, not position: the group an object (or a group) belongs to, by its number in the "groups" list. The position in the
         // drawing order is the position in the layer's list (R22).
         if (o.Parent is GroupObject g && GroupIndexes.TryGetValue(g, out int groupIndex)) Json.WriteNumber("group", groupIndex);
+        if (LinkIds.TryGetValue(o, out int linkId)) Json.WriteNumber("linkId", linkId);
+        if (o.Live is { } live && LinkIds.TryGetValue(live.Source, out int sourceId)) DsmLiveLinks.Write(Json, live, sourceId);
         if (o.Style.Fill is not null || o.Style.Stroke is not null || o.Style.HasSoftEffects) WriteStyle("style", o.Style);
         codec.Write(o, this);
         Json.WriteEndObject();
@@ -244,7 +249,38 @@ public sealed class DsmReadContext
         o.Style = ReadStyle(e, "style");
         o.Visible = e.Bool("visible", true);
         o.Locked = e.Bool("locked");
+        if (e.TryGet("linkId", out var id) && id.ValueKind == JsonValueKind.Number) _linkTargets[id.GetInt32()] = o;
+        if (e.TryGet("live", out var live) && live.ValueKind == JsonValueKind.Object) _pendingLinks.Add((o, live));
         return (o, codec);
+    }
+
+    private readonly Dictionary<int, DocObject> _linkTargets = [];
+    private readonly List<(DocObject Effect, JsonElement Live)> _pendingLinks = [];
+
+    /// <summary>
+    /// Connects the live effects to their sources once everything is read (format 4). An effect whose source is missing (a damaged or skipped object)
+    /// opens as the plain object it is.
+    /// </summary>
+    internal void ResolveLiveLinks()
+    {
+        int lost = 0;
+        foreach (var (effect, live) in _pendingLinks)
+        {
+            try
+            {
+                if (effect is not PathObject || !_linkTargets.TryGetValue(live.Int("source", -1), out var source) || !Document.Contains(source) || ReferenceEquals(source, effect))
+                {
+                    lost++;
+                    continue;
+                }
+                effect.Live = DsmLiveLinks.Read(live, source, this);
+            }
+            catch (Exception ex) when (IsDataError(ex))
+            {
+                lost++;
+            }
+        }
+        if (lost > 0) Warn($"{lost} live effect{(lost == 1 ? "" : "s")} lost {(lost == 1 ? "its" : "their")} link and opened as plain objects.");
     }
 
     public ObjectStyle ReadStyle(JsonElement owner, string name)

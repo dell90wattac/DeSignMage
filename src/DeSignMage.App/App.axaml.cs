@@ -32,6 +32,7 @@ public partial class App : Application
         AppTheme.Load(AppSettings.Store);   // Dark Menus / Dark Canvas (R19), remembered between runs
         VectorEditSettings.Load(AppSettings.Store);   // the small-vector threshold
         PerformanceSettings.Load(AppSettings.Store);   // undo memory limit, before any document exists
+        DeSignMage.App.Recovery.AutoSaveSettings.Load(AppSettings.Store);   // auto-save on/off, minutes, largest design
         if (Program.Options.TextScale is { } devScale) UiScale.SetScale(devScale, remember: false);
 
         if (ApplicationLifetime is IClassicDesktopStyleApplicationLifetime desktop)

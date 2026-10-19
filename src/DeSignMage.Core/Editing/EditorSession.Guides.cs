@@ -26,7 +26,8 @@ public sealed partial class EditorSession
     private double _dragAngle;
     private Vec2 _dragStartDoc, _dragStartScreen, _dragStartOrigin;
     private Guide? _selectedGuide, _hoverGuide;
-    private bool _showGuides = true, _snapToGuides = true, _leftDown;
+    private bool _showGuides = true, _snapToGuides = true, _snapGuidesToGraphics = true, _leftDown;
+    private double[] _graphicXs = [], _graphicYs = [];   // where a dragged guide can snap, collected when the drag starts
 
     private void InitGuides()
     {
@@ -43,7 +44,7 @@ public sealed partial class EditorSession
     /// <summary>Raised when the selected guide, guide visibility or snapping changes (the shell swaps Context Bars).</summary>
     public event EventHandler? GuideStateChanged;
 
-    /// <summary>View ▸ Show Guidelines. Hidden guides can't be picked and don't snap.</summary>
+    /// <summary>View ▸ Show Guidelines. Hidden guides can't be picked but still snap ("the guidelines are always active whether or not they are shown").</summary>
     public bool ShowGuides
     {
         get => _showGuides;
@@ -65,6 +66,21 @@ public sealed partial class EditorSession
         {
             if (_snapToGuides == value) return;
             _snapToGuides = value;
+            GuideStateChanged?.Invoke(this, EventArgs.Empty);
+        }
+    }
+
+    /// <summary>
+    /// A guide being created or dragged snaps to the edges and centers of the graphics, and to text baselines and cap heights (the second
+    /// toggle of the guide Context Bar; on by default). Off, a guide goes exactly where the pointer is; typing a value always works.
+    /// </summary>
+    public bool SnapGuidesToGraphics
+    {
+        get => _snapGuidesToGraphics;
+        set
+        {
+            if (_snapGuidesToGraphics == value) return;
+            _snapGuidesToGraphics = value;
             GuideStateChanged?.Invoke(this, EventArgs.Empty);
         }
     }
@@ -119,7 +135,8 @@ public sealed partial class EditorSession
         _guideMode = GuideMode.Creating;
         _dragGuide = null;
         _dragAngle = orientation == GuideOrientation.Horizontal ? 0 : 90;
-        _dragOrigin = Viewport.ToDoc(screen);
+        CollectGraphicLines();
+        _dragOrigin = SnapGuideToGraphics(Viewport.ToDoc(screen), _dragAngle);
         RequestRedraw();
     }
 
@@ -129,16 +146,17 @@ public sealed partial class EditorSession
         switch (_guideMode)
         {
             case GuideMode.Creating:
-                _dragOrigin = Viewport.ToDoc(screen);
+                _dragOrigin = SnapGuideToGraphics(Viewport.ToDoc(screen), _dragAngle);
                 break;
             case GuideMode.Pending:
                 // A locked guide stays pending forever: it can be selected (and unlocked or removed) but not dragged.
                 if (_dragGuide is { Locked: true } || Vec2.Distance(screen, _dragStartScreen) < ClickThresholdPx) return;
                 _guideMode = GuideMode.Moving;
+                CollectGraphicLines();
                 goto case GuideMode.Moving;
             case GuideMode.Moving:
                 var normal = Guide.NormalOf(_dragAngle);
-                _dragOrigin = _dragStartOrigin + normal * Vec2.Dot(Viewport.ToDoc(screen) - _dragStartDoc, normal);
+                _dragOrigin = SnapGuideToGraphics(_dragStartOrigin + normal * Vec2.Dot(Viewport.ToDoc(screen) - _dragStartDoc, normal), _dragAngle);
                 break;
             default:
                 return;
@@ -170,10 +188,66 @@ public sealed partial class EditorSession
         }
         else if (mode == GuideMode.Moving && guide is not null)
         {
+            // Dragging a guide back out over a ruler (off the canvas) takes it away again, as dragging one out of a ruler puts it in.
+            var view = new Rect2(0, 0, Viewport.ViewSize.X, Viewport.ViewSize.Y);
+            if (!view.Contains(screen)) { RemoveGuide(guide); RequestRedraw(); return; }
             var cmd = SetGuideCommand.Move(guide, origin);
             if (!cmd.IsNoOp) History.Execute(cmd);
         }
         RequestRedraw();
+    }
+
+    // ---- Snapping a guide to the graphics ----
+
+    /// <summary>Collects where a guide can snap: the edges and centers of every shown object, and the baseline and cap height of every text line.</summary>
+    private void CollectGraphicLines()
+    {
+        if (!_snapGuidesToGraphics) { _graphicXs = _graphicYs = []; return; }
+        var xs = new List<double>();
+        var ys = new List<double>();
+        var texts = new List<TextObject>();
+        foreach (var layer in Document.Layers)
+        {
+            if (!layer.Visible) continue;
+            foreach (var o in layer.Children)
+            {
+                if (!o.Visible) continue;
+                var b = o.GetWorldBounds();
+                if (b.IsEmpty) continue;
+                xs.Add(b.Left); xs.Add(b.Center.X); xs.Add(b.Right);
+                ys.Add(b.Top); ys.Add(b.Center.Y); ys.Add(b.Bottom);
+                if (o is TextObject t) texts.Add(t);
+            }
+        }
+        foreach (var place in new[] { GuidePlace.TextBaseline, GuidePlace.TextCapHeight })
+            foreach (var g in GuidePlacement.ForText(place, texts))
+                if (g.Orientation == GuideOrientation.Horizontal) ys.Add(g.Origin.Y);
+        _graphicXs = xs.ToArray();
+        _graphicYs = ys.ToArray();
+    }
+
+    /// <summary>A horizontal or vertical guide's new origin, moved onto the nearest collected line within the snap distance (angled guides never snap).</summary>
+    private Vec2 SnapGuideToGraphics(Vec2 origin, double angle)
+    {
+        if (!_snapGuidesToGraphics) return origin;
+        double tol = Viewport.ToDocLength(SnapTolerancePx);
+        switch (Guide.Orient(angle))
+        {
+            case GuideOrientation.Horizontal: return new Vec2(origin.X, Nearest(_graphicYs, origin.Y, tol));
+            case GuideOrientation.Vertical: return new Vec2(Nearest(_graphicXs, origin.X, tol), origin.Y);
+            default: return origin;
+        }
+    }
+
+    private static double Nearest(double[] lines, double value, double tolerance)
+    {
+        double best = value, bestDistance = tolerance;
+        foreach (double line in lines)
+        {
+            double d = Math.Abs(line - value);
+            if (d <= bestDistance) { bestDistance = d; best = line; }
+        }
+        return best;
     }
 
     /// <summary>Abandons a guide drag without changing the document (Escape, undo, switching tools).</summary>
@@ -286,7 +360,7 @@ public sealed partial class EditorSession
 
     // ---- Snapping ----
 
-    internal bool SnappingActive => _showGuides && _snapToGuides && Document.Guides.Count > 0;
+    internal bool SnappingActive => _snapToGuides && Document.Guides.Count > 0;   // hidden guides snap too (legacy)
 
     /// <summary>
     /// A move of <paramref name="startBounds"/> by <paramref name="delta"/>, adjusted so an edge or center lands on a guide

@@ -47,11 +47,14 @@ public static class RectangleShapes
 /// side by the shape itself). A rectangle object just takes the radius; a path that is a plain box is replaced by a rectangle object in the
 /// same place, group and style, so the radius stays editable. One undo step.
 /// </summary>
-public sealed class ConvertToRoundedRectangleCommand : IDocumentCommand, IUndoMemory
+public sealed class ConvertToRoundedRectangleCommand : IDocumentCommand, IUndoMemory, IReplacesObjects
 {
     private sealed record Item(DocObject Source, RectangleObject? Replacement, double OldRadius);
 
     private readonly List<Item> _items = [];
+
+    public IEnumerable<(DocObject Old, IReadOnlyList<DocObject> New)> Replacements =>
+        _items.Where(i => i.Replacement is not null).Select(i => (i.Source, (IReadOnlyList<DocObject>)[i.Replacement!]));
     private readonly double _radius;
 
     public ConvertToRoundedRectangleCommand(IEnumerable<DocObject> targets, double radius)

@@ -98,6 +98,30 @@ public static class LoopCleanup
         return result;
     }
 
+    /// <summary>
+    /// The combined object <paramref name="combined"/> rebuilt after Remove All Inner Loops: the parts that were left with no loops at all (a
+    /// small circle lying inside a big one) are dropped instead of staying behind as empty parts. Null when no part is left. Untouched parts,
+    /// text and pictures are copied whole; a changed shape part becomes a plain path in the same place and style.
+    /// </summary>
+    public static CombinedObject? WithoutEmptyParts(CombinedObject combined, LoopMap map, List<(int Piece, PathGeometry Geometry)> changes)
+    {
+        var parts = new List<DocObject>();
+        for (int i = 0; i < combined.Parts.Count; i++)
+        {
+            var part = combined.Parts[i];
+            int piece = map.Pieces.FindIndex(p => p.PartIndex == i);
+            var change = piece < 0 ? default : changes.FirstOrDefault(c => c.Piece == piece);
+            if (change.Geometry is null) { parts.Add(part.Clone()); continue; }
+            if (change.Geometry.IsEmpty) continue;
+            parts.Add(new PathObject(change.Geometry)
+            {
+                Name = part.Name, Transform = part.Transform, Style = part.Style, Visible = part.Visible, Locked = part.Locked,
+            });
+        }
+        if (parts.Count == 0) return null;
+        return new CombinedObject(parts) { Name = combined.Name, Transform = combined.Transform, Visible = combined.Visible, Locked = combined.Locked };
+    }
+
     /// <summary>The new geometry of each piece with every open loop closed; only the pieces that change.</summary>
     public static List<(int Piece, PathGeometry Geometry)> WithClosedLoops(LoopMap map)
     {
@@ -109,6 +133,35 @@ public static class LoopCleanup
             if (PathEditing.CloseAll(loops) > 0) result.Add((pi, PathEditing.FromLoops(loops, piece.FillRule)));
         }
         return result;
+    }
+}
+
+/// <summary>
+/// Puts <paramref name="replacement"/> in the place of <paramref name="source"/> (same spot in the drawing order and the same group), or
+/// just removes it when there is no replacement. Undo puts the original back.
+/// </summary>
+public sealed class ReplaceObjectCommand(string description, DocObject source, DocObject? replacement) : IDocumentCommand, IUndoMemory, IReplacesObjects
+{
+    private Removal? _removal;
+
+    public IEnumerable<(DocObject Old, IReadOnlyList<DocObject> New)> Replacements => [(source, replacement is null ? [] : [replacement])];
+
+    public string Description => description;
+    public DocObject Source => source;
+    public DocObject? Replacement => replacement;
+    public long ApproximateBytes => UndoMemory.BytesOf(source) + (replacement is null ? 0 : UndoMemory.BytesOf(replacement));
+    public IEnumerable<string> HeldAssetIds => UndoMemory.AssetsOf(source).Concat(replacement is null ? [] : UndoMemory.AssetsOf(replacement));
+
+    public void Do(Document doc)
+    {
+        _removal = doc.Remove(source);
+        if (replacement is not null) doc.Insert(_removal.Slot, replacement);
+    }
+
+    public void Undo(Document doc)
+    {
+        if (replacement is not null) doc.Remove(replacement);
+        doc.Restore(_removal!);
     }
 }
 

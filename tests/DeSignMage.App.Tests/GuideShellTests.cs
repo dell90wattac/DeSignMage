@@ -194,7 +194,79 @@ public class GuideShellTests
         w.Close();
     }
 
+    [AvaloniaFact]
+    public void Dragging_a_guide_back_onto_its_ruler_removes_it_and_undo_brings_it_back()
+    {
+        var (w, c) = Open();
+        PullGuide(w, c, TopRuler(w), new Point(300, 10), new Point(300, 220));
+        var g = Assert.Single(w.Session.Document.Guides);
+        double sy = w.Session.Viewport.ToScreen(g.Origin).Y;
+        var top = TopRuler(w);
+
+        w.MouseDown(InWindow(c, 500, sy), MouseButton.Left);
+        w.MouseMove(InWindow(c, 500, sy - 60));
+        w.MouseMove(InWindow(top, 500, 10));
+        w.MouseUp(InWindow(top, 500, 10), MouseButton.Left);
+        Assert.Empty(w.Session.Document.Guides);
+        Assert.Null(w.Session.SelectedGuide);
+
+        w.KeyPress(Key.Z, RawInputModifiers.Control, PhysicalKey.Z, "z");
+        Assert.Single(w.Session.Document.Guides);
+        w.Close();
+    }
+
+    /// <summary>Saves a picture of the guide bar (with the snap-to-graphics toggle) when DSM_SCREENSHOTS names a folder (docs only).</summary>
+    [AvaloniaFact]
+    public void Screenshot_of_the_guide_bar_for_notes()
+    {
+        var dir = Environment.GetEnvironmentVariable("DSM_SCREENSHOTS");
+        if (string.IsNullOrEmpty(dir)) return;
+        var (w, c) = Open();
+        Directory.CreateDirectory(dir);
+        var box = new RectangleObject(300, 140) { Transform = Affine2.Translation(400, 300), Style = ObjectStyle.FillOnly(DocColor.FromHex("#3366CC")) };
+        w.Session.History.Execute(new AddObjectCommand(w.Session.Document.ActiveLayer, box));
+        var sx = w.Session.Viewport.ToScreen(new Vec2(700, 0)).X + 2;      // 2 px from the right edge: the guide jumps onto it
+        PullGuide(w, c, LeftRuler(w), new Point(10, 300), new Point(sx, 300));
+        Assert.Equal(700, w.Session.SelectedGuide!.Origin.X, 6);          // it snapped onto the rectangle's right edge
+        Dispatcher.UIThread.RunJobs();
+#pragma warning disable CS0618
+        w.CaptureRenderedFrame()!.Save(System.IO.Path.Combine(dir, "guide-bar-snap-graphics.png"));
+#pragma warning restore CS0618
+        w.Close();
+    }
+
     // ---- Guide Context Bar ----
+
+    [AvaloniaFact]
+    public void The_guide_bar_has_a_snap_guides_to_graphics_toggle_next_to_snap_to_guides()
+    {
+        var (w, c) = Open();
+        PullGuide(w, c, TopRuler(w), new Point(300, 10), new Point(300, 220));
+        var toggle = Named(w, "GuideSnapGraphics");
+        Assert.True(w.Session.SnapGuidesToGraphics);
+        Assert.Contains("on", toggle.Classes);                     // pressed while on
+        Press(w, toggle);
+        Assert.False(w.Session.SnapGuidesToGraphics);
+        Assert.DoesNotContain("on", Named(w, "GuideSnapGraphics").Classes);
+        Press(w, Named(w, "GuideSnapGraphics"));
+        Assert.True(w.Session.SnapGuidesToGraphics);
+        w.Close();
+    }
+
+    [AvaloniaFact]
+    public void A_locked_guide_can_still_be_edited_by_number_it_only_refuses_to_be_dragged()
+    {
+        var (w, c) = Open();
+        PullGuide(w, c, TopRuler(w), new Point(300, 10), new Point(300, 220));
+        Press(w, Named(w, "GuideLock"));
+        Assert.True(w.Session.SelectedGuide!.Locked);
+        var y = w.GetVisualDescendants().OfType<TextBox>().First(t => t.Name == "GuideY");
+        Assert.True(y.IsEnabled);
+        Assert.True(y.IsVisible);
+        Assert.True(Named(w, "GuideCenter").IsEnabled);
+        Assert.True(Named(w, "GuideVertical").IsEnabled);
+        w.Close();
+    }
 
     [AvaloniaFact]
     public void Selecting_a_guide_switches_to_the_guide_bar_with_the_irrelevant_field_greyed()

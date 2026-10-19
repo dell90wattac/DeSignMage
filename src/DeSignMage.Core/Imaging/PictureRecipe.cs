@@ -133,12 +133,15 @@ public sealed record PictureRecipe(int SourceWidth, int SourceHeight)
     /// <summary>The part of the (turned) canvas that is kept; null = all of it.</summary>
     public RectI? Crop { get; init; }
 
+    /// <summary>What is made transparent (after the crop, before the colors).</summary>
+    public PictureTransparency Transparency { get; init; } = PictureTransparency.None;
+
     public PictureAdjust Adjust { get; init; } = PictureAdjust.None;
 
     public PictureEffects Effects { get; init; } = PictureEffects.None;
 
     /// <summary>True when the recipe changes nothing: the picture is its original.</summary>
-    public bool IsIdentity => !Mirror && Quarter == 0 && Math.Abs(Straighten) < 1e-6 && Crop is null && Adjust.IsIdentity && Effects.IsIdentity;
+    public bool IsIdentity => !Mirror && Quarter == 0 && Math.Abs(Straighten) < 1e-6 && Crop is null && Transparency.IsIdentity && Adjust.IsIdentity && Effects.IsIdentity;
 
     /// <summary>The original's size after the flip and quarter turns (width and height swap on an odd number of turns).</summary>
     public (int Width, int Height) OrientedSize => (Quarter & 1) == 0 ? (SourceWidth, SourceHeight) : (SourceHeight, SourceWidth);
@@ -174,6 +177,7 @@ public sealed record PictureRecipe(int SourceWidth, int SourceHeight)
             Quarter = ((Quarter % 4) + 4) % 4,
             Straighten = Math.Abs(Straighten) < 1e-6 ? 0 : PictureGeometry.WrapAngle(Straighten),
             Effects = Effects.Clamped(),
+            Transparency = Transparency.IsIdentity ? PictureTransparency.None : Transparency.Clamped(),
         };
         var (cw, ch) = r.CanvasSize;
         return r.Crop is { } c && c.ClampedTo(cw, ch) == new RectI(0, 0, cw, ch) ? r with { Crop = null } : r;
@@ -203,6 +207,29 @@ public sealed record PictureRecipe(int SourceWidth, int SourceHeight)
         var r = this;
         while (r.Quarter != 0) r = r.RotatedLeft();
         return r.Mirror ? r.FlippedHorizontally() : r;
+    }
+
+    /// <summary>
+    /// The same edits for a replacement original of another size (the picture was changed in another program): the crop and the cut-out outlines
+    /// are scaled by the change of size, everything else stays. A replacement of the same size changes nothing.
+    /// </summary>
+    public PictureRecipe WithNewSource(int width, int height)
+    {
+        if (width == SourceWidth && height == SourceHeight) return this;
+        var (oldW, oldH) = CanvasSize;
+        var moved = this with
+        {
+            SourceWidth = Math.Max(1, width),
+            SourceHeight = Math.Max(1, height),
+            Transparency = Transparency.ScaledCuts((double)width / SourceWidth, (double)height / SourceHeight),
+        };
+        var (newW, newH) = moved.CanvasSize;
+        if (Crop is { } c)
+        {
+            double kx = (double)newW / oldW, ky = (double)newH / oldH;
+            moved = moved with { Crop = new RectI((int)Math.Round(c.X * kx), (int)Math.Round(c.Y * ky), Math.Max(1, (int)Math.Round(c.Width * kx)), Math.Max(1, (int)Math.Round(c.Height * ky))).ClampedTo(newW, newH) };
+        }
+        return moved.Normalized();
     }
 
     private PictureRecipe Reoriented(bool mirror, int quarter, double angle, Func<RectI?, RectI?> crop)
@@ -268,6 +295,46 @@ public static class PictureGeometry
         // Two pixels in from the exact fit: the edge of the turned picture is smoothed over a pixel, and no half-transparent fringe may be left in the corners.
         int w = Math.Max(1, (int)Math.Floor(pw * scale) - 2), h = Math.Max(1, (int)Math.Floor(ph * scale) - 2);
         return new RectI((cw - w) / 2, (ch - h) / 2, w, h);
+    }
+
+    /// <summary>
+    /// A point of the original picture (pixels, from its top-left corner, fractions allowed) as it lies on the canvas of the recipe: after the flip, the quarter
+    /// turns and the free rotation. The canvas is what the crop frame sits on.
+    /// </summary>
+    public static Vec2 SourceToCanvas(PictureRecipe recipe, Vec2 p)
+    {
+        double w = recipe.SourceWidth, h = recipe.SourceHeight, x = p.X, y = p.Y;
+        if (recipe.Mirror) x = w - x;
+        for (int i = 0; i < ((recipe.Quarter % 4) + 4) % 4; i++)
+        {
+            (x, y) = (h - y, x);
+            (w, h) = (h, w);
+        }
+        if (Math.Abs(recipe.Straighten) < 1e-6) return new Vec2(x, y);
+        var (cw, ch) = CanvasSize((int)w, (int)h, recipe.Straighten);
+        double a = recipe.Straighten * Math.PI / 180, c = Math.Cos(a), s = Math.Sin(a), dx = x - w / 2, dy = y - h / 2;
+        return new Vec2(cw / 2.0 + dx * c - dy * s, ch / 2.0 + dx * s + dy * c);
+    }
+
+    /// <summary>The inverse of <see cref="SourceToCanvas"/>: a point of the canvas as a point of the original picture.</summary>
+    public static Vec2 CanvasToSource(PictureRecipe recipe, Vec2 p)
+    {
+        var (w0, h0) = recipe.OrientedSize;
+        double w = w0, h = h0, x = p.X, y = p.Y;
+        if (Math.Abs(recipe.Straighten) >= 1e-6)
+        {
+            var (cw, ch) = CanvasSize(w0, h0, recipe.Straighten);
+            double a = recipe.Straighten * Math.PI / 180, c = Math.Cos(a), s = Math.Sin(a), dx = x - cw / 2.0, dy = y - ch / 2.0;
+            x = w / 2 + dx * c + dy * s;
+            y = h / 2 - dx * s + dy * c;
+        }
+        for (int i = 0; i < ((recipe.Quarter % 4) + 4) % 4; i++)
+        {
+            (x, y) = (y, w - x);
+            (w, h) = (h, w);
+        }
+        if (recipe.Mirror) x = w - x;
+        return new Vec2(x, y);
     }
 
     /// <summary>

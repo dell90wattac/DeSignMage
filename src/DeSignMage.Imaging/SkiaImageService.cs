@@ -12,6 +12,9 @@ namespace DeSignMage.Imaging;
 /// </summary>
 public sealed class SkiaImageService : IImageService
 {
+    // Plugs in what picking needs to ignore the see-through parts of a picture (a click on the outside of a cut-out does not select it).
+    static SkiaImageService() => HitTesting.PictureMaskLoader = AlphaMasks.Load;
+
     public (int Width, int Height)? GetPixelSize(Document doc, string assetId)
     {
         if (doc.Assets.Get(assetId) is not { } asset) return null;

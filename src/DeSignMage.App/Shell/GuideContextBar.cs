@@ -11,13 +11,14 @@ namespace DeSignMage.App.Shell;
 /// <summary>
 /// Context Bar while a ruler guide is selected (requirement R4, guide bar): X and Y of the guide
 /// (the one that doesn't apply is greyed out), its angle, horizontal / vertical / diagonal buttons, lock,
-/// "+" (center on the page along its axis), snap toggle, blue X = remove this guide, red X = remove all guides.
+/// "+" (center on the page along its axis), snap objects to guides, snap guides to graphics, blue X = remove this guide,
+/// red X = remove all guides. A locked guide can't be dragged, but its numbers and buttons still work.
 /// </summary>
 public sealed class GuideContextBar : ContextBarBase, IRefreshable
 {
     private readonly EditorSession _session;
     private readonly TextBox _x, _y, _angle;
-    private readonly Button _horizontal, _vertical, _diagonal, _lock, _center, _snap, _removeOne, _removeAll;
+    private readonly Button _horizontal, _vertical, _diagonal, _lock, _center, _snap, _snapGraphics, _removeOne, _removeAll;
     private readonly TextBlock _info = new() { VerticalAlignment = VerticalAlignment.Center, Foreground = AppTheme.Brush("Ui.Muted") };
     private readonly Control _xField, _yField, _angleField, _kinds, _tools;   // groups shown only while they apply to the selected guide
     private bool _refreshing, _edited;
@@ -41,6 +42,7 @@ public sealed class GuideContextBar : ContextBarBase, IRefreshable
         _lock = IconButton("GuideLock", "", "Lock guide (a locked guide can't be dragged)", ToggleLock, glyph: true);
         _center = IconButton("GuideCenter", "+", "Center on the page along its axis", () => { if (Current is { } g) _session.CenterGuideOnPage(g); });
         _snap = IconButton("GuideSnap", "⌖", "Snap objects to guides", () => _session.SnapToGuides = !_session.SnapToGuides);
+        _snapGraphics = IconButton("GuideSnapGraphics", "▣", "Snap guides to graphics: a guide jumps onto the edges, centers, baselines and cap heights of objects", () => _session.SnapGuidesToGraphics = !_session.SnapGuidesToGraphics);
         _removeOne = IconButton("GuideRemoveOne", "✕", "Remove this guide", () => { if (Current is { } g) _session.RemoveGuide(g); });
         _removeAll = IconButton("GuideRemoveAll", "✕", "Remove all guides", () => _session.RemoveAllGuides());
         ((TextBlock)_removeOne.Content!).Foreground = AppTheme.Brush("Ui.RulerMarker");
@@ -51,7 +53,7 @@ public sealed class GuideContextBar : ContextBarBase, IRefreshable
         _yField = ContextBars.Field("Y", _y, "in");
         _angleField = ContextBars.Field("Angle", _angle, "°");
         _kinds = ContextBars.Group(_horizontal, _vertical, _diagonal);
-        _tools = ContextBars.Group(_lock, _center, _snap);
+        _tools = ContextBars.Group(_lock, _center, _snap, _snapGraphics);
         foreach (var c in new Control[]
                  {
                      _xField, _yField, _angleField,
@@ -109,11 +111,11 @@ public sealed class GuideContextBar : ContextBarBase, IRefreshable
         bool locked = g?.Locked ?? false;
         var kind = g?.Orientation ?? GuideOrientation.Horizontal;
 
-        // The coordinate that doesn't apply is greyed out (it still shows where the guide was grabbed).
-        // What does not apply is not shown (R26): a horizontal guide has no X, a vertical one no Y, a locked one cannot be edited.
-        _x.IsEnabled = _xField.IsVisible = has && !locked && kind != GuideOrientation.Horizontal;
-        _y.IsEnabled = _yField.IsVisible = has && !locked && kind != GuideOrientation.Vertical;
-        _angle.IsEnabled = _angleField.IsVisible = has && !locked;
+        // What does not apply is not shown (R26): a horizontal guide has no X, a vertical one no Y. A locked guide only refuses to be
+        // dragged ("prevents it from being moved accidentally"); typing its numbers and the buttons still work.
+        _x.IsEnabled = _xField.IsVisible = has && kind != GuideOrientation.Horizontal;
+        _y.IsEnabled = _yField.IsVisible = has && kind != GuideOrientation.Vertical;
+        _angle.IsEnabled = _angleField.IsVisible = has;
         if (g is not null)
         {
             var (ux, uy) = Units.ToUser(g.Origin, page);
@@ -126,8 +128,8 @@ public sealed class GuideContextBar : ContextBarBase, IRefreshable
             _x.Text = _y.Text = _angle.Text = "";
         }
 
-        _horizontal.IsEnabled = _vertical.IsEnabled = _diagonal.IsEnabled = _kinds.IsVisible = has && !locked;
-        ContextBars.Valid(_center, has && !locked);
+        _horizontal.IsEnabled = _vertical.IsEnabled = _diagonal.IsEnabled = _kinds.IsVisible = has;
+        ContextBars.Valid(_center, has);
         ContextBars.Valid(_lock, has);
         ContextBars.Valid(_removeOne, has);
         ContextBars.Valid(_removeAll, _session.Document.Guides.Count > 0);
@@ -136,6 +138,7 @@ public sealed class GuideContextBar : ContextBarBase, IRefreshable
         Pressed(_diagonal, has && kind == GuideOrientation.Angled);
         Pressed(_lock, locked);
         Pressed(_snap, _session.SnapToGuides);
+        Pressed(_snapGraphics, _session.SnapGuidesToGraphics);
         ((TextBlock)_lock.Content!).Text = locked ? "" : "";   // closed / open padlock
         _info.Text = $"{_session.Document.Guides.Count} guide{(_session.Document.Guides.Count == 1 ? "" : "s")}" + (locked ? "  (locked)" : "");
         _edited = false;

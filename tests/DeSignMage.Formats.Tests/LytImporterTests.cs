@@ -147,7 +147,8 @@ public class LytImporterTests(ITestOutputHelper output)
             Assert.Contains(relativePath, new[] { "effects.lyt", "text.lyt", "text2.lyt" });
             Assert.Contains(result.Warnings, w => w.Contains("could not be located"));
         }
-        Assert.Equal(result.PartCount + result.GroupCount, result.Document.ObjectCount);
+        // the soft shadows and glows of the layout are separate objects here, each in a group with its source
+        Assert.Equal(result.PartCount + result.GroupCount + result.SoftEffectCount + result.SoftEffectGroupCount, result.Document.ObjectCount);
         foreach (var w in result.Warnings) output.WriteLine($"{relativePath}: {w}");
     }
 

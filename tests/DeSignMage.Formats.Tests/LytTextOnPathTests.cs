@@ -51,7 +51,7 @@ public class LytTextOnPathTests(ITestOutputHelper output)
     public void The_live_text_lands_where_the_stored_letters_were_drawn()
     {
         var live = LytImporter.Open(TestFiles.Layout("textonpath.lyt")).Document.AllObjects().OfType<TextObject>().Single();
-        var shape = LytImporter.Open(TestFiles.Layout("textonpath.lyt"), new LytImportOptions { LiveText = false }).Document.AllObjects().OfType<PathObject>().Single();
+        var shape = LytImporter.Open(TestFiles.Layout("textonpath.lyt"), new LytImportOptions { LiveText = false }).Document.AllObjects().OfType<PathObject>().Single(o => o.Style.Blur is null);   // not the soft shadow object the layout's record makes
 
         var stored = shape.GetWorldBounds();
         var flowed = live.GetWorldBounds();

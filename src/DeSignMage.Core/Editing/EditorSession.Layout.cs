@@ -17,6 +17,18 @@ public sealed partial class EditorSession
         GuidePlacement.IsTextPlace(place) ? GuidePlacement.TextsIn(Selection.Items).Any() : !GuideTargetBox.IsEmpty;
 
     /// <summary>
+    /// The one-click guide buttons (Toolbox, Layout ▸ Guides ▸ ... of Selection): needs something selected (the page is not a fallback here)
+    /// and something to place.
+    /// </summary>
+    public bool CanGuideSelection(GuidePlace place) => !Selection.IsEmpty && CanAddGuides(place);
+
+    /// <summary>
+    /// Adds the guide for <paramref name="place"/> on the bounds of the selection (a group or several objects count as one whole), as one undo
+    /// step. The object selection stays, so the next button can be clicked at once. Returns false when nothing was added.
+    /// </summary>
+    public bool AddGuideOnSelection(GuidePlace place) => CanGuideSelection(place) && AddGuides(place) > 0;
+
+    /// <summary>
     /// Adds the guides for <paramref name="place"/> as one undo step and returns how many were added. A guide that is already there
     /// is not added again. The new guides are not selected (the selection stays as it was); hidden guides are shown.
     /// </summary>
@@ -34,6 +46,11 @@ public sealed partial class EditorSession
     }
 
     // ---- Layout > Layout Properties, Size to Fit ----
+
+    /// <summary>Raised when the empty layout is double-clicked with the Layout tool: the shell opens Layout Properties.</summary>
+    public event EventHandler? LayoutPropertiesRequested;
+
+    public void RequestLayoutProperties() => LayoutPropertiesRequested?.Invoke(this, EventArgs.Empty);
 
     /// <summary>
     /// Gives the page a new size (points), as one undo step. The bottom-left corner stays where it is, so the rulers' zero and every

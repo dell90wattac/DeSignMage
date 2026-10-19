@@ -44,6 +44,13 @@ internal sealed class FillSpec
     public bool TransSwap;
     public int NodeCount = 2;
 
+    /// <summary>Alternate Colors: the long way round the color wheel.</summary>
+    public bool AlternateColors;
+
+    /// <summary>The feather of the object (0 = none) and its inset; a null inset writes the default of the fill kind (0 for shapes, 0.38 for pictures).</summary>
+    public float FeatherAmount;
+    public float? FeatherInset;
+
     /// <summary>Nodes beyond the first four (index 4 up): point, color, flag (1 = highlight).</summary>
     public List<LytBlendNode> Extras { get; } = [];
 

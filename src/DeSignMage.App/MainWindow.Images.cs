@@ -228,7 +228,7 @@ public partial class MainWindow
             return;
         }
         if (!ReferenceEquals(session, _session) || !session.Document.Contains(image) || !image.HasPixelSize) return;
-        var dialog = new PictureEditorDialog(session, image, source, sourceId);
+        var dialog = new PictureEditorDialog(session, image, source, sourceId) { EditInRequested = StartExternalEditFor };
         OpenPictureEditor = dialog;
         try { await dialog.ShowDialog(this); }
         finally { OpenPictureEditor = null; }

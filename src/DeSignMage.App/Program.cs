@@ -56,6 +56,8 @@ internal static class Program
         // A development screenshot run is not a session: it does no background sending.
         FeedbackHost.StartForReal(backgroundWork: Options.ScreenshotPath is null && Options.CrashTest is null);
         Mark("feedback-host");
+        // Recovery copies of unsaved designs (auto-save): a real session only. The folder is created when the first copy is written.
+        if (Options.ScreenshotPath is null && Options.FirstFramePath is null) DeSignMage.App.Recovery.RecoveryHost.StartForReal(AppPaths.Default);
         AppLog.Info("startup", $"DeSign Mage {FeedbackHost.AppVersionText} starting ({args.Length} command-line arguments)");
         if (migration is { Moved: > 0 } or { Skipped: > 0 } or { Error: not null })
             AppLog.Info("startup", $"brought data over from an earlier build: {migration.Moved} files moved, {migration.Skipped} left in place{(migration.Error is null ? "" : ", " + migration.Error)}");

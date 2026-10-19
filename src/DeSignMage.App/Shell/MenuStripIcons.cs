@@ -43,7 +43,7 @@ internal static class MenuStripIcons
         ["effects.commonWeld"] = "C. Weld", ["effects.cookieCutter"] = "Cookie",
         ["effects.gradientBlend"] = "Gradient",
         ["effects.softShadow"] = "Soft Sh.", ["effects.glow"] = "Glow", ["effects.feather"] = "Feather",
-        ["effects.easyBevel"] = "Bevel", ["effects.textOnPath"] = "Path", ["effects.shadow"] = "Drop",["effects.shadowExtruded"] = "Extruded", ["effects.shadowPerspective"] = "Persp.", ["effects.shadowCast"] = "Cast",
+        ["effects.easyBevel"] = "Bevel", ["effects.textOnPath"] = "Path", ["effects.makePlain"] = "Plain", ["effects.shadow"] = "Drop",["effects.shadowExtruded"] = "Extruded", ["effects.shadowPerspective"] = "Persp.", ["effects.shadowCast"] = "Cast",
         ["tool.select"] = "Layout", ["tool.vector"] = "Vector", ["tool.vectorDraw"] = "Draw", ["tool.text"] = "Text", ["tool.rectangle"] = "Rectangle", ["tool.ellipse"] = "Ellipse", ["tool.loop"] = "Loops", ["tools.showTransparency"] = "Transparency", ["tools.options"] = "Options",
     };
 
@@ -146,6 +146,7 @@ internal static class MenuStripIcons
         ["effects.easyBevel"] = () => Box(Fill("M3,3 H17 V17 H3 Z"), Stroke("M3.5,16.5 V3.5 H16.5", Paper, 1.8), Stroke("M16.5,3.5 V16.5 H3.5", Accent, 1.8)),
 
         // a curve with three letters standing on it, each turned to follow it
+        ["effects.makePlain"] = () => Box(Stroke("M8.5,6.5 H5.5 Q2,6.5 2,10 Q2,13.5 5.5,13.5 H8.5", Paper, 1.8), Stroke("M11.5,6.5 H14.5 Q18,6.5 18,10 Q18,13.5 14.5,13.5 H11.5", Paper, 1.8), Stroke("M8,17.5 L12,2.5", Accent, 1.6)),
         ["effects.textOnPath"] = () => Box(Stroke("M2,16 C6,15 9,11 12,8 C14,6 16,4 18,3", Accent, 1.6), Fill("M3,11 H5.4 V15 H3 Z"), Fill("M8.2,6.6 H10.6 V10.6 H8.2 Z"), Fill("M13.6,1.2 H16 V5.2 H13.6 Z")),
 
         // ---- Tools (select, vector and vector draw come from the Toolbox) ----

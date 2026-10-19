@@ -89,7 +89,7 @@ public sealed record BevelPieces(PathGeometry? Highlight, ObjectStyle HighlightS
 
 /// <summary>
 /// Effects ▸ Easy Bevel (notes/effects/easy-bevel.md; user decisions R7, R8, R13, R22): every selected drawn object gets two plain vector objects, "Bevel
-/// Highlight" and "Bevel Shadow", drawn <b>just above it</b> and grouped with it (not linked). Each is the object's outline (pulled in by the inset) minus a copy
+/// Highlight" and "Bevel Shadow", drawn <b>just above it</b> and grouped with it (live: they follow edits of the object, <see cref="LiveEffects"/>). Each is the object's outline (pulled in by the inset) minus a copy
 /// of itself moved by the width: toward the lower right for the highlight, so a crescent is left along the upper left edges; toward the upper left for the shadow.
 /// They are drawn in the chosen color at the chosen opacity with a feather, so whatever lies under them (a flat color, a gradient, a picture) shows through a
 /// lighter or darker rim. Nothing is rasterized: the soft edge is drawn by the renderer. Each object is beveled by itself (the members of a group one by one),
@@ -206,11 +206,12 @@ public static class BevelEffect
     }
 
     /// <summary>Builds the command for these sources and pieces (not executed). Existing crescents of the sources are replaced by it.</summary>
-    public static BevelCommand? Plan(IReadOnlyList<BevelSource> sources, IReadOnlyList<BevelPieces> pieces)
+    /// <param name="settings">What the pieces were made with: the crescents keep it, so they follow their object (live) and the tool can reopen on them. Null = plain crescents.</param>
+    public static BevelCommand? Plan(IReadOnlyList<BevelSource> sources, IReadOnlyList<BevelPieces> pieces, BevelSettings? settings = null)
     {
         var targets = new List<BevelCommand.Target>();
         for (int i = 0; i < sources.Count && i < pieces.Count; i++)
             targets.Add(new BevelCommand.Target(sources[i].Leaf, Existing(sources[i].Leaf), pieces[i]));
-        return targets.Count == 0 ? null : new BevelCommand(targets, "Easy Bevel");
+        return targets.Count == 0 ? null : new BevelCommand(targets, "Easy Bevel") { Settings = settings?.Normalized() };
     }
 }

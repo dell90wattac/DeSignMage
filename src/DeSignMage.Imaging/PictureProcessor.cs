@@ -23,6 +23,7 @@ public static class PictureProcessor
     {
         internal ((bool Mirror, int Quarter, double Angle) Key, PixelBuffer Canvas)? Canvas;
         internal ((bool Mirror, int Quarter, double Angle) Key, RectI? Rect, PixelBuffer Cropped)? Cropped;
+        internal (PictureTransparency Transparency, PixelBuffer Input, PixelBuffer Result)? Transparent;
         internal (PictureAdjust Adjust, PixelBuffer Input, PixelBuffer Adjusted)? Adjusted;
         internal ((int NoiseReduction, double Blur, int Sharpen) Key, PixelBuffer Input, PixelBuffer Filtered)? Filtered;
     }
@@ -75,12 +76,30 @@ public static class PictureProcessor
         else if (cache is not null) cache.Cropped = (turnKey, null, cropped);
         cancel.ThrowIfCancellationRequested();
 
+        // Transparency: after the crop, before the colors. The cut outlines live in pixels of the original, so they are carried through the turn and the crop.
+        PixelBuffer seen = cropped;
+        if (!recipe.Transparency.IsIdentity)
+        {
+            if (cache?.Transparent is { } ct && ct.Transparency == recipe.Transparency && ReferenceEquals(ct.Input, cropped)) seen = ct.Result;
+            else
+            {
+                var (fullW, fullH) = recipe.CanvasSize;
+                double kx = (double)canvas.Width / fullW, ky = (double)canvas.Height / fullH;
+                int originX = rect?.X ?? 0, originY = rect?.Y ?? 0;
+                var r0 = recipe;
+                seen = TransparencyOps.Apply(cropped, recipe.Transparency,
+                    p => { var c = PictureGeometry.SourceToCanvas(r0, p); return new Vec2(c.X * kx - originX, c.Y * ky - originY); }, scale, cancel);
+                if (cache is not null) cache.Transparent = (recipe.Transparency, cropped, seen);
+            }
+            cancel.ThrowIfCancellationRequested();
+        }
+
         PixelBuffer adjusted;
-        if (cache?.Adjusted is { } ca && ca.Adjust == recipe.Adjust && ReferenceEquals(ca.Input, cropped)) adjusted = ca.Adjusted;
+        if (cache?.Adjusted is { } ca && ca.Adjust == recipe.Adjust && ReferenceEquals(ca.Input, seen)) adjusted = ca.Adjusted;
         else
         {
-            adjusted = ApplyAdjust(cropped, recipe.Adjust, cancel);
-            if (cache is not null) cache.Adjusted = (recipe.Adjust, cropped, adjusted);
+            adjusted = ApplyAdjust(seen, recipe.Adjust, cancel);
+            if (cache is not null) cache.Adjusted = (recipe.Adjust, seen, adjusted);
         }
         cancel.ThrowIfCancellationRequested();
 

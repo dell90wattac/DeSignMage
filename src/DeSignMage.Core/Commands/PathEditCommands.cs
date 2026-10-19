@@ -8,8 +8,11 @@ namespace DeSignMage.Core.Commands;
 /// local space. A rectangle or ellipse becomes a <see cref="PathObject"/> with the same name, transform and style
 /// (its live parameters can't describe edited nodes); a <see cref="PathObject"/> just gets the new geometry.
 /// </summary>
-public sealed class SetVectorsCommand : IDocumentCommand, IUndoMemory
+public sealed class SetVectorsCommand : IDocumentCommand, IUndoMemory, IReplacesObjects
 {
+    public IEnumerable<(DocObject Old, IReadOnlyList<DocObject> New)> Replacements =>
+        _partIndex < 0 && _newPiece is not null ? [(_owner, [_newPiece])] : [];
+
     public long ApproximateBytes =>
         UndoMemory.BytesOf(_geometry) + (_oldGeometry is null ? 0 : UndoMemory.BytesOf(_oldGeometry)) +
         (_oldPiece is null ? 0 : UndoMemory.BytesOf(_oldPiece)) + (_newPiece is null ? 0 : UndoMemory.BytesOf(_newPiece));

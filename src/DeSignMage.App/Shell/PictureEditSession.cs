@@ -35,8 +35,9 @@ internal sealed class PictureEditSession : IDisposable
     private readonly Affine2 _openTransform;
 
     private readonly List<string> _tempAssets = [];
-    private readonly PictureProcessor.RenderCache _cache = new();
+    private PictureProcessor.RenderCache _cache = new();
     private bool _finished;
+    private bool _sourceReplaced;
 
     public PictureEditSession(EditorSession editor, ImageObject image, PixelBuffer source, string sourceAssetId, Action<Action>? post = null)
     {
@@ -76,18 +77,18 @@ internal sealed class PictureEditSession : IDisposable
     public ImageObject Image { get; }
 
     /// <summary>The untouched original, full resolution.</summary>
-    public PixelBuffer Source { get; }
+    public PixelBuffer Source { get; private set; }
 
-    public string SourceAssetId { get; }
+    public string SourceAssetId { get; private set; }
 
     /// <summary>A reduced copy of the original for previews (the same buffer when the original is small) and the factor it was reduced by.</summary>
-    public PixelBuffer Work { get; }
-    public double WorkScale { get; }
+    public PixelBuffer Work { get; private set; }
+    public double WorkScale { get; private set; }
 
     /// <summary>The unedited picture's frame on the page and where it is placed.</summary>
-    public double BaseWidth { get; }
-    public double BaseHeight { get; }
-    public Affine2 BaseTransform { get; }
+    public double BaseWidth { get; private set; }
+    public double BaseHeight { get; private set; }
+    public Affine2 BaseTransform { get; private set; }
 
     /// <summary>The recipe being edited.</summary>
     public PictureRecipe Recipe { get; private set; }
@@ -123,7 +124,28 @@ internal sealed class PictureEditSession : IDisposable
     }
 
     /// <summary>True when the recipe now differs from the one the picture had when the editor opened (what OK would change).</summary>
-    public bool IsChanged => Recipe.Normalized() != (_openRecipe?.Normalized() ?? new PictureRecipe(Source.Width, Source.Height));
+    public bool IsChanged => _sourceReplaced || Recipe.Normalized() != (_openRecipe?.Normalized() ?? new PictureRecipe(Source.Width, Source.Height));
+
+    /// <summary>True when the original was replaced by one saved in another program while the editor is open (OK keeps it; Cancel puts the old one back).</summary>
+    public bool SourceReplaced => _sourceReplaced;
+
+    /// <summary>
+    /// Edit in...: the picture was changed and saved in another program, so the original under the recipe is replaced. Every setting stays: the crop and the cut-out
+    /// outlines are scaled when the new original has another size. Previews start again from the new pixels.
+    /// </summary>
+    public void ReplaceSource(PixelBuffer source, string sourceAssetId)
+    {
+        if (_finished) return;
+        var frame = PictureSwap.FrameForNewOriginal(new ImageFrame(BaseWidth, BaseHeight, BaseTransform), Source.Width, Source.Height, source.Width, source.Height);
+        Recipe = Recipe.WithNewSource(source.Width, source.Height);
+        Source = source;
+        SourceAssetId = sourceAssetId;
+        (Work, WorkScale) = PictureProcessor.Reduce(source);
+        BaseWidth = frame.Width; BaseHeight = frame.Height;
+        _cache = new PictureProcessor.RenderCache();
+        _sourceReplaced = true;
+        RequestPreview();
+    }
 
     // ---------------------------------------------------------------- editing the recipe
 
@@ -142,12 +164,15 @@ internal sealed class PictureEditSession : IDisposable
     public void RequestPreview()
     {
         var recipe = Recipe;
+        var work = Work;
+        double workScale = WorkScale;
+        var cache = _cache;
         _runner.Submit(ct =>
         {
             var clock = System.Diagnostics.Stopwatch.StartNew();
             // One preview runs at a time, so the cache is only ever used by one thread; it keeps the turned canvas, the crop and the adjusted
-            // picture, so a slider of a late step does not redo the early ones.
-            var parts = PictureProcessor.RenderParts(Work, recipe, WorkScale, ct, _cache);
+            // picture, so a slider of a late step does not redo the early ones. (The original can be replaced while a preview runs: it keeps its own.)
+            var parts = PictureProcessor.RenderParts(work, recipe, workScale, ct, cache);
             byte[]? png = recipe.IsIdentity ? null : ImageCodec.EncodePng(parts.Result);   // for the picture in the design behind the window
             return (recipe, canvas: parts.Canvas, result: parts.Result, png, clock.Elapsed.TotalMilliseconds);
         }, done =>
@@ -259,7 +284,7 @@ internal sealed class PictureEditSession : IDisposable
         return true;
     }
 
-    private bool IsChangedFrom(PictureRecipe normalized) => normalized != (_openRecipe?.Normalized() ?? new PictureRecipe(Source.Width, Source.Height));
+    private bool IsChangedFrom(PictureRecipe normalized) => _sourceReplaced || normalized != (_openRecipe?.Normalized() ?? new PictureRecipe(Source.Width, Source.Height));
 
     public void Dispose()
     {

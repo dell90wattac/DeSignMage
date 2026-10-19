@@ -30,7 +30,7 @@ public partial class MainWindow : Window
             MenuNode.Menu("Loops", "loop.reverse", "loop.open", "loop.close", "loop.toCircle", "loop.breakOut", "-", "loop.reorder", "loop.delete")),
         MenuNode.Menu("_View", "view.zoomIn", "view.zoomOut", "view.zoomPage", "view.zoomAll", "view.zoomSelection", "-", "view.fillColors", "view.loopDirection", "view.highlightSmall", "view.jobPalette", "view.rulers", "view.guides", "view.snapGuides", "-",
             MenuNode.Menu("Interface Text _Size", TextSizeMenuIds.Cast<object>().ToArray()), "-", "view.darkMenus", "view.darkCanvas"),
-        MenuNode.Menu("_Layout", MenuNode.Menu("_Guides", GuideMenuCommandIds.Cast<object>().ToArray()), MenuNode.Menu("Shapes", "tool.rectangle", "tool.roundedRectangle", "tool.ellipse", "tool.square", "tool.circle", "tool.polygon", "tool.arrow", "-", "shape.convertRounded"), "-", "layout.properties", "layout.sizeToFit"),
+        MenuNode.Menu("_Layout", MenuNode.Menu("_Guides", GuideMenuCommandIds.Cast<object>().ToArray()), MenuNode.Menu("Shapes", "tool.rectangle", "tool.roundedRectangle", "tool.ellipse", "tool.square", "tool.circle", "tool.polygon", "tool.arrow", "-", "shape.convertRounded"), "layout.snapGuidesToGraphics", "-", "layout.properties", "layout.sizeToFit"),
         MenuNode.Menu("_Arrange", MenuNode.Menu("Alig_n", AlignMenu.Cast<object>().ToArray()), "-", MenuNode.Menu("Group", "arrange.ungroup", "arrange.group", "arrange.groupAll", "arrange.groupByColor"), "arrange.combine", "arrange.breakApart", "arrange.breakIntoLoops", "arrange.breakIntoOuterLoops", "arrange.closeAllLoops", "arrange.removeInnerLoops", "text.toCurves", "-",
             "arrange.lock", "arrange.unlockAll", "-", "arrange.mirrorH", "arrange.mirrorV", "-",
             MenuNode.Menu("Z Order", "arrange.toTop", "arrange.oneUp", "arrange.oneDown", "arrange.toBottom")),
@@ -46,7 +46,7 @@ public partial class MainWindow : Window
         MenuNode.Menu("Effe_cts", "effects.outline", "effects.inline", "effects.knife", "effects.weld", "effects.commonWeld", "effects.cookieCutter", "-",
             "effects.shadow", "effects.shadowExtruded", "effects.shadowPerspective", "effects.shadowCast", "-",
             "effects.softShadow", "effects.glow", "effects.feather", "-",
-            "effects.gradientBlend", "effects.easyBevel", "-", "effects.textOnPath"),
+            "effects.gradientBlend", "effects.easyBevel", "-", "effects.textOnPath", "-", "effects.makePlain"),
         MenuNode.Menu("_Tools", "tool.select", "tool.vector", "tool.vectorDraw", "tool.loop", "tools.showTransparency", "-", "tools.options", "-", "debug.stress"),
         MenuNode.Menu("_Help", "help.feedback", "-", "help.about"),
     ];
@@ -103,6 +103,7 @@ public partial class MainWindow : Window
         VectorFiles.Importer ??= new FormatsVectorImporter(() => _session?.BooleanService);   // PDF, AI, EPS and SVG (File > Open, drag and drop)
         InitRecentMenu();
         InitFeedback();
+        InitRecovery();
         InitDockPanels();
         InitUiScale();
         Closing += OnWindowClosing;
@@ -159,6 +160,7 @@ public partial class MainWindow : Window
     {
         _session = session;
         AttachImageService(session);
+        AttachLayout(session);
         AttachEffects(session);
         Surface.Session = session;
         TopRuler.CanvasRef = LeftRuler.CanvasRef = Surface;
@@ -199,6 +201,7 @@ public partial class MainWindow : Window
 
         OnToolChanged();
         RefreshPanels();
+        DropRecoveryCopy();   // a new, opened or restored design starts without a recovery copy of the one before
     }
 
     // ---- Commands ----
@@ -569,6 +572,11 @@ public partial class MainWindow : Window
         long bitmapBytes = BitmapStats.TotalBytes(doc);
         // A single selected picture: its pixels and resolution, as plain information.
         string pictureInfo = _session.Selection.Items is [ImageObject picture] && ImageSizing.InfoText(picture) is { } text ? "    " + text : "";
+        // A live effect selected: what it follows; a selection holding (or having) live effects: how many.
+        int liveCount = _session.SelectedLiveEffectCount;
+        string liveInfo = _session.SelectedLiveEffect is { } liveEffect ? "    " + Core.Effects.LiveEffects.Describe(liveEffect)
+            : liveCount > 0 ? $"    {liveCount} live effect{(liveCount == 1 ? "" : "s")}" : "";
+        pictureInfo += liveInfo;
         // While a path tool has an object open, the info line describes that graphic (R8 item 7).
         InfoLine.Text = _session.ActiveTool is PathEditToolBase { HasTarget: true } pathTool
             ? pathTool.InfoLine()
@@ -625,7 +633,8 @@ public partial class MainWindow : Window
             {
                 var o = layer.Children[i];
                 rows.Add(o);
-                text.Add("    " + o.KindName + GroupNote(o) + (o.TopLevel.Locked ? "   · Locked" : ""));   // a locked object (or a member of a locked group) is marked
+                text.Add("    " + o.KindName + GroupNote(o) + (o.TopLevel.Locked ? "   · Locked" : "") +   // a locked object (or a member of a locked group) is marked
+                         (Core.Effects.LiveEffects.Describe(o) is { } live ? "   · " + live : ""));                     // and a live effect says what it follows
             }
         }
 

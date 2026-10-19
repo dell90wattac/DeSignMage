@@ -58,6 +58,9 @@ public partial class MainWindow
             () => _session.ActiveTool is TextPathTool || (_session.ActiveTool is not TextPathTool && _session.HasTextOnPath));
 
         Add("effects.gradientBlend", "_Gradient Blend...", () => _session.BeginGradient(), () => _session.CanGradient, () => _session.ActiveTool is GradientTool);
+
+        // Live effects follow their sources; Make Plain stops that for the selected effects (or the effects of the selected objects). No shortcut.
+        Add("effects.makePlain", "Make Plai_n", () => _session.MakePlain(), () => _session.CanMakePlain);
     }
 
     /// <summary>Starts an effect that was kicked off with an async method; a crash inside is logged and shown, never thrown at the UI loop.</summary>

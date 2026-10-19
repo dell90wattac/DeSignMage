@@ -129,7 +129,7 @@ public partial class MainWindow
                     if (read.PageCount > 1) notes.Insert(0, $"The file has {read.PageCount} pages; only the first page was opened.");
                     return (read.Document, notes);
                 }
-                var lyt = LytImporter.Open(path);
+                var lyt = LytImporter.Open(path, new LytImportOptions { OffsetService = DeSignMage.Geometry.GeometryEngines.Offsets, BooleanService = DeSignMage.Geometry.GeometryEngines.Booleans });
                 return (lyt.Document, lyt.Warnings);
             }, cancellable: true);
         }

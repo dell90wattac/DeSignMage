@@ -23,11 +23,15 @@ public static class OptionsPages
     public const string AccessibilityId = "accessibility";
     public const string PerformanceId = "performance";
     public const string VectorId = "vector";
+    public const string AutoSaveId = "autosave";
+    public const string PicturesId = "pictures";
 
     private static readonly List<OptionsPage> Pages =
     [
         new(AccessibilityId, "Accessibility", () => new AccessibilityOptionsPage()),
         new(VectorId, "Vector editing", () => new VectorOptionsPage()),
+        new(PicturesId, "Pictures", () => new PictureOptionsPage()),
+        new(AutoSaveId, "Auto-save", () => new DeSignMage.App.Recovery.AutoSaveOptionsPage()),
         new(PerformanceId, "Performance & memory", () => new PerformanceOptionsPage()),
         // Add further sections here.
     ];

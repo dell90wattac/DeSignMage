@@ -28,6 +28,42 @@ public class ExportFormatsShellTests
 
     private static string TempDir() => Directory.CreateTempSubdirectory("dsm-formats-").FullName;
 
+    [AvaloniaFact]
+    public void An_existing_legacy_layout_is_never_replaced_by_an_export()
+    {
+        var dir = TempDir();
+        try
+        {
+            var w = Show();
+            var path = Path.Combine(dir, "customer.lyt");
+            byte[] original = [1, 2, 3, 4, 5];
+            File.WriteAllBytes(path, original);
+
+            Assert.False(w.RunExport(new ExportRequest(ExportFormat.Lyt, new ExportOptions()), path));
+            Assert.Equal(original, File.ReadAllBytes(path));                     // untouched
+            Assert.Contains("never replaced", w.LastSaveError);
+            Assert.Single(Directory.GetFiles(dir));                               // no temp file left behind
+
+            Assert.True(w.RunExport(new ExportRequest(ExportFormat.Lyt, new ExportOptions()), Path.Combine(dir, "customer (2).lyt")));   // a new name works
+        }
+        finally { Directory.Delete(dir, recursive: true); }
+    }
+
+    [Fact]
+    public void A_free_legacy_layout_name_is_suggested_next_to_an_existing_one()
+    {
+        var dir = TempDir();
+        try
+        {
+            var path = Path.Combine(dir, "sign.lyt");
+            Assert.Equal(path, MainWindow.FreeLegacyLayoutPath(path));
+            File.WriteAllBytes(path, [0]);
+            File.WriteAllBytes(Path.Combine(dir, "sign (2).lyt"), [0]);
+            Assert.Equal(Path.Combine(dir, "sign (3).lyt"), MainWindow.FreeLegacyLayoutPath(path));
+        }
+        finally { Directory.Delete(dir, recursive: true); }
+    }
+
     [AvaloniaTheory]
     [InlineData(ExportFormat.Png, "a.png")]
     [InlineData(ExportFormat.Jpeg, "a.jpg")]
@@ -124,18 +160,24 @@ public class ExportFormatsShellTests
         try
         {
             var w = Show(new StartupOptions());
-            var feathered = new EllipseObject(80, 80) { Transform = Affine2.Translation(50, 50), Style = new ObjectStyle(new SolidPaint(new DocColor(0, 120, 0)), null, null, new FeatherStyle(0.2, 0)) };
-            w.Session.History.Execute(new AddObjectCommand(w.Session.Document.ActiveLayer, feathered));
+            // (a reflected gradient: the layout stores Alternate Colors, feather and flat opacity but has no reflect)
+            var reflected = new EllipseObject(80, 80)
+            {
+                Transform = Affine2.Translation(50, 50),
+                Style = new ObjectStyle(new GradientPaint(GradientKind.Linear, GradientPaint.DefaultPoints(GradientKind.Linear),
+                    [new GradientNode(0, new DocColor(0, 120, 0)), new GradientNode(1, new DocColor(250, 250, 0))], reflect: true), null),
+            };
+            w.Session.History.Execute(new AddObjectCommand(w.Session.Document.ActiveLayer, reflected));
             var shown = new List<(string Title, string Message)>();
             w.DialogOverride = (title, message) => { shown.Add((title, message)); return Task.FromResult(true); };
 
             Assert.True(w.RunExport(new ExportRequest(ExportFormat.Lyt, new ExportOptions()), Path.Combine(dir, "x.lyt")));
 
-            Assert.Contains(w.LastExportWarnings, m => m.Contains("Feathered edges are not stored"));
+            Assert.Contains(w.LastExportWarnings, m => m.Contains("Reflected gradients are written as ordinary ones"));
             var (title, message) = Assert.Single(shown);
             Assert.Equal("Exported", title);
             Assert.Contains("x.lyt was written, but some things had to be simplified", message);
-            Assert.Contains("• Feathered edges are not stored in a layout", message);
+            Assert.Contains("• Reflected gradients are written as ordinary ones", message);
 
             // a plain export of the same design says nothing
             shown.Clear();

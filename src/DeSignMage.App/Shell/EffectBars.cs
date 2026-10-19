@@ -91,7 +91,7 @@ public sealed class OutlineContextBar : ContextBarBase, IRefreshable
         _firstPct = new EffectBarParts.Field(v => { if (tool.HasPercent) tool.Update(s => s with { First = v / 100 * tool.Height }); }, live: true);
         _second = new EffectBarParts.Field(v => tool.Update(s => s with { Second = Units.FromInches(v) }), live: true);
         _secondPct = new EffectBarParts.Field(v => { if (tool.HasPercent) tool.Update(s => s with { Second = v / 100 * tool.Height }); }, live: true);
-        _oat = new EffectBarParts.Field(v => tool.Update(s => s with { Oat = Math.Clamp(v, 0, 180) }));
+        _oat = new EffectBarParts.Field(v => tool.Update(s => s with { Oat = Math.Clamp(v, 0, 120) }));   // 0..120: what the legacy Miter / Round buttons write
 
         _corners = new ComboBox { ItemsSource = new[] { "Auto (OAT)", "Miter", "Round" }, VerticalAlignment = VerticalAlignment.Center };
         ToolTip.SetTip(_corners, "Corner type. Auto rounds corners sharper than the OAT angle and keeps the others sharp; Miter keeps every corner sharp; Round rounds every corner.");
@@ -146,6 +146,8 @@ public sealed class OutlineContextBar : ContextBarBase, IRefreshable
         _corners.SelectedIndex = s.Corners switch { CornerStyle.Miter => 1, CornerStyle.Round => 2, _ => 0 };
         _contour.IsChecked = s.ContourOnly;
         _leave.IsChecked = s.LeaveOriginal;
+        _leave.IsVisible = !_tool.IsEditingLive;   // editing a live outline keeps its source (R26: not shown when it does not apply)
+        _title.Text += _tool.IsEditingLive ? " (live)" : "";
         _preview.IsChecked = _tool.PreviewEnabled;
         ContextBars.Valid(_done, _tool.CanApply && !_session.EffectBusy);
         _refreshing = false;

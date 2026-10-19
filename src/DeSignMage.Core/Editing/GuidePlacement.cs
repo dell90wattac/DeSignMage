@@ -45,8 +45,8 @@ public static class GuidePlacement
     }
 
     /// <summary>
-    /// A guide through each text's first-line baseline or cap height (a capital H of the font actually used), running in the
-    /// text's own direction. Texts that would give the same guide give it once.
+    /// A guide through the baseline or cap height (a capital H of the font actually used) of every line of each text, running in the
+    /// text's own direction. Lines that would give the same guide give it once. Text on a path has one line, along the straight text.
     /// </summary>
     public static IReadOnlyList<Guide> ForText(GuidePlace place, IEnumerable<TextObject> texts)
     {
@@ -55,12 +55,16 @@ public static class GuidePlacement
         {
             double up = place == GuidePlace.TextCapHeight ? TextEngine.CapHeightEm(t.FontFamily, t.FontWeight, t.Italic) * t.FontSize : 0;
             var w = t.GetWorldTransform();
-            var origin = w.Transform(new Vec2(0, -up));
             var along = w.TransformVector(new Vec2(1, 0));
             if (along.LengthSquared < 1e-18) continue;
             double angle = Math.Atan2(-along.Y, along.X) * 180 / Math.PI;   // document y runs down, user angles run counter-clockwise
-            var guide = new Guide(origin, angle);
-            if (!result.Any(g => Same(g, guide))) result.Add(guide);
+            var layout = t.Layout;
+            var baselines = layout.IsOnPath || layout.Lines.Count == 0 ? [0.0] : layout.Lines.Select(l => l.Baseline).ToArray();
+            foreach (double baseline in baselines)
+            {
+                var guide = new Guide(w.Transform(new Vec2(0, baseline - up)), angle);
+                if (!result.Any(g => Same(g, guide))) result.Add(guide);
+            }
         }
         return result;
     }

@@ -76,8 +76,9 @@ public class LayoutShellTests : IDisposable
         var guides = layout.Items.OfType<MenuItem>().Single(m => Strip(m.Header) == "Guides");
         var ids = guides.Items.OfType<MenuItem>().Select(m => ((AppCommand)m.Tag!).Id).ToArray();
         Assert.Equal(MainWindow.GuideMenuCommandIds.Where(i => i != "-"), ids);
-        Assert.Equal(["Add Guide At Text Cap Height", "Add Guide At Text Baseline"], guides.Items.OfType<MenuItem>().Take(2).Select(m => Strip(m.Header)).ToArray());
-        Assert.Equal(2, guides.Items.OfType<Separator>().Count());
+        Assert.Equal(["Guide at Top of Selection", "Guide at Center of Selection", "Guide at Bottom of Selection", "Guide at Side (Left) of Selection", "Add Guide At Text Cap Height", "Add Guide At Text Baseline"],
+            guides.Items.OfType<MenuItem>().Take(6).Select(m => Strip(m.Header)).ToArray());
+        Assert.Equal(3, guides.Items.OfType<Separator>().Count());
 
         Assert.Equal("Layout Properties...", Command(w, "layout.properties").Header.Replace("_", ""));
         Assert.Equal("Size to Fit", Command(w, "layout.sizeToFit").Header.Replace("_", ""));
@@ -145,6 +146,38 @@ public class LayoutShellTests : IDisposable
     }
 
     // ---- Layout Properties ----
+
+    [AvaloniaFact]
+    public void Snap_Guides_to_Graphics_is_a_checked_Layout_menu_item_that_follows_the_session()
+    {
+        var w = Open();
+        var command = Command(w, "layout.snapGuidesToGraphics");
+        Assert.Equal("Snap Guides to Graphics", command.Header.Replace("_", ""));
+        Assert.True(command.IsChecked!());
+        Assert.Empty(command.Gestures);
+        command.Execute();
+        Assert.False(w.Session.SnapGuidesToGraphics);
+        Assert.False(command.IsChecked!());
+        w.Close();
+    }
+
+    [AvaloniaFact]
+    public void A_double_click_on_the_empty_layout_opens_Layout_Properties()
+    {
+        var w = Open();
+        var center = w.Session.Document.Page.Bounds.Center;
+        var screen = w.Session.Viewport.ToScreen(center);
+        PointerInput At(int clicks) => new(screen, center, PointerButton.Left, ModifierKeys.None, clicks);
+        w.Session.PointerDown(At(1)); w.Session.PointerUp(At(1));
+        Assert.Null(w.OpenLayoutProperties);                      // one click only deselects
+        w.Session.PointerDown(At(2)); w.Session.PointerUp(At(2));
+        Pump(() => w.OpenLayoutProperties is not null);
+        var d = w.OpenLayoutProperties!;
+        Assert.NotNull(d);
+        Click(d.CancelButton);
+        Pump(() => w.OpenLayoutProperties is null);
+        w.Close();
+    }
 
     [AvaloniaFact]
     public void The_dialog_opens_on_the_current_page_size_and_switches()

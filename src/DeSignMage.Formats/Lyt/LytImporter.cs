@@ -1,4 +1,5 @@
 using DeSignMage.Core.Commands;
+using DeSignMage.Core.Effects;
 using DeSignMage.Core.Geometry;
 using DeSignMage.Core.Model;
 using DeSignMage.Core.Text;
@@ -7,6 +8,15 @@ namespace DeSignMage.Formats.Lyt;
 
 public sealed record LytImportOptions
 {
+    /// <summary>
+    /// The offset engine, for the inset (or thickness) of a soft shadow or glow. Without one those are made with no inset. The window plugs in the
+    /// geometry project's engine; the importer itself depends only on Core.
+    /// </summary>
+    public IOffsetService? OffsetService { get; init; }
+
+    /// <summary>The path boolean engine, for the outline of a soft shadow whose source is several shapes (the layouts only have single parts, so rarely needed).</summary>
+    public IBooleanService? BooleanService { get; init; }
+
     /// <summary>Rebuild groups as <see cref="GroupObject"/>s. False gives one flat list in drawing order.</summary>
     public bool PreserveGroups { get; init; } = true;
 
@@ -38,6 +48,23 @@ public sealed class LytImportResult(Document document, LytFile source, IReadOnly
 
     /// <summary>Text records that stayed shapes, by reason.</summary>
     public IReadOnlyDictionary<LytTextKeptAs, int> TextKeptAsShapes { get; init; } = new Dictionary<LytTextKeptAs, int>();
+
+    /// <summary>
+    /// Soft shadow / glow objects the layout's soft shadow records were turned into (separate objects, not counted in <see cref="PartCount"/>), and the groups
+    /// that were made for them: a source that was not in a group becomes a group with its effect (one more than <see cref="GroupCount"/> counts).
+    /// </summary>
+    public int SoftEffectCount { get; init; }
+    public int SoftEffectGroupCount { get; init; }
+}
+
+/// <summary>Counts collected while fills and effects are converted.</summary>
+internal sealed class EffectImportStats
+{
+    /// <summary>Pictures whose layout asks for a flat transparency (a picture has no opacity here yet).</summary>
+    public int SeeThroughPictures;
+
+    /// <summary>Soft shadows and glows made, the groups made for them, and ones left out because the object has no area to shade.</summary>
+    public int SoftEffects, SoftEffectGroups, SoftEffectsWithoutArea;
 }
 
 /// <summary>Counts collected while text is converted.</summary>
@@ -153,7 +180,8 @@ public static class LytImporter
         }
 
         var records = file.Objects.Where(o => !o.IsGroup).ToList();
-        var converted = records.Select(o => ConvertPart(o, page.Height, doc, warnings, textStats)).ToList();
+        var fx = new EffectImportStats();
+        var converted = records.Select(o => ConvertPart(o, page.Height, doc, warnings, textStats, fx)).ToList();
 
         for (int ri = 0; ri < records.Count; ri++)
         {
@@ -171,7 +199,17 @@ public static class LytImporter
             if (GroupFor(o.ParentGroup, layerOfPart) is { } group) doc.SetGroup(obj, group);
             partsPerLayer[layerOfPart] = partsPerLayer.GetValueOrDefault(layerOfPart) + 1;
             parts++;
+
+            // A soft shadow or glow: the legacy layout keeps one on its source object; here it becomes a separate blurred object grouped with its source, as
+            // the Soft Shadow and Glow tools make them. It is made as soon as its source has its place in a layer and a group, so a group made for the pair
+            // comes in the same order as the groups of the file (in order of their first member), which the native file keeps.
+            if (o.Style?.SoftShadow is not null) AddSoftEffect(doc, obj, o, page.Height, options, fx);
         }
+
+        if (fx.SoftEffectsWithoutArea > 0)
+            warnings.Add($"{fx.SoftEffectsWithoutArea} soft shadow(s) belonged to lines or open shapes with no area to shade and were not imported.");
+        if (fx.SeeThroughPictures > 0)
+            warnings.Add($"{fx.SeeThroughPictures} picture(s) are set to be partly see-through in the layout; they are shown opaque (a picture has no opacity setting yet).");
 
         // Work happens on the busiest layer; ties go to the upper one.
         if (partsPerLayer.Count > 0)
@@ -196,10 +234,52 @@ public static class LytImporter
             LiveTextCount = textStats.Live,
             MissingFonts = textStats.MissingFonts,
             TextKeptAsShapes = textStats.Kept,
+            SoftEffectCount = fx.SoftEffects,
+            SoftEffectGroupCount = fx.SoftEffectGroups,
         };
     }
 
     private static string Plural(int n, string noun) => n == 1 ? $"1 {noun} is" : $"{n} {noun}s are";
+
+    /// <summary>
+    /// Makes the separate blurred object of a part's soft shadow or glow and puts it just below the part, in its group (or in a new group with it), by running
+    /// the same command the Soft Shadow and Glow tools run. Offsets are in the part's own units, so they go through its transform (a rotated or stretched part
+    /// shifts its shadow with it); softness and inset are fractions of the part's height, as the tools take them.
+    /// </summary>
+    private static void AddSoftEffect(Document doc, DocObject source, LytObject record, double pageHeightPoints, LytImportOptions options, EffectImportStats fx)
+    {
+        var s = record.Style!.SoftShadow!;
+        // the same record serves both: a glow has no offset and keeps its thickness as a negative inset
+        bool glow = record.Style.SoftShadowIsGlow || (s.Hs == 0 && s.Vs == 0 && s.Inset <= 0);
+        var shift = PartTransform(record, pageHeightPoints).TransformVector(new Vec2(s.Hs, -s.Vs));
+        var settings = new SoftSettings
+        {
+            Kind = glow ? SoftKind.Glow : SoftKind.SoftShadow,
+            Opacity = s.Opacity,
+            Softness = s.Softness,
+            ShiftX = shift.X,
+            ShiftY = shift.Y,
+            Inset = s.Inset,
+            Thickness = -s.Inset,
+            Slant = s.Slant,
+            HeightScale = s.Height,
+            Color = s.Color.IsValid ? s.Color.ToDocColor() : DocColor.Black,
+        }.Normalized();
+
+        var made = SoftEffect.Make(options.BooleanService, options.OffsetService, source, settings);
+        if (made is null) { fx.SoftEffectsWithoutArea++; return; }
+        var effect = new PathObject(made.Value.Local)
+        {
+            Name = SoftEffect.NameOf(settings.Kind),
+            Style = made.Value.Style,
+            Visible = source.Visible && !record.Style.SoftShadowHidden,
+            Locked = source.Locked,
+        };
+        var command = new SoftEffectCommand([new SoftEffectCommand.Target(source, effect, true, made.Value.Local, made.Value.Style)], "Add " + SoftEffect.NameOf(settings.Kind));
+        command.Do(doc);
+        fx.SoftEffects++;
+        if (command.GroupOf(0) is not null) fx.SoftEffectGroups++;
+    }
 
     // ---------------------------------------------------------------- parts
 
@@ -226,7 +306,7 @@ public static class LytImporter
         return new Affine2(1, 0, -Math.Tan(angle), 1, 0, 0);
     }
 
-    private static DocObject? ConvertPart(LytObject o, double pageHeightPoints, Document doc, List<string> warnings, TextImportStats text)
+    private static DocObject? ConvertPart(LytObject o, double pageHeightPoints, Document doc, List<string> warnings, TextImportStats text, EffectImportStats fx)
     {
         string label = o.Name.Length > 0 ? $"'{o.Name}'" : "an unnamed object";
         foreach (var note in o.Notes) warnings.Add($"{label}: {note}");
@@ -262,11 +342,36 @@ public static class LytImporter
         string? name = o.Name.Length > 0 ? o.Name : null;
 
         // A gradient, or a color fading to nothing: the fill becomes a gradient paint. Such text stays outlines so the fade fits its shape exactly.
+        // A flat transparency is one opacity for the whole fill; a feather is a property of the object (the legacy fill block holds both).
         PathGeometry? outline = null;
-        GradientPaint? gradient = chosen is { } blendColor && style?.Fill?.Blend is { } blend
-            ? LytGradients.TryCreate(blend, blendColor.ToDocColor(), outline = BuildPath(o.Nodes))
-            : null;
-        if (gradient is not null) objectStyle = new ObjectStyle(gradient, null);
+        var blend = style?.Fill?.Blend;
+        GradientPaint? gradient = null;
+        bool rampDropped = false;
+        if (chosen is { } blendColor && blend is not null)
+        {
+            // a flat blend (type 7) shows its own first color
+            var baseColor = blend.GradType == 7 && blend.Colors[0].IsValid ? blend.Colors[0].ToDocColor() : blendColor.ToDocColor();
+            gradient = LytGradients.Create(blend, baseColor, outline = BuildPath(o.Nodes), out rampDropped);
+            if (gradient is not null) objectStyle = new ObjectStyle(gradient, null);
+            else if (blend.GradType == 7 && blend.Colors[0].IsValid) objectStyle = ObjectStyle.FillOnly(baseColor);
+        }
+        if (rampDropped)
+            warnings.Add($"{label}: its transparency ramp does not follow the same line as its gradient colors, so only the colors were kept.");
+
+        bool isPicture = style?.Fill is { Type: 4, Image: not null } && TryGetRectangle(o.Nodes, out _);
+        double opacity = blend is null ? 1 : LytGradients.FlatOpacity(blend);
+        if (opacity < 0.9995)
+        {
+            if (isPicture) fx.SeeThroughPictures++;   // a picture has no opacity of its own here yet
+            else objectStyle = objectStyle.WithFill(LytGradients.WithOpacity(objectStyle.Fill, opacity));
+        }
+        FeatherStyle? feather = null;
+        if (blend is { FeatherAmount: > 0 } && float.IsFinite(blend.FeatherAmount))
+        {
+            float inset = float.IsFinite(blend.FeatherInset) ? Math.Clamp(blend.FeatherInset, 0, 1) : 0.5f;
+            feather = new FeatherStyle(Math.Min(blend.FeatherAmount, 5), inset);
+            objectStyle = objectStyle.WithFeather(feather);
+        }
 
         if (o.IsText && text.Enabled && chosen is not null && gradient is null)
         {
@@ -290,6 +395,7 @@ public static class LytImporter
             {
                 Name = name,
                 Transform = Affine2.Translation(rect.Left, rect.Top) * xf,
+                Style = feather is null ? ObjectStyle.None : ObjectStyle.None.WithFeather(feather),
             };
         }
         if (style?.Fill is { Type: 4 or 9 })

@@ -46,13 +46,23 @@ public sealed record OutlineSettings
 /// <summary>What an Outline/Inline works on: the shape-bearing objects of the selection with their outlines, taken when the tool started.</summary>
 public sealed class OutlineSnapshot
 {
-    internal OutlineSnapshot(List<(DocObject Leaf, PathGeometry World)> shapes, double height)
+    internal OutlineSnapshot(List<(DocObject Leaf, PathGeometry World)> shapes, double height, IReadOnlyList<PathObject>? editing = null)
     {
         Shapes = shapes;
         Height = height;
+        Editing = editing;
     }
 
     internal List<(DocObject Leaf, PathGeometry World)> Shapes { get; }
+
+    /// <summary>
+    /// When the selection is live outlines or inlines: those effect objects (one per entry of <see cref="Shapes"/>, which then hold their sources). The tool
+    /// then edits them instead of outlining them.
+    /// </summary>
+    public IReadOnlyList<PathObject>? Editing { get; }
+
+    /// <summary>What the edited effects were made with (the first one), when <see cref="Editing"/> is set.</summary>
+    public LiveOutline? EditedSpec => Editing is { Count: > 0 } e ? e[0].Live?.Spec as LiveOutline : null;
 
     /// <summary>Height of the selection's bounds in points: the 100 % of the "%" fields ("height of the character").</summary>
     public double Height { get; }
@@ -63,7 +73,7 @@ public sealed class OutlineSnapshot
 
 /// <summary>
 /// Effects ▸ Outline and Effects ▸ Inline (outline.md, inline.md; R13 items 6, 7, 9): a new STANDALONE object (not grouped with
-/// the source, not linked; live text stays live text). Outline goes just below the source, Inline just above. Closed shapes get
+/// the source, but live: it follows edits of the source, see <see cref="LiveEffects"/>; live text stays live text). Outline goes just below the source, Inline just above. Closed shapes get
 /// an offset area; an open path gets an open parallel line that follows it. One undo step.
 /// </summary>
 public static class OutlineEffect
@@ -76,11 +86,37 @@ public static class OutlineEffect
     /// <summary>Takes the selection's shapes. Null when there is nothing the offset engine can work on.</summary>
     public static OutlineSnapshot? Snapshot(EditorSession s)
     {
+        if (EditTargets(s) is { } editing)
+        {
+            // reopening the tool on live outlines: their sources are what is outlined, the effects are what changes
+            var sources = new List<(DocObject, PathGeometry)>();
+            var kept = new List<PathObject>();
+            foreach (var e in editing)
+                if (EffectGeometry.World(e.Live!.Source) is { } g) { sources.Add((e.Live.Source, g)); kept.Add(e); }
+            if (sources.Count > 0)
+            {
+                var bounds = sources.Aggregate(Rect2.Empty, (r, x) => r.Union(x.Item2.GetBounds()));
+                return new OutlineSnapshot(sources, bounds.Height, kept);
+            }
+        }
         var items = Stacking.BottomToTop(s.Document, s.Selection.Items);
         var shapes = new List<(DocObject, PathGeometry)>();
         foreach (var leaf in EffectGeometry.Leaves(items))
             if (EffectGeometry.World(leaf) is { } g) shapes.Add((leaf, g));
         return shapes.Count == 0 ? null : new OutlineSnapshot(shapes, s.Selection.GetBounds().Height);
+    }
+
+    /// <summary>The selected live outlines / inlines when the selection is only those (their sources still in the document); null otherwise.</summary>
+    public static List<PathObject>? EditTargets(EditorSession s)
+    {
+        if (s.Selection.IsEmpty) return null;
+        var list = new List<PathObject>();
+        foreach (var item in s.Selection.Items)
+        {
+            if (item is not PathObject { Live: { Spec: LiveOutline } link } p || !s.Document.Contains(link.Source)) return null;
+            list.Add(p);
+        }
+        return list;
     }
 
     /// <summary>The result outline of every shape (document coordinates). Shapes that vanish (an inline deeper than the shape) are left out.</summary>
@@ -196,6 +232,12 @@ public static class OutlineEffect
         if (snapshot is null) return null;
         var booleans = s.BooleanService;
         string name = NameOf(kind);
+        if (snapshot.Editing is { } editing)
+            return new EffectPlan(name, $"{name}...", ct =>
+            {
+                var shapes = snapshot.Shapes.Select(x => { ct.ThrowIfCancellationRequested(); return ComputeShape(offsets, booleans, x.World, kind, settings); }).ToList();
+                return EffectOutcome.Change(session => ApplyEdit(session, editing, snapshot, shapes, kind, settings));
+            });
         return new EffectPlan(name, $"{name}...", ct =>
         {
             var results = Compute(offsets, booleans, snapshot, kind, settings, ct);
@@ -219,6 +261,7 @@ public static class OutlineEffect
                 var reach = top is GroupObject g ? g.Leaves().Where(l => ReferenceEquals(l.Layer, layer)).Select(layer.IndexOf).ToList() : [layer.IndexOf(top)];
                 int index = kind == OutlineKind.Outline ? reach.Min() : reach.Max() + 1;
                 var result = EffectGeometry.NewResult(geometry, name, leaf);
+                result.Live = new LiveLink(leaf, new LiveOutline(kind, settings with { LeaveOriginal = true }));   // live: it follows the source (top level, document coordinates)
                 session.History.Execute(new AddObjectCommand(layer, result, index));
                 created.Add(result);
             }
@@ -230,5 +273,21 @@ public static class OutlineEffect
             }
         }
         session.Selection.Set(created);
+    }
+
+    /// <summary>Reopened on live outlines: each gets its new outline and settings in place (same object, same spot), still following its source.</summary>
+    private static void ApplyEdit(EditorSession session, IReadOnlyList<PathObject> editing, OutlineSnapshot snapshot, List<PathGeometry> shapes, OutlineKind kind, OutlineSettings settings)
+    {
+        var spec = new LiveOutline(kind, settings with { LeaveOriginal = true });
+        var changes = new List<(PathObject, PathGeometry, ObjectStyle, string?, LiveLink?)>();
+        for (int i = 0; i < editing.Count && i < shapes.Count; i++)
+        {
+            var e = editing[i];
+            var world = e.GetWorldTransform();
+            var local = world.IsIdentity || !world.IsInvertible ? shapes[i] : shapes[i].Transform(world.Invert());
+            changes.Add((e, local, e.Style, NameOf(kind), LiveLink.Create(snapshot.Shapes[i].Leaf, spec, world)));
+        }
+        session.History.Execute(new ReshapeEffectsCommand(NameOf(kind), changes));
+        session.Selection.Set(editing.Cast<DocObject>().ToList());
     }
 }

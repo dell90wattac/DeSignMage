@@ -26,7 +26,7 @@ public sealed partial class EditorSession
     {
         if (BooleanService is not { } booleans || OffsetService is not { } offsets) return [];
         var sources = BevelEffect.Sources(this);
-        var plan = BevelEffect.Plan(sources, BevelEffect.ComputeAll(booleans, offsets, sources, settings));
+        var plan = BevelEffect.Plan(sources, BevelEffect.ComputeAll(booleans, offsets, sources, settings), settings);   // live crescents
         if (plan is null) return [];
         History.Execute(plan);
         var tops = plan.TopLevels.ToList();

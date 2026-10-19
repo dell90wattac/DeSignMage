@@ -15,6 +15,46 @@ public interface IDocumentCommand
 }
 
 /// <summary>
+/// Work that belongs to every new undo step (live effects rebuilt after their source changed): <see cref="CommandHistory"/> asks it after a step
+/// is done and keeps what it returns in the same step, so one undo takes back the edit and what followed from it.
+/// </summary>
+public interface IStepFollowUp
+{
+    /// <summary>
+    /// Called after <paramref name="step"/> was done (a new step, or the newest step edited again while dragging). Returns a command that is
+    /// <b>already done</b> and belongs to the step, or null. <paramref name="previous"/> is what an earlier call returned for the same step (null the
+    /// first time); the result replaces it, so an implementation that merges into <paramref name="previous"/> returns it.
+    /// </summary>
+    IDocumentCommand? After(IDocumentCommand step, IDocumentCommand? previous);
+
+    /// <summary>Called after undo, redo, a history jump or a rolled back transaction: the document is in a state some earlier step left it in.</summary>
+    void Settled();
+}
+
+/// <summary>An undo step with the work that followed from it (<see cref="IStepFollowUp"/>). Seen from outside it is <see cref="Primary"/>: same description, and <see cref="CommandHistory.IsTop"/> knows it.</summary>
+public sealed class FollowedCommand(IDocumentCommand primary, IDocumentCommand followUp) : IDocumentCommand, IUndoMemory
+{
+    public IDocumentCommand Primary { get; } = primary;
+    public IDocumentCommand FollowUp { get; internal set; } = followUp;
+    public string Description => Primary.Description;
+
+    public long ApproximateBytes => UndoMemory.BytesOf(Primary) + UndoMemory.BytesOf(FollowUp);
+    public IEnumerable<string> HeldAssetIds => UndoMemory.AssetsOf(Primary).Concat(UndoMemory.AssetsOf(FollowUp));
+
+    public void Do(Document doc)
+    {
+        Primary.Do(doc);
+        FollowUp.Do(doc);
+    }
+
+    public void Undo(Document doc)
+    {
+        FollowUp.Undo(doc);
+        Primary.Undo(doc);
+    }
+}
+
+/// <summary>
 /// Undo/redo stacks for one document. Every document change goes through <see cref="Execute"/>;
 /// <see cref="BeginTransaction"/> groups several commands into one undo step.
 /// <para>
@@ -104,6 +144,19 @@ public sealed class CommandHistory
 
     public event EventHandler? Changed;
 
+    /// <summary>Work done as part of every new step (the editor plugs in the live-effect updater). Null = none.</summary>
+    public IStepFollowUp? FollowUp { get; set; }
+
+    private IDocumentCommand WithFollowUp(IDocumentCommand step) =>
+        FollowUp?.After(step, null) is { } extra ? new FollowedCommand(step, extra) : step;
+
+    /// <summary>Counts the document as having unsaved changes although no step says so (a design brought back from a recovery copy).</summary>
+    public void MarkUnsaved()
+    {
+        _savedAtSet = false;
+        Changed?.Invoke(this, EventArgs.Empty);
+    }
+
     public void MarkSaved()
     {
         _savedAt = _undo.Count > 0 ? _undo[^1] : null;
@@ -120,7 +173,7 @@ public sealed class CommandHistory
             _open.Peek().Commands.Add(command);
             return;
         }
-        Push(command);
+        Push(WithFollowUp(command));
         _doc.NotifyChanged();
         Changed?.Invoke(this, EventArgs.Empty);
     }
@@ -131,12 +184,31 @@ public sealed class CommandHistory
     /// </summary>
     public void NotifyTopEdited(IDocumentCommand command)
     {
-        if (_undo.Count == 0 || !ReferenceEquals(_undo[^1], command)) return;
+        if (_undo.Count == 0) return;
+        var top = _undo[^1];
+        if (top is FollowedCommand followed && ReferenceEquals(followed.Primary, command))
+        {
+            if (FollowUp?.After(command, followed.FollowUp) is { } extra) followed.FollowUp = extra;
+        }
+        else if (!ReferenceEquals(top, command)) return;
+        else if (FollowUp?.After(command, null) is { } extra)
+        {
+            // the step had nothing to follow from until now: it becomes a followed step (memory re-counted, nothing released)
+            var wrapped = new FollowedCommand(command, extra);
+            Track(wrapped);
+            _tracked.Remove(command, out var info);
+            _stepBytes -= info.Bytes;
+            foreach (var id in info.Assets ?? [])
+                if (_assetRefs.TryGetValue(id, out int n)) { if (n <= 1) _assetRefs.Remove(id); else _assetRefs[id] = n - 1; }
+            if (ReferenceEquals(_savedAt, command)) _savedAt = wrapped;
+            _undo[^1] = wrapped;
+        }
         _doc.NotifyChanged();
         Changed?.Invoke(this, EventArgs.Empty);
     }
 
-    public bool IsTop(IDocumentCommand command) => _open.Count == 0 && _undo.Count > 0 && ReferenceEquals(_undo[^1], command);
+    public bool IsTop(IDocumentCommand command) => _open.Count == 0 && _undo.Count > 0 &&
+        (ReferenceEquals(_undo[^1], command) || _undo[^1] is FollowedCommand f && ReferenceEquals(f.Primary, command));
 
     public void Undo()
     {
@@ -145,6 +217,7 @@ public sealed class CommandHistory
         _undo.RemoveAt(_undo.Count - 1);
         c.Undo(_doc);
         _redo.Push(c);
+        FollowUp?.Settled();
         _doc.NotifyChanged();
         Changed?.Invoke(this, EventArgs.Empty);
     }
@@ -155,6 +228,7 @@ public sealed class CommandHistory
         var c = _redo.Pop();
         c.Do(_doc);
         _undo.Add(c);
+        FollowUp?.Settled();
         _doc.NotifyChanged();
         Changed?.Invoke(this, EventArgs.Empty);
     }
@@ -181,6 +255,7 @@ public sealed class CommandHistory
             c.Do(_doc);
             _undo.Add(c);
         }
+        FollowUp?.Settled();
         _doc.NotifyChanged();
         Changed?.Invoke(this, EventArgs.Empty);
         return true;
@@ -320,7 +395,11 @@ public sealed class CommandHistory
         if (!commit)
         {
             for (int i = t.Commands.Count - 1; i >= 0; i--) t.Commands[i].Undo(_doc);
-            if (t.Commands.Count > 0 && _open.Count == 0) _doc.NotifyChanged();
+            if (t.Commands.Count > 0 && _open.Count == 0)
+            {
+                FollowUp?.Settled();
+                _doc.NotifyChanged();
+            }
             return;
         }
         if (t.Commands.Count == 0) return;
@@ -330,6 +409,8 @@ public sealed class CommandHistory
         if (_open.Count > 0) _open.Peek().Commands.Add(composite);
         else
         {
+            // what followed from the step (live effects rebuilt) is one more command of it
+            if (FollowUp?.After(composite, null) is { } extra) composite = new CompositeCommand(t.Description, [.. t.Commands, extra]);
             Push(composite);
             _doc.NotifyChanged();
             Changed?.Invoke(this, EventArgs.Empty);

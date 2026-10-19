@@ -115,11 +115,14 @@ public enum CurveConversion
 /// never change font again. Works on text anywhere in the targets; text that is a part of a combined object becomes a
 /// single path part. Undo brings the original text objects back, kerning and all.
 /// </summary>
-public sealed class ConvertTextToCurvesCommand : IDocumentCommand, IUndoMemory
+public sealed class ConvertTextToCurvesCommand : IDocumentCommand, IUndoMemory, IReplacesObjects
 {
     private sealed record Entry(TextObject Text, DocObject Replacement, CombinedObject? Combined, int PartIndex);
 
     private readonly List<Entry> _entries = [];
+
+    IEnumerable<(DocObject Old, IReadOnlyList<DocObject> New)> IReplacesObjects.Replacements =>
+        _entries.Where(e => e.Combined is null).Select(e => ((DocObject)e.Text, (IReadOnlyList<DocObject>)[e.Replacement]));
 
     public long ApproximateBytes => _entries.Sum(e => UndoMemory.BytesOf(e.Text) + UndoMemory.BytesOf(e.Replacement));
     public IEnumerable<string> HeldAssetIds => [];

@@ -64,11 +64,36 @@ public abstract class DocObject
     /// <summary>Bumped on every property change. Renderers key caches on (Id, Version).</summary>
     public int Version { get; private set; }
 
-    public string? Name { get => _name; set { _name = value; Touch(); } }
-    public Affine2 Transform { get => _transform; set { _transform = value; Touch(); } }
-    public ObjectStyle Style { get => _style; set { _style = value; Touch(); } }
-    public bool Visible { get => _visible; set { _visible = value; Touch(); } }
-    public bool Locked { get => _locked; set { _locked = value; Touch(); } }
+    private int _notShape;   // how many of the Version bumps were not changes of the object's own outline (name, style, placement, flags, link)
+
+    /// <summary>
+    /// Changes only when the object's own outline changes (its geometry, size, text, font...), not when it is renamed, recolored, moved,
+    /// hidden, locked or linked. Live effects compare it to know whether their source changed shape (placement is compared separately).
+    /// </summary>
+    public int ShapeVersion => Version - _notShape;
+
+    public string? Name { get => _name; set { _name = value; TouchNotShape(); } }
+    public Affine2 Transform { get => _transform; set { _transform = value; TouchNotShape(); } }
+    public ObjectStyle Style { get => _style; set { _style = value; TouchNotShape(); } }
+    public bool Visible { get => _visible; set { _visible = value; TouchNotShape(); } }
+    public bool Locked { get => _locked; set { _locked = value; TouchNotShape(); } }
+
+    private LiveLink? _live;
+
+    /// <summary>
+    /// Set on a live effect object (an outline, shadow, soft shadow, glow or bevel crescent that follows its source): what it follows and how
+    /// it is made. Null for every other object, and for an effect that was made plain. Change it through commands.
+    /// </summary>
+    public LiveLink? Live { get => _live; set { _live = value; TouchNotShape(); } }
+
+    /// <summary>What the live-effect updater last saw of this effect and its source (runtime only, never saved or copied).</summary>
+    internal object? LiveSync { get; set; }
+
+    private void TouchNotShape()
+    {
+        _notShape++;
+        Touch();
+    }
 
     /// <summary>Human-readable kind, as shown in the layers/objects panel.</summary>
     public abstract string KindName { get; }
@@ -85,6 +110,7 @@ public abstract class DocObject
         c._name = _name;
         c._visible = _visible;
         c._locked = _locked;
+        c._live = _live;   // still pointing at the original source: copies remap it (LiveEffects.CloneSet), replacements re-link it
         c.CopyRank = CopyRank;
         return c;
     }

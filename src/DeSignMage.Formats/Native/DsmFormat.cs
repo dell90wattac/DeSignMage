@@ -46,9 +46,11 @@ public static class DsmFormat
     /// <item>3 (Picture Editor): a picture edited non-destructively has <c>source</c> (the untouched original, an asset) and <c>recipe</c> (crop, straighten,
     /// colors); its <c>asset</c> is the finished picture, so a reader that knows nothing of recipes still shows the right picture (and warns about the newer
     /// version). Files without these (versions 1 and 2) open as before.</item>
+    /// <item>4 (live effects): an effect object that follows its source has <c>live</c> (which effect, its settings, the source's number, a frame) and its
+    /// source has <c>linkId</c>. Older readers ignore both and show the effect as the plain object it also is; older files open with plain effects.</item>
     /// </list>
     /// </summary>
-    public const int CurrentVersion = 3;
+    public const int CurrentVersion = 4;
 
     /// <summary>
     /// Written as <c>minReaderVersion</c>: the oldest format version a reader must understand to open what we write.
@@ -81,6 +83,9 @@ public sealed record DsmSaveOptions
 
     /// <summary>Time stamp written to the header; null = now. Tests pin it for byte-stable output.</summary>
     public DateTime? SavedUtc { get; init; }
+
+    /// <summary>Write the JSON without indentation: smaller and quicker, for files nobody reads by eye (recovery copies).</summary>
+    public bool Compact { get; init; }
 }
 
 public sealed class DsmLoadResult(Document document, int formatVersion, string appVersion, IReadOnlyList<string> warnings)

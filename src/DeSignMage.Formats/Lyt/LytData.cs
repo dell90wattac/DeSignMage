@@ -12,7 +12,13 @@ public readonly record struct LytColor(string Name, string Vendor, byte Model, u
     /// <summary>Model 4 is a gray: black ink only, in the last component (0 to 10000 = 0 to 100 %). "SILVER METAL" is 27 %, which the reference program shows as gray 185.</summary>
     public const byte ModelRgb = 1, ModelCmyk = 2, ModelGray = 4;
 
-    public bool IsValid => Model is ModelRgb or ModelCmyk or ModelGray;
+    /// <summary>
+    /// Model 3 (the gradient colors of the icon library and the effect samples): hue, saturation and value in hundredths (18444, 3176, 10000 = 184.44°, 31.76 %,
+    /// 100 %), the name being the same color as text ("174,249,255"). Checked on the named vinyl colors: it converts to the name's RGB.
+    /// </summary>
+    public const byte ModelHsv = 3;
+
+    public bool IsValid => Model is ModelRgb or ModelCmyk or ModelGray or ModelHsv;
 
     /// <summary>Display color. CMYK uses the plain device conversion; own ICC-managed look will differ slightly.</summary>
     public DocColor ToDocColor()
@@ -29,6 +35,9 @@ public readonly record struct LytColor(string Name, string Vendor, byte Model, u
                 break;
             case ModelGray:
                 r = g = b = ToByte(1 - V3 / 10000.0);
+                break;
+            case ModelHsv:
+                (r, g, b) = ColorMath.HsvToRgb(V0 / 100.0, V1 / 100.0, V2 / 100.0);
                 break;
             default:
                 r = g = b = 0;
@@ -141,6 +150,36 @@ public sealed class LytBlend
     public bool TransSwap { get; set; }
     public int NodeCount { get; set; } = 2;
     public List<LytBlendNode> ExtraNodes { get; } = [];
+
+    /// <summary>Alternate Colors: the gradient takes the long way round the color wheel (the fill block's last field).</summary>
+    public bool AlternateColors { get; set; }
+
+    /// <summary>
+    /// The feather the fill block holds (shared with the Feather effect): the amount as a fraction of the object's smaller side (0 = none) and the inset.
+    /// Blocks written before the inset existed have none stored and used 0.5.
+    /// </summary>
+    public float FeatherAmount { get; set; }
+    public float FeatherInset { get; set; } = 0.5f;
+}
+
+/// <summary>
+/// The Soft Shadow / Glow record of a part (the legacy program keeps one on the source object, written when its Soft Shadow flag is on). Offsets are in the part's
+/// own units (y up), Softness and Inset are fractions of the object's height, the slant is in degrees and the height 1 = 100 %. A Glow is the same record with the
+/// offsets at 0 and the thickness stored as a negative inset.
+/// </summary>
+public sealed class LytSoftShadow
+{
+    public int Version { get; init; }
+    public float Opacity { get; init; }
+    public float Hs { get; init; }
+    public float Vs { get; init; }
+    public float Softness { get; init; }
+    public float Inset { get; init; }
+    public float Slant { get; init; }
+    public float Height { get; init; } = 1;
+
+    /// <summary>The shadow's color; absent in the older record versions (black).</summary>
+    public LytColor Color { get; init; }
 }
 
 /// <summary>Style data of a part (a drawn shape or text).</summary>
@@ -173,6 +212,15 @@ public sealed class LytStyle
 
     /// <summary>Why the rest of the style block was not read, if it was not.</summary>
     public string? NotDecoded { get; init; }
+
+    /// <summary>The Soft Shadow / Glow record, when the part has one and the block was readable up to it.</summary>
+    public LytSoftShadow? SoftShadow { get; init; }
+
+    /// <summary>The part's soft shadow is switched off (hidden) in the layout.</summary>
+    public bool SoftShadowHidden { get; init; }
+
+    /// <summary>The layout marks the part's soft shadow as a Glow (it is the same record; a glow made by the Glow tool normally has no offset).</summary>
+    public bool SoftShadowIsGlow { get; init; }
 }
 
 /// <summary>A part (shape/text) or a group record.</summary>

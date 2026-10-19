@@ -59,7 +59,7 @@ public sealed record SoftSettings
 
 /// <summary>
 /// Effects ▸ Soft Shadow and Effects ▸ Glow (notes/effects/soft-shadow.md, glow.md; user decisions R7, R8, R13, R22): a separate vector object made from the
-/// source's outline, <b>grouped with its source</b> (not linked: editing the source later leaves it as it is) and placed just below the source in the drawing
+/// source's outline, <b>grouped with its source</b> (and live: it follows edits of the source, <see cref="LiveEffects"/>) and placed just below the source in the drawing
 /// order. The object keeps the outline as vectors; the blur is a <see cref="BlurStyle"/> on its style that the renderer draws at any zoom or export resolution.
 /// Everything inside a group gets the same treatment, individually: every drawn member (at any depth) gets its own effect object, just below it and in its group; a
 /// member that is not in a group becomes a new group with its effect object.
@@ -77,7 +77,8 @@ public static class SoftEffect
     /// <summary>The objects that make up the shape of <paramref name="source"/>: its drawn leaves, without effect objects that were made earlier.</summary>
     public static IEnumerable<DocObject> SourceLeaves(DocObject source)
     {
-        var leaves = source is GroupObject g ? g.Leaves() : [source];
+        // a group's own shadows and bevel crescents are its decorations, not members to shade (Shadow and Easy Bevel skip them the same way)
+        var leaves = source is GroupObject g ? g.Leaves().Where(l => !ShadowEffect.IsShadow(l) && !BevelEffect.IsCrescent(l)) : [source];
         return leaves.Where(l => l.Style.Blur is null);
     }
 

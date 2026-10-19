@@ -16,7 +16,7 @@ internal sealed partial class LytWriteSession(Document doc, LytWriteOptions opti
     private readonly List<GroupRecord> _groupList = [];
     private readonly Dictionary<Layer, uint> _layerIds = [];
     private readonly Dictionary<string, int> _fallbacks = [];
-    private bool _groupLimitReported, _featherReported;
+    private bool _groupLimitReported;
 
     private PageSetup Page => doc.Page;
 
@@ -59,12 +59,6 @@ internal sealed partial class LytWriteSession(Document doc, LytWriteOptions opti
             result.SoftEffectCount++;
             if (options.SoftEffects == LytSoftEffects.Skip) return;
         }
-        if (style.Feather is not null && !_featherReported)
-        {
-            _featherReported = true;
-            result.Warnings.Add("Feathered edges are not stored in a layout: feathered objects were written with hard edges.");
-        }
-
         switch (obj)
         {
             case ImageObject image:

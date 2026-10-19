@@ -35,40 +35,31 @@ public static class DsmWriter
         return ms.ToArray();
     }
 
-    public static void Save(Document document, Stream stream, DsmSaveOptions? options = null, DsmCodecRegistry? registry = null)
+    public static void Save(Document document, Stream stream, DsmSaveOptions? options = null, DsmCodecRegistry? registry = null) =>
+        Snapshot(document, options, registry).WriteTo(stream);
+
+    /// <summary>
+    /// The quick half of a save, for a document that is still being edited: reads the whole design into memory (its JSON text, plus
+    /// references to the pictures it shows, which never change) so the slow half, packing the zip, can run on another thread while the
+    /// design goes on changing. Call it on the thread that owns the document.
+    /// </summary>
+    public static DsmSnapshot Snapshot(Document document, DsmSaveOptions? options = null, DsmCodecRegistry? registry = null)
     {
         options ??= new DsmSaveOptions();
         registry ??= DsmCodecRegistry.Default;
-
-        using var zip = new ZipArchive(stream, ZipArchiveMode.Create, leaveOpen: true);
 
         // The asset store also keeps pictures that an edit (rotate, crop, ...) replaced, because undo needs them. Only pictures some object
         // still shows go into the file, otherwise every edit would bloat it; undo history does not survive a save anyway.
         var referenced = BitmapStats.ReferencedAssetIds(document);
         var assets = document.Assets.All.Where(a => referenced.Contains(a.Id)).OrderBy(a => a.Id, StringComparer.Ordinal).ToList();
-        var entry = zip.CreateEntry(DsmFormat.DocumentEntry, CompressionLevel.Optimal);
-        using (var es = entry.Open())
-            WriteDocumentJson(document, es, options, registry, assets);
-
-        foreach (var asset in assets)
-        {
-            // Pictures are already compressed; storing them is faster and not bigger.
-            var level = asset.MediaType.StartsWith("image/", StringComparison.OrdinalIgnoreCase) && asset.MediaType != "image/bmp"
-                ? CompressionLevel.NoCompression : CompressionLevel.Optimal;
-            using var s = zip.CreateEntry(DsmFormat.AssetFolder + asset.Id, level).Open();
-            s.Write(asset.Data);
-        }
-
-        if (options.Thumbnail is { Length: > 0 } thumb)
-        {
-            using var s = zip.CreateEntry(DsmFormat.ThumbnailEntry, CompressionLevel.NoCompression).Open();
-            s.Write(thumb);
-        }
+        using var json = new MemoryStream();
+        WriteDocumentJson(document, json, options, registry, assets);
+        return new DsmSnapshot(json.ToArray(), assets, options.Thumbnail);
     }
 
     private static void WriteDocumentJson(Document doc, Stream output, DsmSaveOptions options, DsmCodecRegistry registry, List<Asset> assets)
     {
-        using var json = new Utf8JsonWriter(output, new JsonWriterOptions { Indented = true, MaxDepth = 1000 });
+        using var json = new Utf8JsonWriter(output, new JsonWriterOptions { Indented = !options.Compact, MaxDepth = 1000 });
         var ctx = new DsmWriteContext(json, registry);
 
         json.WriteStartObject();
@@ -102,6 +93,10 @@ public static class DsmWriter
             groups.Add(g);
         }
         foreach (var g in doc.Groups) AddGroup(g);
+
+        // Live effects (format 4): every source gets a number its effects refer to.
+        foreach (var effect in DeSignMage.Core.Effects.LiveEffects.All(doc))
+            if (doc.Contains(effect.Live!.Source) && !ctx.LinkIds.ContainsKey(effect.Live.Source)) ctx.LinkIds[effect.Live.Source] = ctx.LinkIds.Count;
         if (groups.Count > 0) ctx.WriteObjectList("groups", groups);
 
         json.WriteStartArray("layers");

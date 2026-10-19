@@ -596,9 +596,13 @@ public class ButtonAuditTests
 
         Press(w, NamedButton(w, "GuideLock"));
         Assert.True(g.Locked);
-        Assert.False(NamedButton(w, "GuideVertical").IsEnabled);        // a locked guide can't be turned
+        Assert.True(NamedButton(w, "GuideVertical").IsEnabled);         // locking only stops dragging; the numbers and buttons still work
         Press(w, NamedButton(w, "GuideLock"));
         Assert.False(g.Locked);
+
+        bool snapGraphics = w.Session.SnapGuidesToGraphics;
+        Press(w, NamedButton(w, "GuideSnapGraphics"));
+        Assert.Equal(!snapGraphics, w.Session.SnapGuidesToGraphics);
 
         Press(w, NamedButton(w, "GuideRemoveOne"));
         Assert.Empty(w.Session.Document.Guides);

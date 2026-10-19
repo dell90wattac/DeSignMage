@@ -48,17 +48,18 @@ public static class GradientRamp
 
         var (ha, sa, va) = ca.ToHsv();
         var (hb, sb, vb) = cb.ToHsv();
-        bool achromaticA = Achromatic(sa, va), achromaticB = Achromatic(sb, vb);
+        bool achromaticA = Achromatic(sa), achromaticB = Achromatic(sb);
         if (achromaticA && !achromaticB) ha = hb;
         else if (achromaticB && !achromaticA) hb = ha;
-        // Black has no saturation of its own either: black to red only darkens the red instead of washing out through gray.
-        if (va < 0.5 && vb >= 0.5) sa = sb;
-        else if (vb < 0.5 && va >= 0.5) sb = sa;
+        // Only the hue is taken over: a black end keeps its zero saturation, so black to red passes through a muted dark red, as in the legacy blend.
 
-        // The two ways round the wheel: the short one (|d| <= 0.5) and the other.
+        // The two ways round the wheel: d is the plain hue difference, other is the way the other round. The legacy rule: the short one, or with
+        // Alternate Colors the long one. A tie (exactly opposite hues) keeps d, and equal hues (d = 0, which includes a gray end that took
+        // the other's hue) turn a full circle with Alternate Colors, the rainbow the setting is named after.
         double d = (hb - ha) / 360;
-        if (d > 0.5) d -= 1; else if (d < -0.5) d += 1;
-        if (alternate && d != 0) d = d > 0 ? d - 1 : d + 1;
+        double other = d >= 0 ? d - 1 : d + 1;
+        bool takeOther = alternate ? Math.Abs(other) > Math.Abs(d) : Math.Abs(other) < Math.Abs(d);
+        if (takeOther) d = other;
 
         int steps = 8 + (int)Math.Min(32, Math.Ceiling(Math.Abs(d) * 360 / 6));
         for (int i = 1; i < steps; i++)
@@ -71,8 +72,8 @@ public static class GradientRamp
         list.Add(Of(b.Offset, cb));
     }
 
-    /// <summary>Gray, white and black have no hue worth keeping.</summary>
-    private static bool Achromatic(double s, double v) => s < 0.5 || v < 0.5;
+    /// <summary>Gray, white and black (zero saturation) have no hue of their own.</summary>
+    private static bool Achromatic(double s) => s < 0.5;
 
     /// <summary>The ramp color at <paramref name="t"/> (clamped to 0..1), for showing a stop's neighbor colors or a new stop's color.</summary>
     public static DocColor ColorAt(GradientPaint g, double t)

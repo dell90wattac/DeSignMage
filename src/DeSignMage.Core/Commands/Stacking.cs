@@ -131,6 +131,7 @@ public static class Stacking
             Mark(o, copy);
             copies.Add(copy);
         }
+        Effects.LiveEffects.RemapClones(topLevel as IReadOnlyList<DocObject> ?? topLevel.ToList(), copies);   // live effects follow the copied sources; one copied alone turns plain
         return copies;
 
         void Mark(DocObject source, DocObject copy)

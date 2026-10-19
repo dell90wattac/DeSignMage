@@ -7,29 +7,74 @@ namespace DeSignMage.Formats.Lyt;
 /// Turns the gradient and transparency fields of a legacy fill block (<see cref="LytBlend"/>) into a <see cref="GradientPaint"/>:
 /// <list type="bullet">
 /// <item><b>Gradient</b> (GradType linear, circle, ellipse, horizontal, vertical): the first two nodes are the ends of the control line, the
-/// others sit between them (ordered by where their point falls on the line); highlight nodes keep their flag.</item>
+/// others sit between them (ordered by where their point falls on the line); highlight nodes keep their flag, Alternate Colors is read from the block.</item>
 /// <item><b>Transparency over a plain color</b> (GradType none, TransType linear, circle, ellipse, horizontal, vertical): the object's color
 /// fading to nothing. It becomes a gradient of that one color whose stop alpha follows the legacy rule: opacity at the start (or center)
-/// <c>1 - Max</c>, at the end (or radius) <c>1 - Min·Max</c>, exchanged when Swap is on. Flat transparency, and a transparency on top of
-/// a color gradient, are not imported (there is no opacity ramp on top of another paint yet).</item>
+/// <c>1 - Max</c>, at the end (or radius) <c>1 - Min·Max</c>, exchanged when Swap is on.</item>
+/// <item><b>Transparency over a color gradient</b>: when the fade runs along the same control line as the colors (same kind and ends, as when the two were
+/// made together), the fade is multiplied into the alpha of the gradient's stops, so the result is one gradient with see-through colors. A fade
+/// along a different line cannot be written into the stops of a gradient: the gradient is kept as it is and the caller is told (<c>rampDropped</c>).</item>
+/// <item><b>Flat transparency</b> (TransType 1): one opacity for the whole fill, <c>1 - Min</c> (<see cref="FlatOpacity"/>), which the caller multiplies into
+/// the fill's color or into every stop of the gradient (<see cref="WithOpacity"/>).</item>
 /// </list>
 /// Control points are stored in the part's node space (y up); they become the object's local space (y negated) and then relative to its bounds.
 /// </summary>
 internal static class LytGradients
 {
     private const uint GradLinear = 1, GradCircle = 2, GradEllipse = 3, GradHorizontal = 5, GradVertical = 6;
-    private const uint TransLinear = 2, TransCircle = 3, TransEllipse = 4, TransHorizontal = 0xC, TransVertical = 0xD;
+    private const uint TransFlat = 1, TransLinear = 2, TransCircle = 3, TransEllipse = 4, TransHorizontal = 0xC, TransVertical = 0xD;
 
-    /// <summary>The paint for a part, or null when the block holds neither a usable gradient nor a fade.</summary>
-    public static GradientPaint? TryCreate(LytBlend blend, DocColor baseColor, PathGeometry outline)
+    /// <summary>How far (as a fraction of the object's size) two control points may be apart and still count as the same line.</summary>
+    private const double SameLineTolerance = 0.02;
+
+    /// <summary>The paint for a part, or null when the block holds neither a usable gradient nor a fade (flat transparency is not a gradient: see <see cref="FlatOpacity"/>).</summary>
+    public static GradientPaint? TryCreate(LytBlend blend, DocColor baseColor, PathGeometry outline) => Create(blend, baseColor, outline, out _);
+
+    /// <summary><see cref="TryCreate"/>, also saying when a transparency ramp over a gradient could not be kept.</summary>
+    public static GradientPaint? Create(LytBlend blend, DocColor baseColor, PathGeometry outline, out bool rampDropped)
     {
+        rampDropped = false;
         var bounds = outline.GetBounds();
         if (bounds.IsEmpty || bounds.Width <= 1e-9 || bounds.Height <= 1e-9) return null;
 
-        if (blend.GradType is GradLinear or GradCircle or GradEllipse or GradHorizontal or GradVertical) return Blended(blend, baseColor, bounds);
-        if (blend.GradType == 0 && blend.TransType is TransLinear or TransCircle or TransEllipse or TransHorizontal or TransVertical) return Fade(blend, baseColor, bounds);
+        if (blend.GradType is GradLinear or GradCircle or GradEllipse or GradHorizontal or GradVertical)
+        {
+            var gradient = Blended(blend, baseColor, bounds);
+            if (gradient is not null && IsRamp(blend.TransType) && Ramp(blend, bounds) is { } ramp)
+            {
+                var merged = MultiplyRamp(gradient, ramp);
+                if (merged is null) rampDropped = true; else gradient = merged;
+            }
+            return gradient;
+        }
+        if (blend.GradType is 0 or 7 && IsRamp(blend.TransType) && Ramp(blend, bounds) is { } fade)
+            return new GradientPaint(fade.Kind, fade.Points, [new GradientNode(0, baseColor with { A = Scale(baseColor.A, fade.Start) }), new GradientNode(1, baseColor with { A = Scale(baseColor.A, fade.End) })]);
         return null;
     }
+
+    /// <summary>The opacity of a flat transparency, <c>1 - Min</c> (Max is not used by a flat one); 1 when the block has none.</summary>
+    public static double FlatOpacity(LytBlend blend)
+    {
+        if (blend.TransType != TransFlat) return 1;
+        double min = double.IsFinite(blend.TransMin) ? blend.TransMin : 0;
+        return Math.Clamp(1 - min, 0, 1);
+    }
+
+    /// <summary>The fill with its colors' opacity multiplied by <paramref name="opacity"/> (a gradient keeps its geometry; any other paint of a plain color too).</summary>
+    public static Paint? WithOpacity(Paint? paint, double opacity)
+    {
+        if (opacity >= 0.9995) return paint;
+        return paint switch
+        {
+            SolidPaint s => new SolidPaint(s.Color with { A = Scale(s.Color.A, opacity) }),
+            GradientPaint g => g.WithStops(g.Stops.Select(n => n with { Color = n.Color with { A = Scale(n.Color.A, opacity) } }).ToList()),
+            _ => paint,
+        };
+    }
+
+    private static byte Scale(byte alpha, double factor) => (byte)Math.Round(Math.Clamp(alpha * factor, 0, 255));
+
+    private static bool IsRamp(uint transType) => transType is TransLinear or TransCircle or TransEllipse or TransHorizontal or TransVertical;
 
     private static Vec2 Relative(float x, float y, Rect2 bounds) => GradientPaint.ToRelative(new Vec2(x, -y), bounds);
 
@@ -64,7 +109,8 @@ internal static class LytGradients
         var p0 = nodes[0].Point; var p1 = nodes[1].Point;
         if ((p1 - p0).LengthSquared < 1e-12) return null;
 
-        // An ellipse takes its two axis handles from the first three nodes; the colors between its ends start after them.
+        // An ellipse takes its two axis handles from the first three nodes (center, end of the first axis, end of the second, as the legacy program
+        // draws it: the first axis gives the angle and the radius, the third point only the other half-axis); the colors between its ends start after them.
         int firstInner = 2;
         var points = new List<Vec2> { GradientPaint.ToRelative(p0, bounds), GradientPaint.ToRelative(p1, bounds) };
         if (kind == GradientKind.Ellipse)
@@ -81,12 +127,15 @@ internal static class LytGradients
             double t = Vec2.Dot(nodes[i].Point - p0, axis) / axis.LengthSquared;
             stops.Add(new GradientNode(Math.Clamp(t, 0.001, 0.999), nodes[i].Color, nodes[i].Highlight));
         }
-        return new GradientPaint(kind, points, stops);
+        return new GradientPaint(kind, points, stops, alternateColors: b.AlternateColors);
     }
 
     // ---- fade ----
 
-    private static GradientPaint? Fade(LytBlend b, DocColor color, Rect2 bounds)
+    /// <summary>A transparency ramp: which way it runs and the opacity (0..1) at its start (or center) and at its end (or radius).</summary>
+    private readonly record struct Fade(GradientKind Kind, Vec2[] Points, double Start, double End);
+
+    private static Fade? Ramp(LytBlend b, Rect2 bounds)
     {
         double min = Math.Clamp(double.IsFinite(b.TransMin) ? b.TransMin : 0, 0, 1);
         double max = Math.Clamp(double.IsFinite(b.TransMax) ? b.TransMax : 1, 0, 1);
@@ -132,8 +181,22 @@ internal static class LytGradients
                 break;
         }
         if (kind != GradientKind.Horizontal && kind != GradientKind.Vertical && (points[1] - points[0]).LengthSquared < 1e-12) return null;
+        return new Fade(kind, points, start, end);
+    }
 
-        byte Alpha(double a) => (byte)Math.Round(Math.Clamp(a, 0, 1) * color.A);
-        return new GradientPaint(kind, points, [new GradientNode(0, color with { A = Alpha(start) }), new GradientNode(1, color with { A = Alpha(end) })]);
+    /// <summary>
+    /// The fade multiplied into the gradient's stops, or null when they do not run along the same line (then the colors alone are kept). A circle or
+    /// ellipse fade measures from the center like the colors do, a linear one along the line, so the opacity at a stop is a plain interpolation of the two ends.
+    /// </summary>
+    private static GradientPaint? MultiplyRamp(GradientPaint g, Fade fade)
+    {
+        bool sameKind = g.Kind == fade.Kind;
+        // a locked horizontal or vertical fade covers the whole object; the colors cover it too when they are locked the same way
+        if (!sameKind || g.Points.Count != fade.Points.Length) return null;
+        for (int i = 0; i < g.Points.Count; i++)
+            if (Math.Abs(g.Points[i].X - fade.Points[i].X) > SameLineTolerance || Math.Abs(g.Points[i].Y - fade.Points[i].Y) > SameLineTolerance) return null;
+
+        var stops = g.Stops.Select(n => n with { Color = n.Color with { A = Scale(n.Color.A, fade.Start + (fade.End - fade.Start) * n.Offset) } }).ToList();
+        return g.WithStops(stops);
     }
 }

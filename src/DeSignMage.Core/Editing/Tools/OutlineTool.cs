@@ -66,7 +66,18 @@ public sealed class OutlineTool : Tool
         var (first, second) = _remembered.TryGetValue(kind, out var r) ? r : (0, 0);
         Settings = Settings with { First = first, Second = second };
         Retarget();
+        if (_snapshot?.EditedSpec is { } spec)
+        {
+            // reopened on a live outline or inline: its own kind and the settings it was made with
+            Kind = spec.Kind;
+            Settings = spec.Settings;
+            SchedulePreview();
+            Changed?.Invoke(this, EventArgs.Empty);
+        }
     }
+
+    /// <summary>True while the tool edits selected live outlines / inlines instead of making new ones (Leave Original does not apply then).</summary>
+    public bool IsEditingLive => _snapshot?.Editing is not null;
 
     private void Retarget()
     {

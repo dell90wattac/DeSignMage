@@ -17,9 +17,11 @@ public sealed partial class EditorSession
     /// <summary>
     /// What Align lines up. With two or more objects selected, each selected top-level object (a group counts as one) lines up with the
     /// bounds of the whole selection. With one group selected, its members line up with each other inside the group's bounds, which is
-    /// what a rubber band group needs (the rubber band makes a group). Locked objects are never moved; null means there is nothing to align.
+    /// what a rubber band group needs (the rubber band makes a group). One plain object (or a group with nothing to line up inside) lines up
+    /// with the edge or center of the page ("Align to Edge"). A single live text keeps its Left / Center / Right for its own alignment, so
+    /// only its Top / Middle / Bottom go to the page. Locked objects are never moved; null means there is nothing to align.
     /// </summary>
-    private (IReadOnlyList<DocObject> Units, Rect2 Reference)? AlignTarget()
+    private (IReadOnlyList<DocObject> Units, Rect2 Reference)? AlignTarget(AlignMode mode)
     {
         var items = Selection.Items;
         if (items.Count == 0 || SelectionLocked) return null;
@@ -27,12 +29,15 @@ public sealed partial class EditorSession
         if (items[0] is GroupObject g)
         {
             var members = g.Children.Where(m => m.Visible && !m.Locked).ToList();
-            if (members.Count < 2) return null;
-            var reference = Rect2.Empty;
-            foreach (var m in members) reference = reference.Union(m.GetWorldBounds());
-            return (members, reference);
+            if (members.Count >= 2)
+            {
+                var reference = Rect2.Empty;
+                foreach (var m in members) reference = reference.Union(m.GetWorldBounds());
+                return (members, reference);
+            }
         }
-        return null;
+        if (items[0] is TextObject && TextAlignmentOf(mode) is not null) return null;   // handled by SingleTextFor
+        return items[0].GetWorldBounds().IsEmpty ? null : (items, Document.Page.Bounds);
     }
 
     private static TextAlignment? TextAlignmentOf(AlignMode mode) => mode switch
@@ -47,8 +52,8 @@ public sealed partial class EditorSession
     private TextObject? SingleTextFor(AlignMode mode) =>
         TextAlignmentOf(mode) is { } wanted && Selection.Count == 1 && !SelectionLocked && Selection.Items[0] is TextObject t && t.Alignment != wanted ? t : null;
 
-    /// <summary>True when Align would do something: two or more objects (or one group of two or more members) to line up, or one text whose alignment differs.</summary>
-    public bool CanAlign(AlignMode mode) => AlignTarget() is not null || SingleTextFor(mode) is not null;
+    /// <summary>True when Align would do something: two or more objects (or one group of two or more members) to line up, one object to line up with the page, or one text whose alignment differs.</summary>
+    public bool CanAlign(AlignMode mode) => AlignTarget(mode) is not null || SingleTextFor(mode) is not null;
 
     /// <summary>
     /// Lines the objects up on the left / center / right / top / middle / bottom of their common bounds, as one undo step. A single live
@@ -56,7 +61,7 @@ public sealed partial class EditorSession
     /// </summary>
     public bool Align(AlignMode mode)
     {
-        if (AlignTarget() is { } target)
+        if (AlignTarget(mode) is { } target)
         {
             var (units, reference) = target;
             var moves = new List<(DocObject, Affine2)>();

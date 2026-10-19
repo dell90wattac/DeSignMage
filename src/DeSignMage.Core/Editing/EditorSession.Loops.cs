@@ -60,23 +60,37 @@ public sealed partial class EditorSession
     public bool CanRemoveInnerLoops => LoopLeaves().Any(LoopCleanup.HasInnerLoops);
 
     /// <summary>
-    /// Arrange ▸ Remove All Inner Loops: the holes go (and anything inside them), only the loops that are not inside another loop stay.
-    /// Live text becomes ordinary curves (as with any edit of its vectors). One undo step; the selection stays.
+    /// Arrange ▸ Remove All Inner Loops: the holes go (and any island inside a hole), only the loops that are not inside another loop stay.
+    /// A part of a combined object that is left with no loops at all (a small circle lying inside a big one) is dropped; when that was every
+    /// part, the object goes. Live text becomes ordinary curves (as with any edit of its vectors). One undo step; the selection stays.
     /// </summary>
     public void RemoveAllInnerLoops()
     {
         var edits = new List<(DocObject Leaf, LoopMap Map, List<(int Piece, PathGeometry Geometry)> Changes)>();
+        var rebuilds = new List<(DocObject Leaf, DocObject? Replacement)>();
         foreach (var leaf in LoopLeaves())
-            if (LoopMap.Of(leaf) is { HasInnerLoops: true } map) edits.Add((leaf, map, LoopCleanup.WithoutInnerLoops(map)));
-        RunLoopEdits("Remove All Inner Loops", edits);
+        {
+            if (LoopMap.Of(leaf) is not { HasInnerLoops: true } map) continue;
+            var changes = LoopCleanup.WithoutInnerLoops(map);
+            if (leaf is CombinedObject combined && changes.Any(c => c.Geometry.IsEmpty))
+                rebuilds.Add((leaf, LoopCleanup.WithoutEmptyParts(combined, map, changes)));
+            else edits.Add((leaf, map, changes));
+        }
+        RunLoopEdits("Remove All Inner Loops", edits, rebuilds);
     }
 
-    private void RunLoopEdits(string description, List<(DocObject Leaf, LoopMap Map, List<(int Piece, PathGeometry Geometry)> Changes)> edits)
+    private void RunLoopEdits(string description, List<(DocObject Leaf, LoopMap Map, List<(int Piece, PathGeometry Geometry)> Changes)> edits,
+        List<(DocObject Leaf, DocObject? Replacement)>? rebuilds = null)
     {
-        if (edits.Count == 0) return;
+        if (edits.Count == 0 && rebuilds is not { Count: > 0 }) return;
         var keep = Selection.Items.ToList();
         using (History.BeginTransaction(description))
         {
+            foreach (var (leaf, replacement) in rebuilds ?? [])
+            {
+                History.Execute(new ReplaceObjectCommand(description, leaf, replacement));
+                keep = keep.Select(o => ReferenceEquals(o, leaf) ? replacement : o).Where(o => o is not null).ToList()!;
+            }
             foreach (var (leaf, map, changes) in edits)
             {
                 var current = leaf;
@@ -100,17 +114,23 @@ public sealed partial class EditorSession
 
     /// <summary>
     /// Arrange ▸ Break Into Outer Loops: each object with several outer loops becomes one object per outer loop, and every piece keeps the
-    /// holes inside its own loop (Break Into Loops splits every loop, holes included). One undo step; nothing is selected afterwards,
-    /// like the other break commands.
+    /// holes inside its own loop (Break Into Loops splits every loop, holes included). One undo step; the new pieces are selected afterwards,
+    /// so they can be colored one after the other at once (the other break commands leave nothing selected).
     /// </summary>
     public void BreakIntoOuterLoopsSelection()
     {
         var targets = LoopLeaves().Where(LoopCleanup.CanBreakIntoOuterLoops).ToList();
         if (targets.Count == 0) return;
+        var pieces = new List<DocObject>();
         using (History.BeginTransaction("Break Into Outer Loops"))
         {
-            foreach (var t in targets) History.Execute(new BreakIntoOuterLoopsCommand(t));
+            foreach (var t in targets)
+            {
+                var cmd = new BreakIntoOuterLoopsCommand(t);
+                History.Execute(cmd);
+                pieces.AddRange(cmd.Pieces);
+            }
         }
-        Selection.Clear();
+        Selection.Set(pieces.Where(Document.Contains));
     }
 }

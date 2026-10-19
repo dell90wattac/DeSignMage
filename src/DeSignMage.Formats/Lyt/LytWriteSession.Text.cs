@@ -75,6 +75,7 @@ internal sealed partial class LytWriteSession
         {
             Kind = PartKind.Text, Name = text, FontFile = $"_{family}.ptt", Align = 0, CharSpacing = (float)t.Tracking,
             Color = LytColors.From(fill.Color with { A = 255 }), LayerId = layerId, Type = 0x4011, Type2 = 0x4100,
+            Fill = WithOpacityAndFeather(null, fill.Color.A / 255.0, style.Feather),   // a see-through or feathered text keeps both
         };
         foreach (var letter in letters)
         {

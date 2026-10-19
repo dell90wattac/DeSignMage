@@ -147,12 +147,38 @@ public class GradientTests
         // White to blue must stay on blue's hue (R = G all along), never pick up another color on the way.
         foreach (var e in GradientRamp.Build(Linear(White, Blue)))
             Assert.True(Math.Abs(e.R - e.G) <= 1 && e.B >= e.R, $"{e}");
-        // Black to red keeps red's hue: no green or blue appears.
+        // Black to red keeps red's hue: red always leads, and green and blue stay equal (no other color is picked up on the way).
         foreach (var e in GradientRamp.Build(Linear(Black, Red)))
-            Assert.True(e.G <= 1 && e.B <= 1, $"{e}");
-        // The same holds the other way round and with the long way switched on.
-        foreach (var e in GradientRamp.Build(Linear(Blue, White, alternate: true)))
+            Assert.True(e.R >= e.G && Math.Abs(e.G - e.B) <= 1, $"{e}");
+        // The same holds the other way round.
+        foreach (var e in GradientRamp.Build(Linear(Blue, White)))
             Assert.True(Math.Abs(e.R - e.G) <= 1, $"{e}");
+    }
+
+    [Fact]
+    public void A_black_end_takes_only_the_hue_so_black_to_red_goes_through_a_muted_dark_red()
+    {
+        // The legacy blend keeps black's zero saturation: halfway between black and red is hue 0, saturation 50 %, value 50 % (128, 64, 64),
+        // not the pure dark red (128, 0, 0) a plain RGB mix would give.
+        var mid = At2(GradientRamp.Build(Linear(Black, Red)), 0.5);
+        Assert.InRange(mid.R, 124, 132);
+        Assert.InRange(mid.G, 60, 68);
+        Assert.InRange(mid.B, 60, 68);
+    }
+
+    [Fact]
+    public void Alternate_colors_on_equal_hues_turn_a_full_circle_and_on_opposite_hues_change_nothing()
+    {
+        // Equal hues (here also a gray end that took the other's hue): the legacy blend goes the long way, which is the whole wheel.
+        var dark = new DocColor(120, 0, 0);
+        var ramp = GradientRamp.Build(Linear(Red, dark, alternate: true));
+        var hues = ramp.Select(e => new DocColor(e.R, e.G, e.B).ToHsv().H).ToList();
+        Assert.True(hues.Any(h => Math.Abs(h - 120) < 12) && hues.Any(h => Math.Abs(h - 240) < 12), "every hue shows up");
+        Assert.All(GradientRamp.Build(Linear(Red, dark)), e => Assert.True(e.G <= 1 && e.B <= 1));   // without it the hue stays put
+
+        // Exactly opposite hues (red and cyan): both ways are equally long, the legacy rule keeps the plain direction in both cases.
+        var cyan = new DocColor(0, 255, 255);
+        Assert.Equal(GradientRamp.Build(Linear(Red, cyan)), GradientRamp.Build(Linear(Red, cyan, alternate: true)));
     }
 
     [Fact]

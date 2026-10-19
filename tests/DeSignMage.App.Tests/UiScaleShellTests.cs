@@ -237,7 +237,11 @@ public class UiScaleShellTests
             tools.Items.OfType<MenuItem>().Single(m => m.Header?.ToString() == "_Options...").RaiseEvent(new RoutedEventArgs(MenuItem.ClickEvent));
             Flush();
             var options = Assert.IsType<OptionsWindow>(w.LastOptionsWindow);
-            Assert.Equal(["Accessibility", "Vector editing", "Performance & memory"], options.Sections.Items.Cast<string>());
+            // The list is whatever OptionsPages holds (other features add pages); it starts with Accessibility and has these in this order.
+            Assert.Equal(OptionsPages.All.Select(p => p.Title), options.Sections.Items.Cast<string>());
+            Assert.Equal("Accessibility", options.Sections.Items.Cast<string>().First());
+            var titles = options.Sections.Items.Cast<string>().ToList();
+            Assert.True(titles.IndexOf("Vector editing") < titles.IndexOf("Auto-save") && titles.IndexOf("Auto-save") < titles.IndexOf("Performance & memory"));
             var page = Assert.IsType<AccessibilityOptionsPage>(options.CurrentPage);
 
             Assert.Equal([1.0, 1.25, 1.5, 1.75, 2.0], page.Presets.Select(p => (double)p.Tag!));
@@ -274,7 +278,8 @@ public class UiScaleShellTests
                 var o = new OptionsWindow("test-extra");
                 o.Show();
                 Flush();
-                Assert.Equal(["Accessibility", "Vector editing", "Performance & memory", "Extra"], o.Sections.Items.Cast<string>());
+                Assert.Equal(OptionsPages.All.Select(p => p.Title), o.Sections.Items.Cast<string>());
+                Assert.Equal("Extra", o.Sections.Items.Cast<string>().Last());   // a registered page comes last
                 Assert.Equal("extra page", Assert.IsType<TextBlock>(o.CurrentPage).Text);
                 o.Close();
             }

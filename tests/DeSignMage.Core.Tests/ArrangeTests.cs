@@ -139,12 +139,51 @@ public class ArrangeTests
     }
 
     [Fact]
-    public void There_is_nothing_to_align_for_one_plain_object_nothing_selected_or_already_aligned_objects()
+    public void One_plain_object_aligns_with_the_edges_and_center_of_the_page()
+    {
+        var page = _s.Document.Page.Bounds;
+        var a = AddRect(100, 100, 50, 40);
+        _s.Selection.Set(a);
+        foreach (var mode in Enum.GetValues<AlignMode>()) Assert.True(_s.CanAlign(mode));
+        int steps = _s.History.UndoList.Count;
+
+        Assert.True(_s.Align(AlignMode.Left));
+        Assert.Equal(page.Left, a.GetWorldBounds().Left, 9);
+        Assert.True(_s.Align(AlignMode.Bottom));
+        Assert.Equal(page.Bottom, a.GetWorldBounds().Bottom, 9);
+        Assert.True(_s.Align(AlignMode.Center));
+        Assert.Equal(page.Center.X, a.GetWorldBounds().Center.X, 9);
+        Assert.True(_s.Align(AlignMode.Middle));
+        Assert.Equal(page.Center.Y, a.GetWorldBounds().Center.Y, 9);
+        Assert.True(_s.Align(AlignMode.Right));
+        Assert.Equal(page.Right, a.GetWorldBounds().Right, 9);
+        Assert.True(_s.Align(AlignMode.Top));
+        Assert.Equal(page.Top, a.GetWorldBounds().Top, 9);
+        Assert.Equal(steps + 6, _s.History.UndoList.Count);
+
+        Assert.False(_s.Align(AlignMode.Top));              // already there: no empty undo step
+        Assert.Equal(steps + 6, _s.History.UndoList.Count);
+        _s.Undo();
+        Assert.Equal(page.Center.Y - 20, a.GetWorldBounds().Top, 9);   // back to the middle of the page, one step at a time
+    }
+
+    [Fact]
+    public void A_group_with_fewer_than_two_movable_members_aligns_as_a_whole_with_the_page()
+    {
+        var page = _s.Document.Page.Bounds;
+        var a = AddRect(100, 100, 50, 40); var b = AddRect(300, 100, 50, 40);
+        b.Locked = true;                                    // only one member can move inside the group: nothing to line up with
+        var group = _s.GroupObjects([a, b])!;
+        _s.Selection.Set(group);
+        Assert.True(_s.Align(AlignMode.Left));
+        Assert.Equal(page.Left, group.GetWorldBounds().Left, 9);
+        Assert.Equal(250, group.GetWorldBounds().Width, 9);  // moved as one piece
+    }
+
+    [Fact]
+    public void There_is_nothing_to_align_for_nothing_selected_or_already_aligned_objects()
     {
         var a = AddRect(100, 100, 50, 50); var b = AddRect(100, 200, 80, 50);
-        _s.Selection.Set(a);
-        foreach (var mode in Enum.GetValues<AlignMode>()) Assert.False(_s.CanAlign(mode));
-        Assert.False(_s.Align(AlignMode.Left));
         _s.Selection.Clear();
         Assert.False(_s.CanAlign(AlignMode.Left));
 
@@ -165,7 +204,7 @@ public class ArrangeTests
         int steps = _s.History.UndoList.Count;
 
         Assert.False(_s.CanAlign(AlignMode.Left));        // it is left aligned already
-        Assert.False(_s.CanAlign(AlignMode.Top));         // and the vertical modes have nothing to line up with
+        Assert.True(_s.CanAlign(AlignMode.Top));          // the vertical modes line the text up with the page
         Assert.True(_s.CanAlign(AlignMode.Right));
         Assert.True(_s.Align(AlignMode.Right));
 

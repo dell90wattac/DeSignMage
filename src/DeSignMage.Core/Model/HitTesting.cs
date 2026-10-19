@@ -46,10 +46,42 @@ public static class HitTesting
             for (int i = layer.Children.Count - 1; i >= 0; i--)
             {
                 var o = layer.Children[i];
-                if (o.Parent is not GroupObject) { if (o.Visible && !o.Locked) yield return o; }   // not in a group: the common case
-                else if (o.IsShown && !o.TopLevel.Locked) yield return o;
+                if (o.Parent is not GroupObject) { if (o.Visible && !o.Locked) yield return Prepared(doc, o); }   // not in a group: the common case
+                else if (o.IsShown && !o.TopLevel.Locked) yield return Prepared(doc, o);
             }
         }
+    }
+
+    // ---- see-through pictures: a click on a part of a picture that shows nothing (the outside of a cut-out) does not select it ----
+
+    /// <summary>
+    /// Works out which parts of a stored picture are visible (null = it has no see-through parts and its whole frame counts). The app plugs in a decoder;
+    /// without one every picture counts as its whole frame.
+    /// </summary>
+    public static Func<byte[], Imaging.AlphaMask?>? PictureMaskLoader { get; set; }
+
+    private static DocObject Prepared(Document doc, DocObject o)
+    {
+        if (o is ImageObject img && img.HitMaskAssetId != img.AssetId)
+        {
+            img.HitMask = null;
+            if (PictureMaskLoader is { } load)
+            {
+                img.HitMaskAssetId = img.AssetId;
+                if (doc.Assets.Get(img.AssetId) is { } asset) img.HitMask = load(asset.Data);
+            }
+        }
+        return o;
+    }
+
+    /// <summary>True when a point of a picture with a <see cref="ImageObject.HitMask"/> lies on a visible part, or within <paramref name="tolerance"/> of one.</summary>
+    private static bool VisibleAt(ImageObject img, Vec2 p, double tolerance, Affine2 outer)
+    {
+        var world = img.GetWorldTransform() * outer;
+        if (Math.Abs(world.Determinant) < 1e-12 || img.Width <= 0 || img.Height <= 0) return false;
+        var local = world.Invert().Transform(p);
+        double r = tolerance / Math.Max(world.AverageScale, 1e-9);
+        return img.HitMask!.IsVisibleNear(local.X / img.Width, local.Y / img.Height, r / img.Width, r / img.Height);
     }
 
     private static double FlattenTolerance(double tolerance) => Math.Max(tolerance / 4, 0.01);
@@ -74,6 +106,8 @@ public static class HitTesting
                 return best;
             }
         }
+
+        if (o is ImageObject { HitMask: not null }) return best;   // a cut-out has no frame to grab, only its visible part (see AreaHit)
 
         double outset = o.Style.StrokeOutset;
         double reach = outset + tolerance;
@@ -121,6 +155,7 @@ public static class HitTesting
         }
 
         if (outer.IsIdentity && !o.GetWorldBounds().Contains(p)) return false;   // cached bounds first, see OutlineDistance
+        if (o is ImageObject { HitMask: not null } masked) return VisibleAt(masked, p, flat * 4, outer);
         var local = o.GetLocalGeometry();
         if (local is null) return false;
         var world = o.GetWorldTransform() * outer;
@@ -209,6 +244,7 @@ public static class HitTesting
         if (local is null) return false;
         // Cheap rejection before transforming the geometry (HitsPath checks bounds itself for combined parts).
         if (outer.IsIdentity && !o.GetWorldBounds().Inflate(o.Style.StrokeOutset + tolerance).Contains(p)) return false;
+        if (o is ImageObject { HitMask: not null } masked) return VisibleAt(masked, p, tolerance, outer);
 
         // Images and text are picked anywhere inside their frame; shapes only where painted.
         bool solid = o is ImageObject or TextObject || o.Style.Fill is not null;

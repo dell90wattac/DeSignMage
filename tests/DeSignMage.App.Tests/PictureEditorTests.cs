@@ -217,7 +217,7 @@ public class PictureEditorTests : IDisposable
         await ImportOne(w, Photo(80, 60));
         var d = await OpenEditor(w);
 
-        Assert.Equal(["Crop", "Adjust", "Effects"], d.Tabs.Items.OfType<TabItem>().Select(t => (string)t.Header!).ToArray());   // no Transparency tab: it is not built yet
+        Assert.Equal(["Crop", "Adjust", "Transparency", "Effects"], d.Tabs.Items.OfType<TabItem>().Select(t => (string)t.Header!).ToArray());
         Assert.Same(d.CropTab, d.Tabs.SelectedItem);
         CloseWith(w, d.CancelButton);
         w.Close();

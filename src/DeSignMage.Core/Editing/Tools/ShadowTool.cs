@@ -94,7 +94,8 @@ public sealed class ShadowTool : Tool
     public void Begin(ShadowForm form)
     {
         if (_snapshot is not null) Remember();
-        Settings = _remembered with { Form = form, Pivot = null };
+        // reopened on objects with a live shadow: the settings it was made with (the menu item still picks the form)
+        Settings = ShadowEffect.ExistingSettings(Session) is { } live ? live with { Form = form } : _remembered with { Form = form, Pivot = null };
         Retarget();
         // First start (or a shift that was cleared): 3 % of the height to the lower right.
         if (!Settings.HasShift && HasPercent) Settings = Settings with { ShiftX = 0.03 * Height, ShiftY = 0.03 * Height };

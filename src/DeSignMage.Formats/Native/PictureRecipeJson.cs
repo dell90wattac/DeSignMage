@@ -1,4 +1,5 @@
 using System.Text.Json;
+using DeSignMage.Core.Geometry;
 using DeSignMage.Core.Imaging;
 
 namespace DeSignMage.Formats.Native;
@@ -15,6 +16,33 @@ internal static class PictureRecipeJson
         if (r.Quarter != 0) w.WriteNumber("quarter", r.Quarter);
         if (r.Straighten != 0) w.WriteNum("straighten", r.Straighten);
         if (r.Crop is { } c) w.WriteNumbers("crop", [c.X, c.Y, c.Width, c.Height]);
+        var tr = r.Transparency;
+        if (!tr.IsIdentity)
+        {
+            w.WriteStartObject("transparency");
+            if (tr.HasColors)
+            {
+                w.WriteNumbers("colors", tr.Colors.Select(c => (double)c).ToArray());
+                w.WriteNumber("tolerance", tr.Tolerance);
+                if (tr.EdgeOnly) w.WriteBoolean("edgeOnly", true);
+            }
+            if (tr.HasCuts)
+            {
+                w.WriteStartArray("cuts");
+                foreach (var cut in tr.Cuts.Where(c => c.IsUsable))
+                {
+                    w.WriteStartObject();
+                    if (!cut.Keep) w.WriteBoolean("remove", true);
+                    w.WriteNumbers("points", cut.Points.SelectMany(p => new[] { p.X, p.Y }).ToArray());
+                    w.WriteEndObject();
+                }
+                w.WriteEndArray();
+            }
+            if (tr.Shrink != 0) w.WriteNumber("shrink", tr.Shrink);
+            if (tr.Softness != 0) w.WriteNumber("softness", tr.Softness);
+            if (tr.Opacity != 100) w.WriteNumber("opacity", tr.Opacity);
+            w.WriteEndObject();
+        }
         var a = r.Adjust;
         if (!a.IsIdentity)
         {
@@ -62,6 +90,31 @@ internal static class PictureRecipeJson
         };
         if (e.TryGet("crop", out _) && e.Doubles("crop") is { Length: 4 } c)
             recipe = recipe with { Crop = new RectI((int)c[0], (int)c[1], (int)c[2], (int)c[3]).ClampedTo(recipe.CanvasSize.Width, recipe.CanvasSize.Height) };
+        if (e.TryGet("transparency", out var tr))
+        {
+            var cuts = new List<CutShape>();
+            foreach (var cut in tr.Items("cuts"))
+            {
+                var xy = cut.Doubles("points");
+                if (xy.Length < 6) continue;
+                var points = new List<Vec2>();
+                for (int i = 0; i + 1 < xy.Length; i += 2) points.Add(new Vec2(xy[i], xy[i + 1]));
+                cuts.Add(new CutShape(new ValueList<Vec2>(points), Keep: !cut.Bool("remove")));
+            }
+            recipe = recipe with
+            {
+                Transparency = new PictureTransparency
+                {
+                    Colors = new ValueList<int>(tr.Doubles("colors").Select(c => (int)Math.Clamp(c, 0, 0xFFFFFF))),
+                    Tolerance = tr.Int("tolerance", PictureTransparency.DefaultTolerance),
+                    EdgeOnly = tr.Bool("edgeOnly"),
+                    Cuts = new ValueList<CutShape>(cuts),
+                    Shrink = tr.Int("shrink"),
+                    Softness = tr.Int("softness"),
+                    Opacity = tr.Int("opacity", 100),
+                }.Clamped(),
+            };
+        }
         if (e.TryGet("adjust", out var a))
         {
             var adjust = new PictureAdjust

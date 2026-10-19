@@ -157,8 +157,9 @@ internal static class LytRecordWriter
         for (int i = 0; i < 8; i++) WriteFloatOrNan(w, f.TransPoints[i], picture);
         w.U8(0);
         w.F32(f.TransMin);
-        w.U32(0);
-        w.U32(picture ? Defaults.PictureParameter : 0);
+        w.F32(f.FeatherAmount);                              // the feather shares the fill block
+        if (f.FeatherInset is { } inset) w.F32(inset);
+        else w.U32(picture ? Defaults.PictureParameter : 0);
         w.U32((uint)f.NodeCount);
 
         for (int i = 0; i < 16; i++)
@@ -218,7 +219,7 @@ internal static class LytRecordWriter
         {
             w.Zeros(260);
         }
-        w.U32(0);
+        w.U32(f.AlternateColors ? 1u : 0u);                  // the last field: Alternate Colors
     }
 
     private static void WriteFloatOrNan(ByteWriter w, float v, bool nan)

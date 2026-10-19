@@ -10,6 +10,7 @@ public partial class MainWindow
     /// <summary>The ids of the Layout ▸ Guides ▸ submenu, in menu order ("-" = separator).</summary>
     internal static string[] GuideMenuCommandIds =>
     [
+        "layout.guide.selTop", "layout.guide.selCenter", "layout.guide.selBottom", "layout.guide.selSide", "-",   // the same four as the Toolbox buttons: they need a selection
         "layout.guide.capHeight", "layout.guide.baseline", "-",
         "layout.guide.top", "layout.guide.left", "layout.guide.right", "layout.guide.bottom", "layout.guide.edges", "-",
         "layout.guide.centerV", "layout.guide.centerH", "layout.guide.centers",
@@ -23,6 +24,14 @@ public partial class MainWindow
         void Place(string id, string header, GuidePlace place) =>
             _commands.Add(new AppCommand(id, header, () => _session.AddGuides(place)) { CanExecute = () => _session.CanAddGuides(place) });
 
+        void OnSelection(string id, string header, GuidePlace place) =>
+            _commands.Add(new AppCommand(id, header, () => _session.AddGuideOnSelection(place)) { CanExecute = () => _session.CanGuideSelection(place) });
+
+        // Also the Toolbox's four one-click buttons. Unlike the edge items further down they never fall back to the page.
+        OnSelection("layout.guide.selTop", "Guide at _Top of Selection", GuidePlace.TopEdge);
+        OnSelection("layout.guide.selCenter", "Guide at _Center of Selection", GuidePlace.HorizontalCenter);
+        OnSelection("layout.guide.selBottom", "Guide at Botto_m of Selection", GuidePlace.BottomEdge);
+        OnSelection("layout.guide.selSide", "Guide at _Side (Left) of Selection", GuidePlace.LeftEdge);
         Place("layout.guide.capHeight", "Add Guide At Text _Cap Height", GuidePlace.TextCapHeight);
         Place("layout.guide.baseline", "Add Guide At Text _Baseline", GuidePlace.TextBaseline);
         Place("layout.guide.top", "Add Guide Along _Top Edge", GuidePlace.TopEdge);
@@ -34,9 +43,15 @@ public partial class MainWindow
         Place("layout.guide.centerH", "Add Guide at _Horizontal Center", GuidePlace.HorizontalCenter);
         Place("layout.guide.centers", "Add Guides at _Both Centers", GuidePlace.BothCenters);
 
+        _commands.Add(new AppCommand("layout.snapGuidesToGraphics", "Snap Guides to _Graphics", () => _session.SnapGuidesToGraphics = !_session.SnapGuidesToGraphics)
+            { IsChecked = () => _session.SnapGuidesToGraphics });
         _commands.Add(new AppCommand("layout.properties", "Layout _Properties...", () => _ = ShowLayoutPropertiesAsync()));
         _commands.Add(new AppCommand("layout.sizeToFit", "_Size to Fit", () => _session.SizeToFit()) { CanExecute = () => _session.CanSizeToFit });
     }
+
+    /// <summary>Per session (a New or Open swaps the session): a double-click on the empty layout opens Layout Properties.</summary>
+    private void AttachLayout(EditorSession session) =>
+        session.LayoutPropertiesRequested += (_, _) => _ = ShowLayoutPropertiesAsync();
 
     /// <summary>The page size new layouts start with: the saved one (Layout Properties ▸ "Use this size for new layouts"), else 24 x 12 inches.</summary>
     internal static (double Width, double Height) DefaultLayoutInches() =>

@@ -30,7 +30,11 @@ public partial class MainWindow
 
         // What a crash report can say about the open design, even when it happens on another thread.
         var crash = FeedbackHost.Get().Crash;
-        crash.Documents = () => [new CrashDocument(_documentTitle, path => DsmWriter.Save(_session.Document, path))];
+        crash.Documents = () => [new CrashDocument(_documentTitle, path =>
+        {
+            DsmWriter.Save(_session.Document, path);
+            NoteEmergencyCopy(path);   // lets the next start offer this copy for restoring (MainWindow.Recovery.cs)
+        })];
         crash.UndoHistory = () => _session.History.UndoList.Select(c => c.Description).ToList();
         crash.DocumentSummary = DescribeDocument;
         crash.SystemInfoProvider = CollectSystemInfo;
@@ -69,6 +73,7 @@ public partial class MainWindow
         {
             try
             {
+                await RecoveryPromptDone;   // the design comes first: "Restore it?" is asked before "Send the crash report?"
                 // A crash report is only sent after the person said yes (the prompt), or when they chose "always send".
                 if (service.FindCrashesToAsk() is { } prompt)
                     await Dispatcher.UIThread.InvokeAsync(() => AskAboutCrashesAsync(prompt));
@@ -90,6 +95,8 @@ public partial class MainWindow
     internal async Task AskAboutCrashesAsync(CrashPrompt prompt)
     {
         var service = FeedbackHost.Get();
+        // The restore question already dealt with the design: this one is only about the report.
+        if (_restorePromptShown) prompt = prompt with { RecoveredFolder = null, RecoveredFiles = [] };
         var dialog = new CrashPromptDialog(prompt, service.IncludeDesign);
         LastCrashPrompt = dialog;
         AppLog.Info("crash", $"Asking whether to send {prompt.Count} crash report(s)");
@@ -99,7 +106,7 @@ public partial class MainWindow
         try
         {
             var notice = await service.AnswerCrashPromptAsync(answer.Choice == CrashChoice.Send, answer.Always);
-            if (notice is not null) ShowCrashNotice(notice);
+            if (notice is not null) ShowCrashNotice(_restorePromptShown ? notice with { RecoveredFolder = null, RecoveredFiles = [] } : notice);
         }
         catch (Exception ex) { AppLog.Error("crash", "Handling the crash prompt answer failed", ex); }
         Surface.Focus();

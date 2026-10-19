@@ -19,20 +19,21 @@ namespace DeSignMage.App.Shell;
 /// (<see cref="PictureRecipe"/>) that can be changed again whenever the editor is opened.
 /// <list type="bullet">
 /// <item>Top: one tab per kind of edit that exists: <b>Crop</b> (frame, exact size, quarter turns and flips, free rotate with a dial, straighten by a level line, auto-trim),
-/// <b>Adjust</b> (levels, brightness, contrast, gamma, saturation, hue, color balance) and <b>Effects</b> (noise reduction, blur, sharpen; grayscale, sepia, invert;
-/// black &amp; white, posterize). Tabs for edits that are not built yet (transparency) are not shown.</item>
+/// <b>Adjust</b> (levels, brightness, contrast, gamma, saturation, hue, color balance), <b>Transparency</b> (see <c>PictureEditorDialog.Transparency.cs</c>) and <b>Effects</b>
+/// (noise reduction, blur, sharpen; grayscale, sepia, invert; black &amp; white, posterize). Tabs for edits that are not built yet are not shown. <b>Edit in...</b> sits at the right of the tab row.</item>
 /// <item>Middle: the picture as it is before cropping and coloring, with the crop frame (left), and the result (right), both on the transparency checkerboard
 /// at the same zoom and position. One large view and hold-to-compare views are one click away.</item>
 /// <item>Bottom: Reset all, Cancel, OK. While the window is open the picture in the design behind it shows the preview; Cancel puts everything back.</item>
 /// </list>
 /// </summary>
-internal sealed class PictureEditorDialog : Window
+internal sealed partial class PictureEditorDialog : Window
 {
     internal enum ViewMode { SideBySide, Single, Compare }
 
-    /// <summary>One slider with its number box and reset button, on the Adjust or Effects tab; it reads and writes one number of the recipe.</summary>
+    /// <summary>One slider with its number box and reset button, on the Adjust, Transparency or Effects tab; it reads and writes one number of the recipe.</summary>
     private sealed class SliderRow
     {
+        public required Control Container { get; init; }
         public required string Name { get; init; }
         public required Slider Slider { get; init; }
         public required TextBox Box { get; init; }
@@ -132,11 +133,14 @@ internal sealed class PictureEditorDialog : Window
 
         BuildCropTab();
         BuildAdjustTab();
+        BuildTransparencyTab();
         BuildEffectsTab();
         Tabs.Items.Add(CropTab);
         Tabs.Items.Add(AdjustTab);
+        Tabs.Items.Add(TransparencyTab);
         Tabs.Items.Add(EffectsTab);
-        Tabs.SelectionChanged += (_, _) => SyncFields();
+        Tabs.SelectionChanged += (_, _) => { OnTabChanged(); SyncFields(); };
+        BuildEditIn();
 
         // ---- the area between: view buttons over the two panes
         var viewBar = new WrapPanel { Orientation = Orientation.Horizontal, ItemSpacing = UiScale.Sp(10), LineSpacing = UiScale.Sp(4), Margin = UiScale.Space(0, 8, 0, 6) };
@@ -173,9 +177,10 @@ internal sealed class PictureEditorDialog : Window
         middle.Children.Add(_paneGrid);
 
         var root = new DockPanel { Margin = UiScale.Space(14) };
-        DockPanel.SetDock(Tabs, Dock.Top);
+        var tabArea = new Grid { Children = { Tabs, EditInHost } };   // Edit in... floats at the right end of the tab row
+        DockPanel.SetDock(tabArea, Dock.Top);
         DockPanel.SetDock(bottom, Dock.Bottom);
-        root.Children.Add(Tabs);
+        root.Children.Add(tabArea);
         root.Children.Add(bottom);
         root.Children.Add(middle);
         Content = root;
@@ -195,9 +200,14 @@ internal sealed class PictureEditorDialog : Window
         OkButton.Click += async (_, _) => await AcceptAsync();
         CancelButton.Click += (_, _) => Close();
         Closed += (_, _) => Session.Cancel();   // a no-op after OK
-        LeftPane.CanvasPointerPressed += (p, _) => LeftDown(p);
+        LeftPane.CanvasPointerPressed += (p, e) => LeftDown(p, e);
         LeftPane.CanvasPointerMoved += (p, _) => LeftMove(p);
         LeftPane.CanvasPointerReleased += (p, _) => LeftUp(p);
+        // On the Transparency tab the result pane takes the lasso and the color picker as well (the panes share one view, so the points are the same).
+        RightPane.CanvasPointerPressed += (p, e) => { if (OnTransparencyTab) TransparencyDown(p, e); };
+        RightPane.CanvasPointerMoved += (p, _) => { if (OnTransparencyTab) TransparencyMove(p); };
+        RightPane.CanvasPointerReleased += (p, _) => { if (OnTransparencyTab) TransparencyUp(p); };
+        AddHandler(KeyDownEvent, OnEditorKeyDown, Avalonia.Interactivity.RoutingStrategies.Tunnel);   // before the Cancel and OK buttons see Esc and Enter
         _paneGrid.SizeChanged += (_, _) => { if (!_fitted) FitCanvas(); };
         Session.PreviewReady += OnPreviewReady;
 
@@ -364,16 +374,16 @@ internal sealed class PictureEditorDialog : Window
         InvertBox.IsCheckedChanged += (_, _) => { if (!_syncing) { Session.Change(r => r with { Effects = r.Effects with { Invert = InvertBox.IsChecked == true } }); SyncFields(); } };
     }
 
-    private void AddRow(Panel into, string name, double min, double max, double neutral, string format, Func<PictureRecipe, double> get, Func<PictureRecipe, double, PictureRecipe> set, string? tip = null)
+    private Grid AddRow(Panel into, string name, double min, double max, double neutral, string format, Func<PictureRecipe, double> get, Func<PictureRecipe, double, PictureRecipe> set, string? tip = null)
     {
         var slider = new Slider { Minimum = min, Maximum = max, Value = neutral, SmallChange = (max - min) / 200, LargeChange = (max - min) / 20, HorizontalAlignment = HorizontalAlignment.Stretch };
         var box = Field(64);
         var reset = new Button { Content = "↺", Padding = UiScale.Space(6, 1), Focusable = false, IsVisible = false };
         ToolTip.SetTip(reset, $"Reset {name.ToLowerInvariant()}");
-        var row = new SliderRow { Name = name, Slider = slider, Box = box, Reset = reset, Get = get, Set = set, Default = neutral, Format = format };
+        var grid = new Grid { ColumnSpacing = UiScale.Sp(8) };
+        var row = new SliderRow { Container = grid, Name = name, Slider = slider, Box = box, Reset = reset, Get = get, Set = set, Default = neutral, Format = format };
         _rows.Add(row);
 
-        var grid = new Grid { ColumnSpacing = UiScale.Sp(8) };
         grid.ColumnDefinitions.Add(new ColumnDefinition(GridLength.Auto));
         grid.ColumnDefinitions.Add(new ColumnDefinition(GridLength.Star));
         grid.ColumnDefinitions.Add(new ColumnDefinition(GridLength.Auto));
@@ -400,6 +410,7 @@ internal sealed class PictureEditorDialog : Window
             if (double.TryParse(box.Text, NumberStyles.Float, CultureInfo.InvariantCulture, out var v)) SetAdjust(row, Math.Clamp(v, min, max), fromBox: true);
         };
         reset.Click += (_, _) => { SetAdjust(row, row.Default); SyncFields(); };
+        return grid;
     }
 
     private void SetAdjust(SliderRow row, double value, bool fromBox = false)
@@ -458,6 +469,7 @@ internal sealed class PictureEditorDialog : Window
             LeftPane.Frame = crop;
             LeftPane.DimOutsideFrame = true;
             LeftPane.Visibility();
+            SyncTransparency(r);
         }
         finally { _syncing = false; }
     }
@@ -519,8 +531,9 @@ internal sealed class PictureEditorDialog : Window
     }
 
     /// <summary>The left button went down on the left pane at canvas point <paramref name="p"/>: starts moving or resizing the frame, drawing a new one, or the straighten line.</summary>
-    internal void LeftDown(Vec2 p)
+    internal void LeftDown(Vec2 p, PointerEventArgs? e = null)
     {
+        if (OnTransparencyTab) { TransparencyDown(p, e); return; }
         if (LevelToolButton.IsChecked == true)
         {
             _drag = Drag.Line;
@@ -546,6 +559,7 @@ internal sealed class PictureEditorDialog : Window
 
     internal void LeftMove(Vec2 p)
     {
+        if (OnTransparencyTab) { TransparencyMove(p); return; }
         var (cw, ch) = Session.Recipe.CanvasSize;
         switch (_drag)
         {
@@ -570,6 +584,7 @@ internal sealed class PictureEditorDialog : Window
 
     internal void LeftUp(Vec2 p)
     {
+        if (OnTransparencyTab) { TransparencyUp(p); return; }
         if (_drag == Drag.Line)
         {
             var line = LeftPane.Line;

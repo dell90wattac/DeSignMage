@@ -86,6 +86,7 @@ public sealed class SelectTool : Tool
     public override void PointerDown(PointerInput e)
     {
         var sel = Session.Selection;
+        _draggedWithEffects = null;
         _startDoc = e.Doc;
         _startScreen = e.Screen;
         _lastPointer = e;
@@ -146,6 +147,15 @@ public sealed class SelectTool : Tool
             return;
         }
 
+        // A double-click on the empty layout (inside the page, on no object, guide or handle) opens Layout Properties.
+        if (e.ClickCount >= 2 && !e.Shift && Session.Document.Page.Bounds.Contains(e.Doc))
+        {
+            sel.Clear();
+            _mode = Mode.None;
+            Session.RequestLayoutProperties();
+            return;
+        }
+
         // Empty canvas: a plain click deselects at once. With Shift, a drag is a rubber band that adds to the selection, and a
         // Shift+click (no drag) deselects too (decided on release).
         if (!e.Shift) sel.Clear();
@@ -185,11 +195,11 @@ public sealed class SelectTool : Tool
                 }
                 d = Session.SnapMoveDelta(_moveStartBounds, d, lockX, lockY);   // edges/centers snap to ruler guides
                 _copying = e.Control;
-                Session.Preview = new TransformPreview(Session.Selection.Items.ToArray(), Affine2.Translation(d), _copying);
+                Session.Preview = new TransformPreview(_copying ? Session.Selection.Items.ToArray() : DraggedWithLiveEffects(), Affine2.Translation(d), _copying);
                 break;
             case Mode.Handle:
                 _handleCtrl = e.Control;   // read at every move: pressing or releasing Ctrl mid-drag switches the role
-                Session.Preview = new TransformPreview(Session.Selection.Items.ToArray(), HandleTransform(SnapHandlePointer(e)));
+                Session.Preview = new TransformPreview(DraggedWithLiveEffects(), HandleTransform(SnapHandlePointer(e)));
                 break;
             case Mode.PageResize:
                 Session.PagePreview = PageBorder.Drag(_pageStart, _pageEdges, e.Doc - _startDoc);
@@ -207,10 +217,19 @@ public sealed class SelectTool : Tool
         }
     }
 
+    private DocObject[]? _draggedWithEffects;
+
+    /// <summary>
+    /// What a drag preview moves: the selection and the live effects that follow it from outside it (a standalone outline, a shadow of a member picked alone),
+    /// so they go along on screen; the release rebuilds them exactly. Worked out once per drag.
+    /// </summary>
+    private DocObject[] DraggedWithLiveEffects() => _draggedWithEffects ??= Effects.LiveEffects.WithFollowers(Session.Document, Session.Selection.Items);
+
     public override void PointerUp(PointerInput e)
     {
         // The release position counts even if no move event arrived there.
         if (_mode != Mode.None) PointerMove(e);
+        _draggedWithEffects = null;
         switch (_mode)
         {
             case Mode.Moving:

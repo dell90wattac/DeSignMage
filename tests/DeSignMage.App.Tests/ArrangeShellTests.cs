@@ -112,8 +112,14 @@ public class ArrangeShellTests
         var a = AddRect(w, 200, 200, 100);
         int steps = w.Session.History.UndoList.Count;
         w.Session.Selection.Set(a);
-        Press(w, Key.L); Press(w, Key.R); Press(w, Key.N);          // one object: nothing to line up with
+        w.Session.Selection.Clear();
+        Press(w, Key.L); Press(w, Key.R); Press(w, Key.N);          // nothing selected: nothing to line up
         Assert.Equal(steps, w.Session.History.UndoList.Count);
+        w.Session.Selection.Set(a);
+        Press(w, Key.L);                                            // one object lines up with the page edge
+        Assert.Equal(w.Session.Document.Page.Bounds.Left, a.GetWorldBounds().Left, 6);
+        Press(w, Key.Z);
+        Assert.Equal(200, a.GetWorldBounds().Left, 6);
 
         var b = AddRect(w, 500, 320, 60);
         w.Session.Selection.Set([a, b]);
@@ -257,9 +263,9 @@ public class ArrangeShellTests
         foreach (var mode in Enum.GetValues<AlignMode>()) Assert.False(bar.AlignButton(mode).IsVisible);   // nothing selected
         Assert.False(bar.MirrorH.IsVisible || bar.MirrorV.IsVisible || bar.CenterLayout.IsVisible || bar.Lock.IsVisible);
 
-        s.Selection.Set(a);                                          // one object: Mirror, Lock and "In Layout", but nothing to align with
+        s.Selection.Set(a);                                          // one object: Mirror, Lock and "In Layout", and Align lines it up with the page edge
         bar.Refresh();
-        foreach (var mode in Enum.GetValues<AlignMode>()) Assert.False(bar.AlignButton(mode).IsVisible);
+        foreach (var mode in Enum.GetValues<AlignMode>()) Assert.True(bar.AlignButton(mode).IsVisible);
         Assert.True(bar.MirrorH.IsVisible && bar.MirrorV.IsVisible && bar.CenterLayout.IsVisible && bar.Lock.IsVisible);
 
         s.Selection.Set([a, b]);                                     // two objects: Align too
@@ -288,7 +294,7 @@ public class ArrangeShellTests
     }
 
     [AvaloniaFact]
-    public void A_single_text_offers_only_the_horizontal_alignments_it_does_not_have_yet()
+    public void A_single_text_offers_the_horizontal_alignments_it_does_not_have_yet_and_the_vertical_ones_go_to_the_page()
     {
         var (w, _) = Open();
         var t = new TextObject("Hello", "Arial", 100) { Transform = Affine2.Translation(300, 400) };
@@ -298,7 +304,7 @@ public class ArrangeShellTests
         Assert.False(bar.AlignButton(AlignMode.Left).IsVisible);     // already left aligned
         Assert.True(bar.AlignButton(AlignMode.Center).IsVisible);
         Assert.True(bar.AlignButton(AlignMode.Right).IsVisible);
-        Assert.False(bar.AlignButton(AlignMode.Top).IsVisible);
+        Assert.True(bar.AlignButton(AlignMode.Top).IsVisible);       // Top, Middle, Bottom line the text up with the page
         Press(w, Key.R);
         Assert.Equal(TextAlignment.Right, t.Alignment);
         w.Close();

@@ -11,8 +11,32 @@ internal sealed partial class LytWriteSession
 
     private int _strokesDropped, _strokeHairlines, _gradientStrokes, _gradientFlagsDropped, _alphaDropped, _fadeApproximated;
 
-    /// <summary>The fill of a part: a plain color, or a color with a gradient / fade block.</summary>
-    private readonly record struct ResolvedFill(DocColor? Color, FillSpec? Block);
+    /// <summary>The fill of a part: a plain color, or a color with a gradient / fade block. <see cref="Opacity"/> is a uniform opacity that still has to go in as a flat transparency.</summary>
+    private readonly record struct ResolvedFill(DocColor? Color, FillSpec? Block, double Opacity = 1);
+
+    /// <summary>
+    /// Puts a flat transparency (<paramref name="opacity"/>) and a feather into the fill block, making a plain one if there is none, as the legacy program does:
+    /// a type-less fill with a flat transparency of 0 % and the feather amount. A fade (a transparency ramp) already uses the transparency field, so a flat
+    /// opacity cannot join it.
+    /// </summary>
+    private FillSpec? WithOpacityAndFeather(FillSpec? block, double opacity, FeatherStyle? feather)
+    {
+        bool fade = opacity < 0.9995, feathered = feather is { Amount: > 0 };
+        if (!fade && !feathered) return block;
+        block ??= new FillSpec { Type = 0 };
+        if (fade)
+        {
+            if (block.TransType == 0) { block.TransType = 1; block.TransMin = (float)(1 - opacity); }
+            else _alphaDropped++;
+        }
+        if (feathered)
+        {
+            block.FeatherAmount = (float)feather!.Amount;
+            block.FeatherInset = (float)feather.Inset;
+            if (block.TransType == 0) block.TransType = 1;   // a feathered object is always at least flat-transparent, with 0 % in the layouts
+        }
+        return block;
+    }
 
     // ---------------------------------------------------------------- shapes
 
@@ -29,6 +53,7 @@ internal sealed partial class LytWriteSession
 
         Vec2 Map(Vec2 p) => new((p.X - bounds.Left) / Units.PointsPerInch, (bounds.Bottom - p.Y) / Units.PointsPerInch);
         var fill = ResolveFill(style.Fill, localBounds, world, Map);
+        if (fill.Color is not null) fill = fill with { Block = WithOpacityAndFeather(fill.Block, fill.Opacity, style.Feather) };
 
         bool filled = fill.Color is not null;
         bool strokeWritten = false;
@@ -96,8 +121,7 @@ internal sealed partial class LytWriteSession
         {
             case SolidPaint sp:
                 if (sp.Color.A == 0) return default;
-                if (sp.Color.A < 255) _alphaDropped++;
-                return new ResolvedFill(sp.Color with { A = 255 }, null);
+                return new ResolvedFill(sp.Color with { A = 255 }, null, sp.Color.A / 255.0);   // a see-through color becomes a flat transparency
             case GradientPaint gp:
                 if (!options.Gradients) return new ResolvedFill(gp.Stops[0].Color with { A = 255 }, null);
                 return BuildGradient(gp, localBounds, world, map);
@@ -116,19 +140,26 @@ internal sealed partial class LytWriteSession
         Vec2 ToNode(Vec2 local) => map(world.Transform(local));
         var p0 = ToNode(frame.P0); var p1 = ToNode(frame.P1); var p2 = ToNode(frame.P2);
         if ((p1 - p0).LengthSquared < 1e-12 || !double.IsFinite(p0.X + p0.Y + p1.X + p1.Y + p2.X + p2.Y)) return solid;
-        if (gp.AlternateColors || gp.Reflect) _gradientFlagsDropped++;
+        if (gp.Reflect) _gradientFlagsDropped++;   // Alternate Colors is stored; Reflect is not (the legacy layout never writes it)
 
         var stops = gp.Stops;
         bool sameColor = stops.All(s => s.Color.R == first.R && s.Color.G == first.G && s.Color.B == first.B);
         bool anyAlpha = stops.Any(s => s.Color.A < 255);
         if (sameColor && anyAlpha) return BuildFade(gp, first, p0, p1, p2);
 
-        if (anyAlpha) _alphaDropped++;
-        var nodes = new List<(Vec2 Point, DocColor Color, bool Highlight)> { (p0, stops[0].Color, false), (p1, stops[^1].Color, false) };
-        if (gp.Kind == GradientKind.Ellipse) nodes.Add((p2, stops[^1].Color, false));
+        // one opacity for all the colors is a flat transparency over the gradient; stops that differ in opacity cannot be stored on a gradient
+        double opacity = 1;
+        if (anyAlpha)
+        {
+            if (stops.All(s => s.Color.A == stops[0].Color.A)) opacity = stops[0].Color.A / 255.0;
+            else _alphaDropped++;
+        }
+        var opaque = stops.Select(s => s with { Color = s.Color with { A = 255 } }).ToList();
+        var nodes = new List<(Vec2 Point, DocColor Color, bool Highlight)> { (p0, opaque[0].Color, false), (p1, opaque[^1].Color, false) };
+        if (gp.Kind == GradientKind.Ellipse) nodes.Add((p2, opaque[^1].Color, false));
         var axis = p1 - p0;
         for (int i = 1; i < stops.Count - 1 && nodes.Count < MaxNodes; i++)
-            nodes.Add((p0 + axis * stops[i].Offset, stops[i].Color, stops[i].Highlight));
+            nodes.Add((p0 + axis * stops[i].Offset, opaque[i].Color, stops[i].Highlight));
         if (stops.Count - 2 + (gp.Kind == GradientKind.Ellipse ? 3 : 2) > MaxNodes)
             result.Warnings.Add($"A gradient has more than {MaxNodes} colors; the rest were left out.");
 
@@ -140,6 +171,7 @@ internal sealed partial class LytWriteSession
                 GradientKind.Vertical => GradVertical, _ => GradLinear,
             },
             NodeCount = nodes.Count,
+            AlternateColors = gp.AlternateColors,
         };
         for (int i = 0; i < nodes.Count; i++)
         {
@@ -149,7 +181,7 @@ internal sealed partial class LytWriteSession
             else spec.Extras.Add(new LytBlendNode((float)pt.X, (float)pt.Y, lc, highlight ? (ushort)1 : (ushort)0));
         }
         result.GradientCount++;
-        return new ResolvedFill(first with { A = 255 }, spec);
+        return new ResolvedFill(first with { A = 255 }, spec, opacity);
     }
 
     /// <summary>A color that fades to nothing: one color under a transparency ramp (the legacy "Transparency" fade).</summary>
@@ -249,7 +281,7 @@ internal sealed partial class LytWriteSession
         if (_gradientStrokes > 0)
             result.Warnings.Add($"{(_gradientStrokes == 1 ? "1 stroke has" : $"{_gradientStrokes} strokes have")} a gradient; the first color was used.");
         if (_gradientFlagsDropped > 0)
-            result.Warnings.Add("Alternate-color and reflected gradients are written as ordinary ones.");
+            result.Warnings.Add("Reflected gradients are written as ordinary ones.");
         if (_alphaDropped > 0)
             result.Warnings.Add($"{(_alphaDropped == 1 ? "1 fill has" : $"{_alphaDropped} fills have")} transparency that a layout cannot store on this kind of fill; it was written opaque.");
         if (_fadeApproximated > 0)

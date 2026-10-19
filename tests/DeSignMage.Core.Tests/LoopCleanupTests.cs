@@ -139,15 +139,39 @@ public class LoopCleanupTests
         var combined = _s.CombineSelection()!;
         Assert.True(_s.CanRemoveInnerLoops);
 
+        int steps = _s.History.UndoList.Count;
         _s.RemoveAllInnerLoops();
-        var parts = combined.Parts;
-        Assert.Equal(3, parts.Count);
-        Assert.Single(LoopsOf(parts[0]));                     // the big circle
-        Assert.Empty(LoopsOf(parts[1]));                              // the small one lay inside it: no loop left
-        Assert.Single(LoopsOf(parts[2]));
-        Assert.Same(combined, Assert.Single(_s.Selection.Items));
+        Assert.Equal(steps + 1, _s.History.UndoList.Count);
+        // The small circle lay inside the big one and had no loop left, so its part is dropped rather than left behind empty.
+        var rebuilt = Assert.IsType<CombinedObject>(Assert.Single(L.Children));
+        Assert.NotSame(combined, rebuilt);
+        Assert.Equal(2, rebuilt.Parts.Count);
+        Assert.All(rebuilt.Parts, p => Assert.Single(LoopsOf(p)));
+        Assert.Equal(Red, rebuilt.Parts[0].Style);                   // the big circle kept its own style
+        Assert.Equal(Blue, rebuilt.Parts[1].Style);
+        Assert.Same(rebuilt, Assert.Single(_s.Selection.Items));
         _s.Undo();
+        Assert.Same(combined, Assert.Single(L.Children));
+        Assert.Equal(3, combined.Parts.Count);
         Assert.Single(LoopsOf(combined.Parts[1]));
+    }
+
+    [Fact]
+    public void Remove_all_inner_loops_keeps_only_the_outer_part_when_the_others_nest_inside_it()
+    {
+        // A part inside a part inside a third: the middle one is a hole and the innermost an island, so both parts go.
+        var outer = new EllipseObject(300, 300) { Style = Red };
+        var middle = new EllipseObject(200, 200) { Transform = Affine2.Translation(50, 50), Style = Blue };
+        var inner = new EllipseObject(100, 100) { Transform = Affine2.Translation(100, 100), Style = Red };
+        foreach (var o in new DocObject[] { outer, middle, inner }) _s.History.Execute(new AddObjectCommand(L, o));
+        _s.Selection.Set([outer, middle, inner]);
+        var combined = _s.CombineSelection()!;
+        _s.RemoveAllInnerLoops();
+        var rebuilt = Assert.IsType<CombinedObject>(Assert.Single(L.Children));
+        Assert.Single(rebuilt.Parts);                               // only the outer circle is left
+        Assert.Single(LoopsOf(rebuilt.Parts[0]));
+        _s.Undo();
+        Assert.Same(combined, Assert.Single(L.Children));
     }
 
     [Fact]
@@ -192,10 +216,10 @@ public class LoopCleanupTests
         _s.BreakIntoOuterLoopsSelection();
         Assert.Equal(steps + 1, _s.History.UndoList.Count);
         Assert.Equal("Break Into Outer Loops", _s.History.UndoDescription);
-        Assert.True(_s.Selection.IsEmpty);
 
-        // The three pieces take the place of the original, between the two objects around it.
+        // The three pieces take the place of the original, between the two objects around it, and are what is selected now.
         Assert.Equal(5, L.Children.Count);
+        Assert.Equal(L.Children.Skip(1).Take(3), _s.Selection.Items);
         Assert.Same(below, L.Children[0]);
         Assert.Same(above, L.Children[4]);
         var frame = Assert.IsType<PathObject>(L.Children[1]);

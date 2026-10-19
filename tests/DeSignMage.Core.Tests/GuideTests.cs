@@ -548,7 +548,7 @@ public class GuideTests
     }
 
     [Fact]
-    public void Hidden_guides_cannot_be_picked_and_do_not_snap_or_draw()
+    public void Hidden_guides_cannot_be_picked_or_seen_but_still_snap()
     {
         var g = AddGuide(Guide.Vertical(500));
         _s.SelectedGuide = g;
@@ -559,10 +559,84 @@ public class GuideTests
         Assert.Null(_s.SelectedGuide);
 
         var r = AddRect(100, 100, 50, 50);
-        Drag(120, 120, 377, 120);   // would put the right edge exactly on x=500 if snapping applied: 150 + 257 = 407 → no
-        Assert.Equal(100 + 257, r.GetWorldBounds().Left, 9);
+        _s.Selection.Set(r);
+        Drag(120, 120, 120 + 347, 120);   // right edge would land on 497: the hidden guide still pulls it onto x = 500
+        Assert.Equal(500, r.GetWorldBounds().Right, 9);
         _s.ShowGuides = true;
         Assert.Single(_s.BuildOverlay().OfType<GuideOverlay>());
+    }
+
+    // ---- Guide gestures decided with the user's veto (notes/guides.md) ----
+
+    [Fact]
+    public void Dragging_a_guide_back_onto_its_ruler_removes_it_in_one_undo_step()
+    {
+        var g = AddGuide(Guide.Horizontal(300));
+        int steps = _s.History.UndoList.Count;
+        _s.PointerDown(At(400, 300, PointerButton.Left));
+        _s.PointerMove(At(400, 150));
+        _s.PointerMove(At(400, -6));          // above the canvas: over the top ruler
+        _s.PointerUp(At(400, -6, PointerButton.Left));
+        Assert.DoesNotContain(g, _s.Document.Guides);
+        Assert.Null(_s.SelectedGuide);
+        Assert.Equal(steps + 1, _s.History.UndoList.Count);
+        _s.Undo();
+        Assert.Contains(g, _s.Document.Guides);
+        Assert.Equal(300, g.Origin.Y, 9);
+    }
+
+    [Fact]
+    public void A_guide_released_over_the_canvas_moves_and_a_locked_guide_never_leaves()
+    {
+        var g = AddGuide(Guide.Horizontal(300));
+        Drag(400, 300, 400, 200);
+        Assert.Equal(200, g.Origin.Y, 9);
+        var locked = AddGuide(Guide.Vertical(600));
+        _s.History.Execute(new SetGuideLockedCommand(locked, true));
+        _s.PointerDown(At(600, 400, PointerButton.Left));
+        _s.PointerMove(At(300, 400));
+        _s.PointerMove(At(-6, 400));
+        _s.PointerUp(At(-6, 400, PointerButton.Left));
+        Assert.Contains(locked, _s.Document.Guides);
+        Assert.Equal(600, locked.Origin.X, 9);
+    }
+
+    [Fact]
+    public void A_guide_snaps_to_the_edges_centers_and_text_lines_of_graphics_while_it_is_made_or_moved()
+    {
+        AddRect(200, 100, 100, 60);                       // left 200, center 250, right 300; top 100, center 130, bottom 160
+        Assert.True(_s.SnapGuidesToGraphics);
+
+        _s.BeginGuideFromRuler(GuideOrientation.Vertical, new Vec2(303, 400));   // 3 px right of the right edge
+        _s.EndGuideDrag(new Vec2(303, 400));
+        Assert.Equal(300, _s.Document.Guides[0].Origin.X, 9);
+
+        _s.BeginGuideFromRuler(GuideOrientation.Horizontal, new Vec2(500, 133));   // 3 px under the center line
+        _s.EndGuideDrag(new Vec2(500, 133));
+        Assert.Equal(130, _s.Document.Guides[1].Origin.Y, 9);
+
+        Drag(700, 130, 700, 158);                            // drag it down; it lets go of the center and takes the bottom edge
+        Assert.Equal(160, _s.Document.Guides[1].Origin.Y, 9);   // (pointer at 158, 2 px short of the bottom)
+        _s.BeginGuideFromRuler(GuideOrientation.Vertical, new Vec2(320, 400));   // 20 px away from anything: free
+        _s.EndGuideDrag(new Vec2(320, 400));
+        Assert.Equal(320, _s.Document.Guides[2].Origin.X, 9);
+    }
+
+    [Fact]
+    public void Snapping_guides_to_graphics_can_be_switched_off_and_angled_guides_never_snap()
+    {
+        AddRect(200, 100, 100, 60);
+        _s.SnapGuidesToGraphics = false;
+        _s.BeginGuideFromRuler(GuideOrientation.Vertical, new Vec2(303, 400));
+        _s.EndGuideDrag(new Vec2(303, 400));
+        Assert.Equal(303, _s.Document.Guides[0].Origin.X, 9);
+
+        _s.SnapGuidesToGraphics = true;
+        var angled = AddGuide(new Guide(new Vec2(250, 600), 45));
+        Drag(250, 600, 253, 603);
+        var expected = new Vec2(250, 600) + angled.Normal * Vec2.Dot(new Vec2(3, 3), angled.Normal);   // moved along its normal, no snap
+        Assert.Equal(expected.X, angled.Origin.X, 9);
+        Assert.Equal(expected.Y, angled.Origin.Y, 9);
     }
 
     // ---- Snapping in tools ----

@@ -224,6 +224,17 @@ public sealed class ImageObject : DocObject
     }
 
     public string AssetId { get => _assetId; set { _assetId = value; Touch(); } }
+
+    /// <summary>
+    /// Which parts of the picture are visible, for picking (a click on a see-through part does not select the picture); null for a picture without see-through
+    /// parts. Worked out on demand by <see cref="HitTesting"/> from the stored pixels, and again whenever <see cref="AssetId"/> is not the one it was made for.
+    /// Not saved and not part of undo.
+    /// </summary>
+    public Imaging.AlphaMask? HitMask { get; set; }
+
+    /// <summary>The <see cref="AssetId"/> <see cref="HitMask"/> was made for (null = not worked out yet).</summary>
+    public string? HitMaskAssetId { get; set; }
+
     public double Width { get => _width; set { _width = value; Touch(); } }
     public double Height { get => _height; set { _height = value; Touch(); } }
 

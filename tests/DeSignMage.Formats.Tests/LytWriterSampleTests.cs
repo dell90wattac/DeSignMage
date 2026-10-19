@@ -44,7 +44,7 @@ public class LytWriterSampleTests(ITestOutputHelper output)
         var b = WriterTestKit.Drawn(after);
         Assert.Equal(a.Count, b.Count);
         Assert.Equal(original.Layers.Select(l => l.Children.Count), after.Layers.Select(l => l.Children.Count));
-        Assert.Equal(first.GroupCount, second.GroupCount);
+        Assert.Equal(first.GroupCount + first.SoftEffectGroupCount, second.GroupCount);   // a soft shadow object is its source's group mate
 
         var groupsA = GroupNumbers(a);
         var groupsB = GroupNumbers(b);
@@ -86,6 +86,11 @@ public class LytWriterSampleTests(ITestOutputHelper output)
         if (Math.Abs(ba.Left - bb.Left) > tol || Math.Abs(ba.Top - bb.Top) > tol || Math.Abs(ba.Right - bb.Right) > tol || Math.Abs(ba.Bottom - bb.Bottom) > tol)
             return $"bounds {ba} vs {bb}";
 
+        // a feather and a flat opacity come back as they were
+        var fa = a.Style.Feather; var fb = b.Style.Feather;
+        if ((fa is null) != (fb is null) || (fa is not null && (Math.Abs(fa.Amount - fb!.Amount) > 1e-4 || Math.Abs(fa.Inset - fb.Inset) > 1e-4)))
+            return $"feather {fa} vs {fb}";
+
         if (a is TextObject ta && b is TextObject tb)
         {
             if (ta.Text != tb.Text || ta.FontFamily != tb.FontFamily) return $"text '{ta.Text}'/{ta.FontFamily} vs '{tb.Text}'/{tb.FontFamily}";
@@ -106,6 +111,7 @@ public class LytWriterSampleTests(ITestOutputHelper output)
             case (null, null): return null;
             case (SolidPaint sx, SolidPaint sy):
                 if ((sx.Color.R, sx.Color.G, sx.Color.B) != (sy.Color.R, sy.Color.G, sy.Color.B)) return $"color {sx.Color} vs {sy.Color}";
+                if (Math.Abs(sx.Color.A - sy.Color.A) > 1) return $"opacity {sx.Color.A} vs {sy.Color.A}";
                 string? nx = Truncate(sx.Color.Name), ny = sy.Color.Name;
                 return nx == ny ? null : $"color name '{nx}' vs '{ny}'";
             case (GradientPaint gx, GradientPaint gy):

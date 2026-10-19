@@ -39,6 +39,9 @@ internal sealed class PictureView
     }
 }
 
+/// <summary>An outline drawn over a pane: a closed cut (<paramref name="Keep"/>: green, otherwise red) or one that is still being drawn; the first <paramref name="Corners"/> points get a corner mark.</summary>
+internal sealed record PaneOutline(IReadOnlyList<Vec2> Points, bool Closed, bool Keep, bool InProgress, int Corners = 0);
+
 /// <summary>
 /// One of the Picture Editor's panes: a picture on the transparency checkerboard (R27), drawn at the zoom and position of the shared <see cref="PictureView"/>.
 /// The mouse wheel zooms about the pointer, the middle or right button drags the picture; the left button is the owner's (the crop frame, the straighten line).
@@ -64,6 +67,9 @@ internal sealed class PicturePane : Control
 
     /// <summary>The straighten line being drawn, in canvas pixels.</summary>
     public (Vec2 From, Vec2 To)? Line { get; set; }
+
+    /// <summary>The cut outlines of the Transparency tab (and the one being drawn), in canvas pixels.</summary>
+    public IReadOnlyList<PaneOutline> Outlines { get; set; } = [];
 
     /// <summary>The part of the canvas that is checkerboard (null = all of it): the result pane only shows the kept part.</summary>
     public RectI? CheckerArea { get; set; }
@@ -177,6 +183,7 @@ internal sealed class PicturePane : Control
                 context.DrawImage(_bitmap, new Rect(_bitmap.Size), dest);
             }
             if (Frame is { } f) DrawFrame(context, f, canvasRect);
+            foreach (var outline in Outlines) DrawOutline(context, outline);
             if (Line is { } line)
             {
                 var a = ToScreen(line.From); var b = ToScreen(line.To);
@@ -191,6 +198,31 @@ internal sealed class PicturePane : Control
             var box = new Rect(6, 6, text.Width + 12, text.Height + 4);
             context.DrawRectangle(new SolidColorBrush(Color.FromArgb(150, 0, 0, 0)), null, box, 3, 3);
             context.DrawText(text, new Point(12, 8));
+        }
+    }
+
+    private static readonly Color KeepColor = Color.FromRgb(60, 220, 90), RemoveColor = Color.FromRgb(255, 80, 80);
+
+    /// <summary>A cut outline: green when what is inside stays, red when it goes; a dark line under a bright one so it shows on any picture.</summary>
+    private void DrawOutline(DrawingContext context, PaneOutline outline)
+    {
+        if (outline.Points.Count < 2) return;
+        var color = outline.Keep ? KeepColor : RemoveColor;
+        var screen = outline.Points.Select(ToScreen).ToList();
+        var geometry = new StreamGeometry();
+        using (var g = geometry.Open())
+        {
+            g.BeginFigure(screen[0], isFilled: outline.Closed);
+            for (int i = 1; i < screen.Count; i++) g.LineTo(screen[i]);
+            g.EndFigure(outline.Closed);
+        }
+        if (outline.Closed) context.DrawGeometry(new SolidColorBrush(Color.FromArgb(40, color.R, color.G, color.B)), null, geometry);
+        context.DrawGeometry(null, new Pen(Brushes.Black, 3), geometry);
+        context.DrawGeometry(null, new Pen(new SolidColorBrush(color), 1.5) { DashStyle = outline.InProgress ? DashStyle.Dash : null }, geometry);
+        for (int i = 0; i < outline.Corners && i < screen.Count; i++)
+        {
+            var box = new Rect(Math.Floor(screen[i].X) - 3, Math.Floor(screen[i].Y) - 3, 6, 6);
+            context.DrawRectangle(i == 0 ? new SolidColorBrush(color) : Brushes.White, new Pen(Brushes.Black, 1), box);
         }
     }
 

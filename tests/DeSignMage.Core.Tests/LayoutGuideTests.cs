@@ -241,6 +241,45 @@ public class LayoutGuideTests
     }
 
     [Fact]
+    public void Every_line_of_a_multi_line_text_gets_its_own_baseline_and_cap_height_guide()
+    {
+        var t = AddText("One\nTwo\nThree", 40, Affine2.Translation(10, 100));
+        var lines = t.Layout.Lines;
+        Assert.Equal(3, lines.Count);
+        _s.Selection.Set(t);
+        Assert.Equal(3, _s.AddGuides(GuidePlace.TextBaseline));
+        Assert.Equal(3, _s.AddGuides(GuidePlace.TextCapHeight));
+        Assert.Equal(lines.Select(l => 100 + l.Baseline).OrderBy(y => y).ToArray(),
+            _s.Document.Guides.Take(3).Select(g => g.Origin.Y).OrderBy(y => y).ToArray());
+    }
+
+    [Fact]
+    public void A_double_click_on_the_empty_layout_asks_for_Layout_Properties_but_not_on_an_object_or_outside_the_page()
+    {
+        _s.Viewport.SetViewSize(new Vec2(2000, 1200));
+        _s.Viewport.Set(1, Vec2.Zero);
+        AddRect(100, 100, 200, 100);
+        int asked = 0;
+        _s.LayoutPropertiesRequested += (_, _) => asked++;
+        PointerInput At(double x, double y, int clicks) => new(new Vec2(x, y), new Vec2(x, y), PointerButton.Left, ModifierKeys.None, clicks);
+
+        void DoubleClick(double x, double y)
+        {
+            _s.PointerDown(At(x, y, 1)); _s.PointerUp(At(x, y, 1));
+            _s.PointerDown(At(x, y, 2)); _s.PointerUp(At(x, y, 2));
+        }
+
+        DoubleClick(800, 400);                 // on the page, on nothing
+        Assert.Equal(1, asked);
+        DoubleClick(1900, 1100);               // off the page
+        Assert.Equal(1, asked);
+        _s.Selection.Clear();
+        DoubleClick(150, 150);                 // on a rectangle: that opens the vector tool, not the layout
+        Assert.Equal(1, asked);
+        Assert.Equal("vector", _s.ActiveTool.Id);
+    }
+
+    [Fact]
     public void Text_guides_are_not_available_without_text_in_the_selection()
     {
         _s.Selection.Set(AddRect(100, 100, 200, 50));

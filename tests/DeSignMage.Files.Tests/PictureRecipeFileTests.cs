@@ -67,7 +67,7 @@ public class PictureRecipeFileTests
         using var zip = new ZipArchive(new MemoryStream(DsmWriter.SaveToBytes(doc)));
         using var reader = new StreamReader(zip.GetEntry("document.json")!.Open(), Encoding.UTF8);
         using var json = JsonDocument.Parse(reader.ReadToEnd());
-        Assert.Equal(3, DsmFormat.CurrentVersion);
+        Assert.True(DsmFormat.CurrentVersion >= 3);   // recipes came with format 3 (4 added live effects)
         Assert.Equal(DsmFormat.CurrentVersion, json.RootElement.GetProperty("formatVersion").GetInt32());
         Assert.Equal(1, json.RootElement.GetProperty("minReaderVersion").GetInt32());   // the "asset" is the finished picture, so an old reader shows the right picture
         string text = json.RootElement.ToString();

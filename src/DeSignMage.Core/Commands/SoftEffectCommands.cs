@@ -22,6 +22,7 @@ public sealed class SoftEffectCommand : IDocumentCommand, IUndoMemory
         public ObjectStyle NewStyle { get; internal set; } = style;
         internal PathGeometry? OldGeometry { get; set; }
         internal ObjectStyle? OldStyle { get; set; }
+        internal LiveLink? OldLink { get; set; }
         internal InsertAtSlotCommand? Insert { get; set; }
         internal GroupObjectsCommand? Group { get; set; }
     }
@@ -63,10 +64,11 @@ public sealed class SoftEffectCommand : IDocumentCommand, IUndoMemory
                     t.Group?.Do(doc);
                 }
             }
-            else
+            else if (t.OldGeometry is null)
             {
-                t.OldGeometry ??= t.Effect.Geometry;
-                t.OldStyle ??= t.Effect.Style;
+                t.OldGeometry = t.Effect.Geometry;
+                t.OldStyle = t.Effect.Style;
+                t.OldLink = t.Effect.Live;
             }
             Apply(t);
         }
@@ -87,6 +89,7 @@ public sealed class SoftEffectCommand : IDocumentCommand, IUndoMemory
             {
                 t.Effect.Geometry = t.OldGeometry!;
                 t.Effect.Style = t.OldStyle!;
+                t.Effect.Live = t.OldLink;
             }
         }
         _done = false;
@@ -107,6 +110,8 @@ public sealed class SoftEffectCommand : IDocumentCommand, IUndoMemory
     {
         t.Effect.Geometry = t.NewGeometry;
         t.Effect.Style = t.NewStyle;
+        // live: it follows the source (made in document coordinates, stored in the source's group like the effect object)
+        t.Effect.Live = LiveLink.BesideSource(t.Source, new LiveSoft(t.NewStyle.Blur?.Kind ?? SoftKind.SoftShadow));
     }
 
     private static void Place(Document doc, Target t)

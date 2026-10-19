@@ -40,7 +40,7 @@ internal sealed partial class LytWriteSession
         double nodeW = w * a / Units.PointsPerInch, nodeH = h * b / Units.PointsPerInch;
         if (!(nodeW > 1e-9 && nodeH > 1e-9) || !double.IsFinite(nodeW + nodeH + rotation)) { result.SkippedCount++; return; }
 
-        var spec = new FillSpec { Type = 4, TransType = 0, Image = bytes };
+        var spec = WithOpacityAndFeather(new FillSpec { Type = 4, TransType = 0, Image = bytes }, 1, image.Style.Feather)!;
         var part = new PartRecord
         {
             Kind = PartKind.Picture, Name = LytEncoding.Sanitize(name.Length > 0 ? name : "Bitmap"), Scale = 1, XScale = 1, Rotation = rotation,

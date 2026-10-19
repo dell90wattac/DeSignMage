@@ -79,7 +79,8 @@ public sealed class BevelTool : Tool
         _bounds = Session.Selection.GetBounds();
         _command = null;
         _existed = _sources.Any(s => BevelEffect.Existing(s.Leaf).Count > 0);
-        Settings = _remembered;
+        // reopened on a live bevel: the settings it was made with
+        Settings = _sources.SelectMany(s => BevelEffect.Existing(s.Leaf)).Select(c => c.Live?.Spec).OfType<LiveBevel>().FirstOrDefault()?.Settings ?? _remembered;
         Changed?.Invoke(this, EventArgs.Empty);
         Redraw();
         if (_sources.Count == 0) return false;
@@ -145,11 +146,11 @@ public sealed class BevelTool : Tool
         if (_live is null || Session.BooleanService is not { } booleans || Session.OffsetService is not { } offsets) return;
         var sources = _sources;
         var settings = Settings;
-        _live.Submit(ct => BevelEffect.ComputeAll(booleans, offsets, sources, settings, ct), pieces => Deliver(sources, pieces), _ => { });
+        _live.Submit(ct => BevelEffect.ComputeAll(booleans, offsets, sources, settings, ct), pieces => Deliver(sources, pieces, settings), _ => { });
     }
 
     /// <summary>The crescents arrived: make the command the first time, re-target it after that.</summary>
-    private void Deliver(IReadOnlyList<BevelSource> sources, IReadOnlyList<BevelPieces> pieces)
+    private void Deliver(IReadOnlyList<BevelSource> sources, IReadOnlyList<BevelPieces> pieces, BevelSettings settings)
     {
         if (!ReferenceEquals(sources, _sources)) return;   // the selection changed while it was being worked out
         _busy = true;
@@ -157,12 +158,12 @@ public sealed class BevelTool : Tool
         {
             if (_command is not null && Session.History.IsTop(_command))
             {
-                _command.Retarget(pieces);
+                _command.Retarget(pieces, settings);
                 Session.History.NotifyTopEdited(_command);
             }
             else
             {
-                var plan = BevelEffect.Plan(sources, pieces);
+                var plan = BevelEffect.Plan(sources, pieces, settings);
                 if (plan is null) return;
                 _command = plan;
                 Session.History.Execute(plan);

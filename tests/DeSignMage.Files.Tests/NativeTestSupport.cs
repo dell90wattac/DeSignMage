@@ -105,6 +105,41 @@ internal static class SampleDocuments
         doc.Insert(l3, -1, new PolygonObject(6, 20) { Style = ObjectStyle.None, Transform = Affine2.Rotation(0.2) * Affine2.Translation(300, 90) });
         doc.Insert(l3, -1, new ArrowObject(150.5, 45.25, 0.35, 0.55) { Name = "arrow", Transform = Affine2.Rotation(0.5) * Affine2.Translation(10, 10), Style = ObjectStyle.FillOnly(GlassBlue) });
 
+        // live effects of every kind, following the star and the headline (format 4); their outlines are stand-ins, the file keeps them as they are
+        var star = (PolygonObject)l3.Children.First(o => o.Name == "star");
+        var headline = l3.Children.First(o => o.Name == "headline");
+        var box = PathGeometry.Rectangle(new Rect2(0, 0, 40, 30));
+        doc.Insert(l3, -1, new PathObject(box)
+        {
+            Name = "Inline", Style = ObjectStyle.FillOnly(WarmGrey),
+            Live = new LiveLink(star, new LiveOutline(Core.Effects.OutlineKind.Inline, new Core.Effects.OutlineSettings
+                { First = 3.5, Second = -1.25, Corners = CornerStyle.Round, Oat = 45, ContourOnly = true })),
+        });
+        doc.Insert(l3, -1, new PathObject(box)
+        {
+            Name = "Perspective Shadow",
+            Live = new LiveLink(headline, new LiveShadow(new Core.Effects.ShadowSettings
+            {
+                Type = Core.Effects.ShadowType.Relief, Form = Core.Effects.ShadowForm.Perspective, Outline = 2.25, ShiftX = 7.5, ShiftY = -3, DepthPercent = 60,
+                Corners = CornerStyle.Miter, Oat = 30, Color = null, Pivot = new Vec2(410.5, 320.25),
+            }), Affine2.Rotation(-0.1), Affine2.Translation(30, 0) * Affine2.Rotation(-0.1)),
+        });
+        doc.Insert(l3, -1, new PathObject(box)
+        {
+            Name = "Glow",
+            Style = new ObjectStyle(new SolidPaint(DocColor.White), null, new BlurStyle(SoftKind.Glow, 0.5, 0.75, 33.5, Inset: -0.5)),
+            Live = new LiveLink(star, new LiveSoft(SoftKind.Glow)),
+        });
+        doc.Insert(l3, -1, new PathObject(box)
+        {
+            Name = "Bevel Shadow",
+            Live = new LiveLink(star, new LiveBevel(new Core.Effects.BevelSettings
+            {
+                Inset = 0.02, Width = 0.033, Softness = 0.06, Highlight = 0.9, Shadow = 0.7, IncludeShadow = true, Neutral = true, LightAngle = 90,
+                HighlightColor = VinylGold, ShadowColor = WarmGrey,
+            }, BevelPart.Shadow)),
+        });
+
         // guides
         new AddGuideCommand(Guide.Horizontal(100.5)).Do(doc);
         new AddGuideCommand(Guide.Vertical(250)).Do(doc);
@@ -116,8 +151,8 @@ internal static class SampleDocuments
 /// <summary>Structural comparison of two documents through reflection, so a new property that a codec forgets is caught automatically.</summary>
 internal static class ModelCompare
 {
-    // Id and the change counters (Version, LayoutStamp, DependencyStamp) are runtime bookkeeping, not part of the file.
-    private static readonly HashSet<string> Ignored = ["Id", "Version", "LayoutStamp", "DependencyStamp"];
+    // Id and the change counters (Version, ShapeVersion, LayoutStamp, DependencyStamp) are runtime bookkeeping, not part of the file.
+    private static readonly HashSet<string> Ignored = ["Id", "Version", "ShapeVersion", "LayoutStamp", "DependencyStamp"];
 
     public static void AssertEqual(Document expected, Document actual)
     {
@@ -164,6 +199,14 @@ internal static class ModelCompare
     {
         if (a.GetType() != b.GetType()) { d.Add($"{at}: type {a.GetType().Name} vs {b.GetType().Name}"); return; }
         Props(a, b, at, d);
+        // a live effect's link: same effect and settings, same frames, and a source of the same kind in the same place
+        if ((a.Live is null) != (b.Live is null)) d.Add($"{at}: live {a.Live is not null} vs {b.Live is not null}");
+        else if (a.Live is { } la && b.Live is { } lb)
+        {
+            if (la.Spec != lb.Spec) d.Add($"{at}: live effect {la.Spec} vs {lb.Spec}");
+            if (la.Frame != lb.Frame || la.SourceFrame != lb.SourceFrame) d.Add($"{at}: live frames differ");
+            if (la.Source.KindName != lb.Source.KindName || la.Source.GetWorldBounds() != lb.Source.GetWorldBounds()) d.Add($"{at}: live source {la.Source} vs {lb.Source}");
+        }
         if (a is GroupObject ga) Children(ga.Children, ((GroupObject)b).Children, at, d);
         if (a is CombinedObject ca) Children(ca.Parts, ((CombinedObject)b).Parts, at + "/parts", d);
     }
