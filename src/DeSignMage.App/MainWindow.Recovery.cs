@@ -153,7 +153,7 @@ public partial class MainWindow
         {
             store.Discard(d);
             AppLog.Info("autosave", $"discarded the recovery copy of {d.Meta.Title}");
-        });
+        }, AutoSaveClock is { } clock ? () => clock().ToLocalTime() : null);   // "today at ..." by the same clock that stamped the copies
         LastRestorePrompt = dialog;
         await dialog.ShowDialog(this);
         Surface.Focus();

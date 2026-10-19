@@ -19,7 +19,7 @@ namespace DeSignMage.App.Tests;
 public class RecoveryShellTests : IDisposable
 {
     private readonly string _root = Path.Combine(Path.GetTempPath(), "dsm-recovery-ui-" + Guid.NewGuid().ToString("N")[..8]);
-    private DateTime _now = new(2026, 10, 18, 12, 0, 0, DateTimeKind.Utc);
+    private DateTime _now = new(2026, 10, 18, 12, 0, 0, DateTimeKind.Utc);   // also the restore prompt's clock, so "today at" holds on any real date
     private readonly List<RecoveryStore> _stores = [];
     private readonly List<MainWindow> _windows = [];
     private readonly FeedbackService? _oldFeedback = FeedbackHost.Current;
