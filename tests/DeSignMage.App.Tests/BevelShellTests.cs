@@ -18,7 +18,7 @@ using Xunit;
 
 namespace DeSignMage.App.Tests;
 
-/// <summary>Effects ▸ Easy Bevel in the real window: the menu, the strip and the Context Bar, which shows only what applies.</summary>
+/// <summary>Effects ▸ Easy Bevel in the real window: the menu and the Context Bar, which shows only what applies.</summary>
 public class BevelShellTests
 {
     private static MainWindow Open()
@@ -146,7 +146,7 @@ public class BevelShellTests
         w.Close();
     }
     [AvaloniaFact]
-    public async Task Reopening_on_a_beveled_object_offers_Remove_and_the_strip_has_a_button()
+    public async Task Reopening_on_a_beveled_object_offers_Remove()
     {
         var w = Open();
         var s = w.Session;
@@ -155,8 +155,6 @@ public class BevelShellTests
         s.ApplyBevel(new BevelSettings());
         var tool = s.GetTool<BevelTool>();
         Assert.True(EffectsItem(w, "Easy Bevel...").IsChecked || s.HasBevel);       // the check mark: this already has one
-        var strip = w.GetVisualDescendants().OfType<MenuStrip>().First();
-        Assert.Contains("Bevel", strip.LabelsOf("Effects"));
 
         Click(EffectsItem(w, "Easy Bevel..."));
         await Settle(w);

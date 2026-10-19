@@ -47,6 +47,7 @@ public static class ContextBars
         SoftEffectTool se => new SoftEffectContextBar(session, se),
         FeatherTool ft => new FeatherContextBar(session, ft),
         TextPathTool tp => new TextPathContextBar(session, tp),
+        VectorDrawTool vd => new VectorDrawContextBar(session, vd),
         _ => new ToolNameContextBar(tool),
     };
 
@@ -54,13 +55,13 @@ public static class ContextBars
     public static Action? FocusCanvas { get; set; }
 
     /// <summary>Spacing between the items of a bar row; groups use <see cref="GroupSpacing"/> inside.</summary>
-    public const double RowSpacing = 8, GroupSpacing = 4, LineSpacing = 4;
+    public const double RowSpacing = 6, GroupSpacing = 4, LineSpacing = 4;
 
     /// <summary>Height of one Context Bar row at 100% interface text (it grows with the text size, never with the content).</summary>
     public const double RowHeightBase = 30;
 
     /// <summary>The Context Bar's own padding above and below its rows at 100% (gaps grow at a third of the text rate).</summary>
-    public const double BarPaddingY = 3;
+    public const double BarPaddingY = 2;
 
     /// <summary>Height of the Context Bar when its rows share one line: one row, the bar's padding and its one-pixel bottom line.</summary>
     public static double OneLineHeight => RowHeightBase * UiScale.Scale + UiScale.Sp(2 * BarPaddingY) + 1;
@@ -157,6 +158,42 @@ public static class ContextBars
     internal static bool TryParse(TextBox box, out double value) =>
         double.TryParse(box.Text, NumberStyles.Float, CultureInfo.InvariantCulture, out value) ||
         double.TryParse(box.Text, NumberStyles.Float, CultureInfo.CurrentCulture, out value);
+}
+
+/// <summary>
+/// The <b>Done</b> and <b>Cancel</b> buttons that end a mode (<see cref="IModeTool"/>): the same two text buttons, in that order, at the right end of the
+/// tool's own controls on every bar that has them. Done keeps everything and goes to the Layout tool; Cancel takes everything back to how the design was
+/// when the mode began and goes to the Layout tool (<see cref="EditorSession.DoneMode"/>, <see cref="EditorSession.CancelMode"/>). They show only while
+/// the mode is on (the bar calls <see cref="Refresh"/>), and Done only when there is something to keep. No keys are bound to them here.
+/// </summary>
+internal sealed class DoneCancelButtons
+{
+    private readonly EditorSession _session;
+
+    public DoneCancelButtons(EditorSession session, string? doneTip = null, string? cancelTip = null)
+    {
+        _session = session;
+        Done = ContextBars.Action("Done", () => { _ = session.DoneMode(); ContextBars.FocusCanvas?.Invoke(); }, doneTip ?? "Keep what you did and go back to the Layout tool");
+        Cancel = ContextBars.Action("Cancel", () => { session.CancelMode(); ContextBars.FocusCanvas?.Invoke(); }, cancelTip ?? "Take back everything you did here and go back to the Layout tool");
+    }
+
+    public Button Done { get; }
+    public Button Cancel { get; }
+
+    /// <summary>Adds a divider and the two buttons to the end of <paramref name="row"/>.</summary>
+    public void AddTo(BarRow row)
+    {
+        row.Children.Add(ContextBars.Separator());
+        row.Children.Add(Done);
+        row.Children.Add(Cancel);
+    }
+
+    /// <summary>Shows Cancel while the mode is on and Done while it also has something to keep (and <paramref name="doneValid"/>, for a bar with a further condition).</summary>
+    public void Refresh(bool doneValid = true)
+    {
+        ContextBars.Valid(Cancel, _session.InMode);
+        ContextBars.Valid(Done, doneValid && _session.CanFinishMode);
+    }
 }
 
 /// <summary>
@@ -259,19 +296,22 @@ public sealed class ToolNameContextBar : ContextBarBase
     }
 }
 
-/// <summary>Select tool: position and size of the selection in inches (x from page left, y up from page bottom), then the group buttons.</summary>
+/// <summary>
+/// Select tool (the Layout tool): only actions (R38). Row 1 is what the selection is and can be turned into (Combine, Break Apart, Group, Ungroup,
+/// the picture buttons, the font controls of a text, the settings of a polygon or arrow); row 2 is Arrange (the Align drop-down, Mirror H and V,
+/// Lock). The two share one line when they fit. The position and size fields and "N objects selected" moved to the Info Line
+/// (<see cref="MeasureFields"/>, the counts), which also says what is selected.
+/// </summary>
 public sealed class SelectionContextBar : ContextBarBase, IRefreshable
 {
     private readonly EditorSession _session;
-    private readonly TextBox _x, _y, _w, _h;
-    private readonly Control[] _fields;   // the X, Y, W and H fields with their captions: shown only while something is selected
-    private readonly TextBox _pageW, _pageH;
-    private readonly Control _pageFields;   // the layout's width and height: shown only while nothing is selected
-    private readonly TextBlock _count = new() { VerticalAlignment = VerticalAlignment.Center, Foreground = AppTheme.Brush("Ui.Muted") };
-    private bool _refreshing, _edited;
     private readonly Button _combine, _breakApart, _group, _ungroup;
-    private readonly (AlignMode Mode, Button Button)[] _align;   // Arrange > Align: Left, Center, Right, Top, Middle, Bottom
-    private readonly Button _centerLayout, _mirrorH, _mirrorV, _lock;
+    private readonly Button _align;   // the Align drop-down button: icon, the word Align, a chevron
+    private readonly ContextMenu _alignMenu;
+    private readonly (AlignMode Mode, MenuItem Item)[] _alignItems;   // Arrange > Align: Left, Center, Right, Top, Middle, Bottom
+    private readonly MenuItem _centerItem;   // Center of Layout
+    private readonly Separator _alignDivider = new();
+    private readonly Button _mirrorH, _mirrorV, _lock;
     private readonly TextFormatPanel _text;
     private readonly ImageContextRow _image;   // pixel size, dpi and the Image menu buttons while a bitmap is selected
     private readonly ShapeSelectionFields _shapeFields;
@@ -284,14 +324,6 @@ public sealed class SelectionContextBar : ContextBarBase, IRefreshable
         _text = new TextFormatPanel(session, twoRows: false) { IsVisible = false };
         _image = new ImageContextRow(session);
         _shapeFields = new ShapeSelectionFields(session);
-        _x = ContextBars.NumberBox(Apply);
-        _y = ContextBars.NumberBox(Apply);
-        _w = ContextBars.NumberBox(Apply);
-        _h = ContextBars.NumberBox(Apply);
-        _pageW = ContextBars.NumberBox(ApplyPageSize);
-        _pageH = ContextBars.NumberBox(ApplyPageSize);
-        foreach (var box in new[] { _x, _y, _w, _h, _pageW, _pageH })
-            box.TextChanged += (_, _) => { if (!_refreshing) _edited = true; };
 
         // Group buttons (Combine, Break Apart, Group, Ungroup).
         _combine = ContextBars.Action("Combine", () => _session.CombineSelection());
@@ -299,42 +331,38 @@ public sealed class SelectionContextBar : ContextBarBase, IRefreshable
         _group = ContextBars.Action("Group", () => _session.GroupSelection());
         _ungroup = ContextBars.Action("Ungroup (U)", () => _session.UngroupSelection());
 
-        // Row 1: where the selection is and how big; row 2: what can be done with it (the picture and text controls join it when they apply).
-        _fields = [ContextBars.Field("X", _x, "in"), ContextBars.Field("Y", _y, "in"), ContextBars.Field("W", _w, "in"), ContextBars.Field("H", _h, "in")];
-        foreach (var field in _fields) Row1.Children.Add(field);
-        // With nothing selected the same place sizes the layout (the page), like the W and H of a selection.
-        _pageFields = ContextBars.Group(ContextBars.Caption("Layout"), ContextBars.Field("W", _pageW, "in"), ContextBars.Field("H", _pageH, "in"));
-        Row1.Children.Add(_pageFields);
-        Row1.Children.Add(ContextBars.Separator());
-        Row1.Children.Add(_count);
-        Row2.Children.Add(_combine);
-        Row2.Children.Add(_breakApart);
-        Row2.Children.Add(_group);
-        Row2.Children.Add(_ungroup);
-        Row2.Children.Add(ContextBars.Separator());
-
-        // Arrange: Align (and center on the layout), Mirror and Lock, as small icon buttons at the end of row 2 (after the picture and text
-        // controls, which keep their places). Each shows only when its command would work (R26).
-        _align =
+        // Align: one drop-down for the six aligns and Center of Layout. Each item shows only when its command would work (R26), the button
+        // only when at least one would. The keys shown are the ones the Arrange menu has.
+        _alignItems =
         [
-            (AlignMode.Left, ArrangeButton("arrange.alignLeft", "Align Left (L)", () => _session.Align(AlignMode.Left))),
-            (AlignMode.Center, ArrangeButton("arrange.alignCenter", "Align Center (N)", () => _session.Align(AlignMode.Center))),
-            (AlignMode.Right, ArrangeButton("arrange.alignRight", "Align Right (R)", () => _session.Align(AlignMode.Right))),
-            (AlignMode.Top, ArrangeButton("arrange.alignTop", "Align Top Edge", () => _session.Align(AlignMode.Top))),
-            (AlignMode.Middle, ArrangeButton("arrange.alignMiddle", "Align Vertical Center", () => _session.Align(AlignMode.Middle))),
-            (AlignMode.Bottom, ArrangeButton("arrange.alignBottom", "Align Bottom Edge", () => _session.Align(AlignMode.Bottom))),
+            (AlignMode.Left, AlignItem("arrange.alignLeft", "Align Left", Key.L, () => _session.Align(AlignMode.Left))),
+            (AlignMode.Center, AlignItem("arrange.alignCenter", "Align Center", Key.N, () => _session.Align(AlignMode.Center))),
+            (AlignMode.Right, AlignItem("arrange.alignRight", "Align Right", Key.R, () => _session.Align(AlignMode.Right))),
+            (AlignMode.Top, AlignItem("arrange.alignTop", "Align Top Edge", null, () => _session.Align(AlignMode.Top))),
+            (AlignMode.Middle, AlignItem("arrange.alignMiddle", "Align Vertical Center", null, () => _session.Align(AlignMode.Middle))),
+            (AlignMode.Bottom, AlignItem("arrange.alignBottom", "Align Bottom Edge", null, () => _session.Align(AlignMode.Bottom))),
         ];
-        _centerLayout = ArrangeButton("arrange.centerBoth", "Center of Layout: center the selection on the page", () => _session.CenterOnPage(PageCentering.Both));
+        _centerItem = AlignItem("arrange.centerBoth", "Center of Layout", null, () => _session.CenterOnPage(PageCentering.Both));
+        _alignMenu = new ContextMenu { Placement = PlacementMode.BottomEdgeAlignedLeft };
+        foreach (var (_, item) in _alignItems) _alignMenu.Items.Add(item);
+        _alignMenu.Items.Add(_alignDivider);
+        _alignMenu.Items.Add(_centerItem);
+        _align = AlignDropDown(_alignMenu);
+
         _mirrorH = ArrangeButton("arrange.mirrorH", "Horizontal Mirror", () => _session.Mirror(horizontal: true));
         _mirrorV = ArrangeButton("arrange.mirrorV", "Vertical Mirror", () => _session.Mirror(horizontal: false));
         _lock = ArrangeButton("arrange.lock", "Locked", () => _session.ToggleLockSelection());
-        Row2.Children.Add(_image);   // shown while a bitmap is selected
-        Row2.Children.Add(ContextBars.Separator());
-        Row2.Children.Add(_text);    // font controls: shown while the selection holds live text (R6)
-        Row2.Children.Add(_shapeFields);   // polygon / star and arrow settings: shown while only those are selected
-        foreach (var (_, button) in _align) Row2.Children.Add(button);
-        Row2.Children.Add(_centerLayout);
-        Row2.Children.Add(ContextBars.Separator());
+
+        Row1.Children.Add(_combine);
+        Row1.Children.Add(_breakApart);
+        Row1.Children.Add(_group);
+        Row1.Children.Add(_ungroup);
+        Row1.Children.Add(ContextBars.Separator());
+        Row1.Children.Add(_image);   // shown while a bitmap is selected
+        Row1.Children.Add(ContextBars.Separator());
+        Row1.Children.Add(_text);    // font controls: shown while the selection holds live text (R6)
+        Row1.Children.Add(_shapeFields);   // polygon / star and arrow settings: shown while only those are selected
+        Row2.Children.Add(_align);
         Row2.Children.Add(_mirrorH);
         Row2.Children.Add(_mirrorV);
         Row2.Children.Add(ContextBars.Separator());
@@ -342,16 +370,42 @@ public sealed class SelectionContextBar : ContextBarBase, IRefreshable
         Refresh();
     }
 
-    /// <summary>A small icon button of the Arrange group (Align, Mirror, Locked): the drawn icon, with the command's name as its tooltip.</summary>
+    /// <summary>A small icon button of the Arrange group (Mirror, Locked): the drawn icon, with the command's name as its tooltip.</summary>
     private static Button ArrangeButton(string commandId, string tip, Action run)
     {
         var b = new Button { Content = ArrangeIcons.For(commandId, 16), Focusable = false, VerticalAlignment = VerticalAlignment.Center };
         b.Classes.Add("tb");
-        b.MinWidth = b.MinHeight = 0;   // compact: ten of them share the row with the group buttons
+        b.MinWidth = b.MinHeight = 0;   // compact: they share the row with the Align button
         b.Padding = new Avalonia.Thickness(2);
         ToolTip.SetTip(b, tip);
         Avalonia.Automation.AutomationProperties.SetName(b, tip);
         b.Click += (_, _) => run();
+        return b;
+    }
+
+    /// <summary>One line of the Align drop-down: the command's drawn icon and name, and the key it has (shown only).</summary>
+    private MenuItem AlignItem(string commandId, string name, Key? key, Action run)
+    {
+        var item = new MenuItem { Header = name, Icon = ArrangeIcons.For(commandId, 16), Name = "AlignItem_" + commandId.Replace("arrange.", "") };
+        if (key is { } k) item.InputGesture = new KeyGesture(k);
+        item.Click += (_, _) => { run(); ContextBars.FocusCanvas?.Invoke(); };
+        return item;
+    }
+
+    /// <summary>The "Align" button: the align icon, the word, a small chevron; it opens <paramref name="menu"/> under itself.</summary>
+    private static Button AlignDropDown(ContextMenu menu)
+    {
+        var chevron = new Avalonia.Controls.Shapes.Path { Data = Avalonia.Media.Geometry.Parse("M0,0 L3.5,3.5 L7,0"), StrokeThickness = 1.3, VerticalAlignment = VerticalAlignment.Center };
+        chevron.Bind(Avalonia.Controls.Shapes.Shape.StrokeProperty, chevron.GetResourceObservable("Ui.Icon"));
+        var content = new StackPanel { Orientation = Orientation.Horizontal, VerticalAlignment = VerticalAlignment.Center }.Spaced(StackPanel.SpacingProperty, 5);
+        content.Children.Add(ArrangeIcons.For("arrange.alignLeft", 16)!);
+        content.Children.Add(new TextBlock { Text = "Align", VerticalAlignment = VerticalAlignment.Center });
+        content.Children.Add(chevron);
+        var b = new Button { Name = "AlignDropDown", Content = content, Focusable = false };
+        b.Classes.Add("act");
+        ToolTip.SetTip(b, "Align: line the selection up with its own edges or center, or with the layout");
+        Avalonia.Automation.AutomationProperties.SetName(b, "Align");
+        b.Click += (_, _) => menu.Open(b);
         return b;
     }
 
@@ -361,92 +415,32 @@ public sealed class SelectionContextBar : ContextBarBase, IRefreshable
 
     public void Refresh()
     {
-        _refreshing = true;
         // Font controls only for a piece of text selected itself (R26): not a group that holds text, not text mixed with shapes.
         _text.IsVisible = IsOnlyText(_session);
         if (_text.IsVisible) _text.Refresh();
         _image.Refresh();
         _shapeFields.Refresh();
-        var b = _session.Selection.GetBounds();
-        bool locked = _session.SelectionLocked;
-        bool has = !b.IsEmpty && !locked;   // a locked selection can't be moved or resized: no fields
-        foreach (var t in new[] { _x, _y, _w, _h }) t.IsEnabled = has;
-        foreach (var field in _fields) field.IsVisible = has;
-        if (has)
-        {
-            var (ux, uy) = Units.ToUser(new Vec2(b.Left, b.Bottom), _session.Document.Page);
-            if (!_x.IsFocused) _x.Text = ContextBars.Fmt(ux);
-            if (!_y.IsFocused) _y.Text = ContextBars.Fmt(uy);
-            if (!_w.IsFocused) _w.Text = ContextBars.Fmt(Units.ToInches(b.Width));
-            if (!_h.IsFocused) _h.Text = ContextBars.Fmt(Units.ToInches(b.Height));
-        }
-        else
-        {
-            _x.Text = _y.Text = _w.Text = _h.Text = "";
-        }
-        bool none = _session.Selection.IsEmpty;
-        ContextBars.Valid(_pageFields, none);
-        if (none)
-        {
-            var page = _session.Document.Page;
-            if (!_pageW.IsFocused) _pageW.Text = ContextBars.Fmt(Units.ToInches(page.Width));
-            if (!_pageH.IsFocused) _pageH.Text = ContextBars.Fmt(Units.ToInches(page.Height));
-        }
-        _edited = false;
         // Each button shows exactly when its command would work (R26); otherwise it is not there at all.
         ContextBars.Valid(_combine, _session.CanCombine);
         ContextBars.Valid(_breakApart, _session.CanBreakApart);
         ContextBars.Valid(_group, _session.CanGroup);
         ContextBars.Valid(_ungroup, _session.CanUngroup);
-        foreach (var (mode, button) in _align) ContextBars.Valid(button, _session.CanAlign(mode));
-        ContextBars.Valid(_centerLayout, _session.CanCenterOnPage);
+        bool anyAlign = false;
+        foreach (var (mode, item) in _alignItems)
+        {
+            bool can = _session.CanAlign(mode);
+            ContextBars.Valid(item, can);
+            anyAlign |= can;
+        }
+        bool canCenter = _session.CanCenterOnPage;
+        ContextBars.Valid(_centerItem, canCenter);
+        _alignDivider.IsVisible = anyAlign && canCenter;
+        ContextBars.Valid(_align, anyAlign || canCenter);
         ContextBars.Valid(_mirrorH, _session.CanMirror);
         ContextBars.Valid(_mirrorV, _session.CanMirror);
         ContextBars.Valid(_lock, _session.CanLock);
         _lock.Classes.Set("on", _session.SelectionAllLocked);   // pressed while the selection is locked: a click unlocks
         ToolTip.SetTip(_lock, _session.SelectionAllLocked ? "Locked (click to unlock)" : "Lock: a locked object can't be selected on the canvas or moved");
-        _count.Text = _session.Selection.Count switch
-        {
-            0 => "Nothing selected",
-            1 => _session.Selection.Items[0].KindName + (locked ? " selected (locked)" : " selected"),
-            int n => $"{n} objects selected" + (locked ? " (locked)" : ""),
-        };
-        _refreshing = false;
-    }
-
-    private void Apply()
-    {
-        // Fields show rounded values, so only act when the user actually typed something.
-        if (_refreshing || !_edited || _session.Selection.IsEmpty) return;
-        if (!ContextBars.TryParse(_x, out var x) || !ContextBars.TryParse(_y, out var y) ||
-            !ContextBars.TryParse(_w, out var w) || !ContextBars.TryParse(_h, out var h) || w <= 0 || h <= 0)
-        {
-            Refresh();
-            return;
-        }
-        var bottomLeft = Units.FromUser(x, y, _session.Document.Page);
-        double wp = Units.FromInches(w), hp = Units.FromInches(h);
-        var target = Rect2.FromXYWH(bottomLeft.X, bottomLeft.Y - hp, wp, hp);
-        _edited = false;
-        _session.SetSelectionBounds(target);
-    }
-
-    /// <summary>Layout W / H typed with nothing selected: resizes the page (Layout Properties), keeping its bottom-left corner.</summary>
-    private void ApplyPageSize()
-    {
-        if (_refreshing || !_edited || !_session.Selection.IsEmpty) return;
-        if (!ContextBars.TryParse(_pageW, out var w) || !ContextBars.TryParse(_pageH, out var h) || w <= 0 || h <= 0)
-        {
-            Refresh();
-            return;
-        }
-        _edited = false;
-        _session.SetPageSize(Units.FromInches(w), Units.FromInches(h));
-        // Show the size the page really has (it may have been clamped), even in the field that still has the keyboard.
-        _refreshing = true;
-        _pageW.Text = ContextBars.Fmt(Units.ToInches(_session.Document.Page.Width));
-        _pageH.Text = ContextBars.Fmt(Units.ToInches(_session.Document.Page.Height));
-        _refreshing = false;
     }
 
     // ---- For tests ----
@@ -455,18 +449,13 @@ public sealed class SelectionContextBar : ContextBarBase, IRefreshable
     internal Button BreakApart => _breakApart;
     internal Button Group => _group;
     internal Button Ungroup => _ungroup;
-    internal Button AlignButton(AlignMode mode) => _align.First(a => a.Mode == mode).Button;
-    internal Button CenterLayout => _centerLayout;
+    internal Button AlignDropDownButton => _align;
+    internal ContextMenu AlignMenu => _alignMenu;
+    internal MenuItem AlignItem(AlignMode mode) => _alignItems.First(a => a.Mode == mode).Item;
+    internal MenuItem CenterLayoutItem => _centerItem;
     internal Button MirrorH => _mirrorH;
     internal Button MirrorV => _mirrorV;
     internal Button Lock => _lock;
-    internal TextBox X => _x;
-    internal TextBox Y => _y;
-    internal TextBox W => _w;
-    internal TextBox H => _h;
-    internal Control PageFields => _pageFields;
-    internal TextBox PageW => _pageW;
-    internal TextBox PageH => _pageH;
 }
 
 /// <summary>Rectangle tool: corner radius for new rectangles (also applied to selected rectangles).</summary>

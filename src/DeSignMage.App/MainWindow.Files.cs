@@ -419,21 +419,32 @@ public partial class MainWindow
 
     // ---------------------------------------------------------------- status flash
 
-    /// <summary>Shows a short message in the help bar for a few seconds ("Saved x.dsm").</summary>
-    private void Flash(string message)
+    /// <summary>
+    /// Shows a short message on the Info Line for a few seconds ("Saved x.dsm"): it takes the place of the counts, the bitmaps and the pointer
+    /// position, and they come back when it goes (R38). A message too long for the room is trimmed (the full text is its tooltip).
+    /// </summary>
+    internal void Flash(string message)
     {
         _flash = message;
-        HintText.Text = message;
+        FlashText.Text = message;
+        ToolTip.SetTip(FlashText, message);
+        FlashText.IsVisible = true;
         _flashTimer?.Stop();
         _flashTimer = new DispatcherTimer { Interval = TimeSpan.FromSeconds(6) };
-        _flashTimer.Tick += (_, _) =>
-        {
-            _flashTimer?.Stop();
-            _flash = null;
-            HintText.Text = _session.Hint;
-        };
+        _flashTimer.Tick += (_, _) => EndFlash();
         _flashTimer.Start();
     }
+
+    /// <summary>Takes the message off the Info Line (the timer does it after six seconds; tests call it).</summary>
+    internal void EndFlash()
+    {
+        _flashTimer?.Stop();
+        _flash = null;
+        FlashText.IsVisible = false;
+    }
+
+    /// <summary>The message shown on the Info Line right now, or null (tests).</summary>
+    internal string? CurrentFlash => _flash;
 }
 
 

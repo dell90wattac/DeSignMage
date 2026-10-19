@@ -69,7 +69,13 @@ public class FeedbackShellTests
         var menu = Find<Menu>(w, "MainMenu");
         var toolbar = Find<BarRow>(w, "MainToolbar");
 
-        Assert.Equal("Feedback / Bug", button.Content);
+        // a plain button (R38): a small yellow dot and the word Feedback; the same command as before
+        var content = Assert.IsType<StackPanel>(button.Content);
+        Assert.Equal("Feedback", Assert.Single(content.Children.OfType<TextBlock>()).Text);
+        var dot = Assert.Single(content.Children.OfType<Avalonia.Controls.Shapes.Ellipse>());
+        Assert.True(dot.Width <= 10 && dot.Height <= 10);
+        Assert.Equal(Avalonia.Media.Color.Parse("#F2B705"), ((Avalonia.Media.ISolidColorBrush)dot.Fill!).Color);
+        Assert.Contains("act", button.Classes);                                                // the same plain look as the other text buttons, not the old yellow notice color
         Assert.True(button.IsVisible);
         var buttonTop = button.TranslatePoint(new Point(0, 0), w)!.Value;
         var toolbarTop = toolbar.TranslatePoint(new Point(0, 0), w)!.Value;

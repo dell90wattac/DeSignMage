@@ -261,6 +261,75 @@ public sealed class CommandHistory
         return true;
     }
 
+    /// <summary>
+    /// A place in the history to come back to with <see cref="RollBackTo"/>: how many steps were done, the newest of them, and how many old steps
+    /// had been dropped by then (so the count can be corrected if more were dropped since).
+    /// </summary>
+    public readonly record struct Mark(int Applied, IDocumentCommand? Top, int Dropped);
+
+    /// <summary>The history as it is now, to come back to later (<see cref="RollBackTo"/>).</summary>
+    public Mark MarkNow() => new(_undo.Count, _undo.Count > 0 ? _undo[^1] : null, DroppedSteps);
+
+    /// <summary>True when the history is exactly where <paramref name="mark"/> was taken: nothing done or undone since.</summary>
+    public bool IsAt(Mark mark)
+    {
+        int target = Math.Max(0, mark.Applied - (DroppedSteps - mark.Dropped));
+        return _undo.Count == target && ReferenceEquals(_undo.Count > 0 ? _undo[^1] : null, mark.Top);
+    }
+
+    /// <summary>
+    /// Takes the document back to where <paramref name="mark"/> was taken and leaves nothing behind: the steps done since are undone and then
+    /// forgotten (they do not wait on the redo list, and the pictures only they needed are released), as if they had never happened. Steps the
+    /// user undid since the mark are done again. Live effects are settled once at the end, like after any undo. False if a group of edits is
+    /// still open. If the history has moved so far that the mark cannot be found (the user undid past it and then did something new), the
+    /// newest steps are undone as far as they can be.
+    /// </summary>
+    public bool RollBackTo(Mark mark)
+    {
+        if (_open.Count > 0) return false;
+        if (IsAt(mark)) return true;
+        int target = Math.Max(0, mark.Applied - (DroppedSteps - mark.Dropped));
+
+        // The timeline is the undo steps, then the redo steps in the order redo would do them. The mark's newest step must be at its place in it.
+        IDocumentCommand? StepAt(int index)
+        {
+            if (index < 0) return null;
+            if (index < _undo.Count) return _undo[index];
+            int k = index - _undo.Count;
+            return k < _redo.Count ? _redo.ElementAt(k) : null;
+        }
+        bool found = target == 0 ? mark.Top is null : ReferenceEquals(StepAt(target - 1), mark.Top);
+        if (!found) target = Math.Min(target, _undo.Count);
+
+        bool undone = false;
+        while (_undo.Count > target)
+        {
+            var c = _undo[^1];
+            _undo.RemoveAt(_undo.Count - 1);
+            c.Undo(_doc);
+            _redo.Push(c);
+            undone = true;
+        }
+        while (_undo.Count < target && _redo.Count > 0)
+        {
+            var c = _redo.Pop();
+            c.Do(_doc);
+            _undo.Add(c);
+        }
+        if (undone)
+        {
+            // what was done since the mark was not a path the user could still take: forget it for good
+            var released = new List<string>();
+            foreach (var c in _redo) Untrack(c, released);
+            _redo.Clear();
+            ReleaseAssets(released, null);
+        }
+        FollowUp?.Settled();
+        _doc.NotifyChanged();
+        Changed?.Invoke(this, EventArgs.Empty);
+        return true;
+    }
+
     public void Clear()
     {
         var released = new List<string>();

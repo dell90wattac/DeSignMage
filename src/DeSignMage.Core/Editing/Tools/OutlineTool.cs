@@ -10,7 +10,7 @@ namespace DeSignMage.Core.Editing.Tools;
 /// the canvas sets the distance too (the distance from the pointer to the nearest edge, outside positive). A live preview of the
 /// result outline is computed after a short pause on a worker thread. Done (or Enter) makes the new standalone object.
 /// </summary>
-public sealed class OutlineTool : Tool
+public sealed class OutlineTool : Tool, IModeTool
 {
     private readonly Dictionary<OutlineKind, (double First, double Second)> _remembered = [];
     private OutlineSnapshot? _snapshot;
@@ -26,8 +26,8 @@ public sealed class OutlineTool : Tool
     public override CursorKind Cursor => CursorKind.Cross;
 
     public override string Hint => Kind == OutlineKind.Inline
-        ? "INLINE: Drag in from the edge, or type a distance in the bar. Enter or the check mark applies, Esc cancels   To ZOOM: Press right button"
-        : "OUTLINE: Drag out from the edge, or type a distance in the bar. Enter or the check mark applies, Esc cancels   To ZOOM: Press right button";
+        ? "INLINE: Drag in from the edge, or type a distance in the bar. Enter or Done applies, Esc or Cancel leaves   To ZOOM: Press right button"
+        : "OUTLINE: Drag out from the edge, or type a distance in the bar. Enter or Done applies, Esc or Cancel leaves   To ZOOM: Press right button";
 
     public OutlineKind Kind { get; private set; }
 
@@ -66,18 +66,7 @@ public sealed class OutlineTool : Tool
         var (first, second) = _remembered.TryGetValue(kind, out var r) ? r : (0, 0);
         Settings = Settings with { First = first, Second = second };
         Retarget();
-        if (_snapshot?.EditedSpec is { } spec)
-        {
-            // reopened on a live outline or inline: its own kind and the settings it was made with
-            Kind = spec.Kind;
-            Settings = spec.Settings;
-            SchedulePreview();
-            Changed?.Invoke(this, EventArgs.Empty);
-        }
     }
-
-    /// <summary>True while the tool edits selected live outlines / inlines instead of making new ones (Leave Original does not apply then).</summary>
-    public bool IsEditingLive => _snapshot?.Editing is not null;
 
     private void Retarget()
     {
@@ -210,6 +199,19 @@ public sealed class OutlineTool : Tool
         {
             _applying = false;
         }
+    }
+
+    // ---- Done and Cancel (the outline is only a preview until Done, so Cancel has nothing in the history to take back) ----
+
+    bool IModeTool.IsInMode => true;
+    bool IModeTool.CanFinish => CanApply;
+    Task IModeTool.FinishMode() => Apply();
+
+    void IModeTool.DiscardPending()
+    {
+        _live?.Cancel();
+        _dragging = false;
+        _rubber = null;
     }
 
     // ---- Pointer ----

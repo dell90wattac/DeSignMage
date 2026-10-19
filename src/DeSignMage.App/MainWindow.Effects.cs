@@ -96,16 +96,14 @@ public partial class MainWindow
     private void EnsureBusyBar()
     {
         if (_busyBar is not null) return;
-        // The status bar is a grid (hint, cursor, zoom, frame times); the progress bar gets one more column at the right end.
-        if (PerfText.Parent is not Grid status) return;
-        status.ColumnDefinitions.Add(new ColumnDefinition(GridLength.Auto));
+        // The Info Line is a one-line panel (pointer, frame times); the progress bar goes at its right end and is never given up for lack of room.
         _busyBar = new ProgressBar
         {
             IsIndeterminate = true, IsVisible = false, Width = 120, Height = 10, MinHeight = 10,
-            Margin = new Avalonia.Thickness(8, 0, 4, 0), VerticalAlignment = Avalonia.Layout.VerticalAlignment.Center,
+            Margin = new Avalonia.Thickness(0, 0, 4, 0), VerticalAlignment = Avalonia.Layout.VerticalAlignment.Center,
         };
-        Grid.SetColumn(_busyBar, status.ColumnDefinitions.Count - 1);
-        status.Children.Add(_busyBar);
+        Shell.InfoLinePanel.SetRight(_busyBar, true);
+        InfoBar.Children.Add(_busyBar);
     }
 
     private void OnEffectBusyChanged(EditorSession session)

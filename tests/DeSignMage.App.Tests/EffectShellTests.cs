@@ -143,7 +143,7 @@ public class EffectShellTests
         Assert.Equal("outline", w.Session.ActiveTool.Id);
         var bar = Assert.IsType<OutlineContextBar>(w.FindControl<ContentControl>("ContextBarHost")!.Content);
         var fields = bar.GetVisualDescendants().OfType<TextBox>().ToList();
-        var done = bar.GetVisualDescendants().OfType<Button>().Single(b => (string?)b.Content == "✓ Done");
+        var done = bar.Done;
         Assert.False(done.IsEnabled);                                           // distance 0: nothing to make yet
 
         var first = fields[0];                                                  // "1st:" in inches

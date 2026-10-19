@@ -95,13 +95,13 @@ public sealed class ImageContextRow : BarRow, IRefreshable
     }
 }
 
-/// <summary>Crop tool bar: the box size in pixels (typed values apply to the box), the check mark that crops, and cancel.</summary>
+/// <summary>Crop tool bar: the box size in pixels (typed values apply to the box), then Done (crops) and Cancel (leaves without cropping).</summary>
 public sealed class CropContextBar : ContextBarBase, IRefreshable
 {
     private readonly EditorSession _session;
     private readonly CropTool _tool;
     private readonly TextBox _w, _h;
-    private readonly Button _apply;
+    private readonly DoneCancelButtons _buttons;
     private readonly TextBlock _hint = ContextBars.Hint("");
     private readonly Control[] _fields;   // the W and H fields: shown only while there is a crop box
     private bool _refreshing;
@@ -112,15 +112,12 @@ public sealed class CropContextBar : ContextBarBase, IRefreshable
         _tool = tool;
         _w = ContextBars.NumberBox(OnTyped);
         _h = ContextBars.NumberBox(OnTyped);
-        _apply = ContextBars.Action("✓ Crop", () => { _tool.Apply(); ContextBars.FocusCanvas?.Invoke(); }, "Crop to the box (Enter)");
-        var cancel = ContextBars.Action("✕ Cancel", () => { _session.SetTool("select"); ContextBars.FocusCanvas?.Invoke(); }, "Leave without cropping (Esc)");
+        _buttons = new DoneCancelButtons(session, "Crop to the box (Enter)", "Leave without cropping");
 
         Row1.Children.Add(ContextBars.Label("Crop"));
         _fields = [ContextBars.Field("W", _w, "px"), ContextBars.Field("H", _h, "px")];
         foreach (var field in _fields) Row1.Children.Add(field);
-        Row1.Children.Add(ContextBars.Separator());
-        Row1.Children.Add(_apply);
-        Row1.Children.Add(cancel);
+        _buttons.AddTo(Row1);
         Row2.Children.Add(_hint);
         Refresh();
     }
@@ -139,13 +136,16 @@ public sealed class CropContextBar : ContextBarBase, IRefreshable
 
     private void OnRedraw(object? sender, EventArgs e) => Refresh();
 
+    internal Button Done => _buttons.Done;
+    internal Button Cancel => _buttons.Cancel;
+
     public void Refresh()
     {
         _refreshing = true;
         var px = _tool.BoxPixels;
         if (!_w.IsFocused) _w.Text = px is { } r ? r.Width.ToString() : "";
         if (!_h.IsFocused) _h.Text = px is { } r2 ? r2.Height.ToString() : "";
-        ContextBars.Valid(_apply, px is not null);
+        _buttons.Refresh();
         foreach (var field in _fields) field.IsVisible = px is not null;
         _hint.Text = _tool.Hint;   // changes once a box exists
         _refreshing = false;

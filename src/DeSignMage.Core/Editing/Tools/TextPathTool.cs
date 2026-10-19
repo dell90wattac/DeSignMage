@@ -18,7 +18,7 @@ namespace DeSignMage.Core.Editing.Tools;
 /// <b>Done</b> (Enter, or Esc when nothing is being dragged) leaves the tool; there is nothing to apply, the text is already on its path.</item>
 /// </list>
 /// </summary>
-public sealed class TextPathTool : Tool
+public sealed class TextPathTool : Tool, IModeTool
 {
     private enum Mode { None, Node, Handle }
 
@@ -118,6 +118,13 @@ public sealed class TextPathTool : Tool
     {
         Session.SetTool("select");
     }
+
+    // ---- Done and Cancel in the Context Bar (every change is an undo step; Cancel rolls them all back, the first "Text on Path" step too) ----
+
+    bool IModeTool.IsInMode => _text is not null;
+    bool IModeTool.CanFinish => true;
+    Task IModeTool.FinishMode() { Done(); return Task.CompletedTask; }
+    void IModeTool.DiscardPending() => Cancel();   // a node being dragged goes back where it was
 
     // ---- Changing the settings (each call is one undo step) ----
 

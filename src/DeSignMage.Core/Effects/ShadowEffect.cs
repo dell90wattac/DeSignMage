@@ -1,4 +1,4 @@
-﻿using DeSignMage.Core.Commands;
+using DeSignMage.Core.Commands;
 using DeSignMage.Core.Editing;
 using DeSignMage.Core.Geometry;
 using DeSignMage.Core.Model;
@@ -12,8 +12,8 @@ public enum ShadowType : byte { Drop, Relief }
 public enum ShadowForm : byte { Flat, Extruded, Perspective, Cast }
 
 /// <summary>
-/// Everything that decides how a shadow looks, as one value: the same record feeds the Effects ▸ Shadow commands and the live shadow's rebuilds
-/// (<see cref="LiveShadow"/>), because <see cref="ShadowGeometry.Build"/> is a pure function of a shape and these settings.
+/// Everything that decides how a shadow looks, as one value: the same record feeds the one-shot Effects ▸ Shadow commands now and could feed a
+/// live (regenerated) shadow later, because <see cref="ShadowGeometry.Build"/> is a pure function of a shape and these settings.
 /// Lengths in points; the shift is in document directions (x right, y DOWN); the Context Bar shows Vs the other way round (up is positive).
 /// </summary>
 public sealed record ShadowSettings
@@ -156,8 +156,8 @@ public sealed class ShadowSnapshot
 }
 
 /// <summary>
-/// Effects ▸ Shadow, Extruded Shadow, Perspective Shadow and Cast Shadow (notes/effects/shadow.md; user decisions R7, R13, R22): a
-/// shadow object per drawn object, <b>grouped with its source</b> (live: it follows edits of the source, <see cref="LiveEffects"/>) and placed just
+/// Effects ▸ Shadow, Extruded Shadow, Perspective Shadow and Cast Shadow (notes/effects/shadow.md; user decisions R7, R13, R22): a one-shot
+/// shadow object per drawn object, <b>grouped with its source</b> (not linked: editing the source later leaves it as it is) and placed just
 /// below it in the drawing order. A group is not shadowed as a whole: every member of it, at any depth, gets its own shadow with the same settings
 /// (R13), which joins the member's own group. A single object and its shadow become a new group. Live text stays live text; the shadow is a plain
 /// path. One undo step for everything.
@@ -234,20 +234,8 @@ public static class ShadowEffect
         var doc = session.Document;
         string name = NameOf(settings.Form);
         var selected = new List<DocObject>();
-        var existing = LiveEffects.BySource(doc);
-        var reshaped = new List<(PathObject, PathGeometry, ObjectStyle, string?, LiveLink?)>();
         foreach (var (source, geometry) in results)
         {
-            // A source that already has a live shadow gets that one changed (same object, same place), not a second shadow.
-            if (existing.TryGetValue(source, out var effects) && effects.FirstOrDefault(e => e.Live!.Spec is LiveShadow) is { } old)
-            {
-                var ow = old.GetWorldTransform();
-                var inOld = ow.IsIdentity || !ow.IsInvertible ? geometry : geometry.Transform(ow.Invert());
-                var oldStyle = settings.Color is { } oc ? ObjectStyle.FillOnly(oc) : source.Style;
-                reshaped.Add((old, inOld, oldStyle, name, LiveLink.Create(source, new LiveShadow(settings), ow)));
-                selected.Add(source.TopLevel);
-                continue;
-            }
             // Just below its own object (R22), in the group the object is in; an object that is in none makes a group with its shadow.
             var layer = source.Layer ?? throw new InvalidOperationException($"{source} is not in the document.");
             int index = layer.IndexOf(source);
@@ -255,7 +243,6 @@ public static class ShadowEffect
             var group = source.Parent as GroupObject;
             var local = group is null || group.GetWorldTransform() is not { IsInvertible: true } w ? geometry : geometry.Transform(w.Invert());
             var shadow = new PathObject(local) { Name = name, Style = style, Visible = source.Visible, Locked = source.Locked };
-            shadow.Live = LiveLink.BesideSource(source, new LiveShadow(settings));   // live: it follows the source
 
             if (group is not null)
                 session.History.Execute(new InsertAtSlotCommand(new Slot(layer, index, group, group.Children.Count), shadow, name));   // one more member of the same group
@@ -266,17 +253,6 @@ public static class ShadowEffect
             }
             selected.Add(source.TopLevel);
         }
-        if (reshaped.Count > 0) session.History.Execute(new ReshapeEffectsCommand(name, reshaped));
         session.Selection.Set(selected.Distinct().ToList());
-    }
-
-    /// <summary>The settings of the first live shadow that a source of the selection already has (the tool starts from them); null when none has one.</summary>
-    public static ShadowSettings? ExistingSettings(EditorSession s)
-    {
-        var map = LiveEffects.BySource(s.Document);
-        foreach (var source in Sources(s))
-            if (map.TryGetValue(source, out var list) && list.FirstOrDefault(e => e.Live!.Spec is LiveShadow)?.Live!.Spec is LiveShadow sh)
-                return sh.Settings;
-        return null;
     }
 }

@@ -11,7 +11,7 @@ namespace DeSignMage.Core.Editing.Tools;
 /// is one undo step (<see cref="SoftEffectCommand"/> is re-targeted, not repeated). Soft Shadow: drag anywhere to move the shadow. Glow: drag outward
 /// from the shape to set the thickness. Done keeps the effect, Esc or Cancel takes it back, Remove removes it (an effect that was there before too).
 /// </summary>
-public sealed class SoftEffectTool : Tool
+public sealed class SoftEffectTool : Tool, IModeTool
 {
     private readonly Dictionary<SoftKind, SoftSettings> _remembered = [];
     private readonly Dictionary<SoftKind, double> _rememberedShiftFraction = [];
@@ -29,8 +29,8 @@ public sealed class SoftEffectTool : Tool
     public override CursorKind Cursor => CursorKind.Cross;
 
     public override string Hint => Kind == SoftKind.Glow
-        ? "GLOW: Drag out from the shape to set the thickness. Enter or the check mark keeps it, Esc takes it back   To ZOOM: Press right button"
-        : "SOFT SHADOW: Drag to move the shadow. Enter or the check mark keeps it, Esc takes it back   To ZOOM: Press right button";
+        ? "GLOW: Drag out from the shape to set the thickness. Enter or Done keeps it, Esc or Cancel takes it back   To ZOOM: Press right button"
+        : "SOFT SHADOW: Drag to move the shadow. Enter or Done keeps it, Esc or Cancel takes it back   To ZOOM: Press right button";
 
     public SoftKind Kind { get; private set; }
 
@@ -242,6 +242,18 @@ public sealed class SoftEffectTool : Tool
         finally { _busy = false; }
         _command = null;
         Session.SetTool("select");
+    }
+
+    // ---- Done and Cancel in the Context Bar (the session rolls the history back to how it was when the tool opened) ----
+
+    bool IModeTool.IsInMode => true;
+    bool IModeTool.CanFinish => IsActiveOnSource;
+    Task IModeTool.FinishMode() { Done(); return Task.CompletedTask; }
+
+    void IModeTool.DiscardPending()
+    {
+        _dragging = false;
+        _command = null;   // what was set is not remembered for the next effect
     }
 
     // ---- Pointer ----

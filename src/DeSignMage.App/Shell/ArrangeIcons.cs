@@ -7,24 +7,14 @@ using AvPath = Avalonia.Controls.Shapes.Path;
 namespace DeSignMage.App.Shell;
 
 /// <summary>
-/// The icons of Arrange ▸ Align, Mirror and Locked, drawn here in a 20 x 20 box in the same plain style as the menu strip's: ink strokes and
+/// The icons of Arrange ▸ Align, Mirror and Locked, drawn here in a 20 x 20 box in the same plain style as the Toolbox's: ink strokes and
 /// fills, the accent color for the line or edge the objects line up on. They use the themed brushes, so they follow Dark Menus.
-/// Besides the Context Bar they are what an Arrange tab of the menu strips would show.
+/// They are on the Context Bar: the Align drop-down and its items, Mirror and Lock.
 /// </summary>
 internal static class ArrangeIcons
 {
     private static IBrush Ink => AppTheme.Brush("Ui.Icon");
     private static IBrush Accent => AppTheme.Brush("Ui.IconAccent");
-
-    /// <summary>The short word a strip button would show for each command.</summary>
-    public static readonly IReadOnlyDictionary<string, string> Labels = new Dictionary<string, string>
-    {
-        ["arrange.alignLeft"] = "Left", ["arrange.alignCenter"] = "Center", ["arrange.alignRight"] = "Right",
-        ["arrange.alignTop"] = "Top", ["arrange.alignMiddle"] = "Middle", ["arrange.alignBottom"] = "Bottom",
-        ["arrange.centerH"] = "H Layout", ["arrange.centerV"] = "V Layout", ["arrange.centerBoth"] = "Layout",
-        ["arrange.mirrorH"] = "Mirror H", ["arrange.mirrorV"] = "Mirror V",
-        ["arrange.lock"] = "Lock", ["arrange.unlockAll"] = "Unlock All",
-    };
 
     public static IReadOnlyCollection<string> Ids => Drawn.Keys.ToArray();
 

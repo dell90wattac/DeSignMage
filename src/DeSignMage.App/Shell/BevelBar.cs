@@ -9,9 +9,9 @@ using DeSignMage.Core.Model;
 namespace DeSignMage.App.Shell;
 
 /// <summary>
-/// Easy Bevel Context Bar: Done, Cancel and Remove; Inset, Width and Softness; the Light direction (degrees; also a round point on the page); a preset; the Highlight and Shadow strength (a Shadow of 0 leaves the shadow crescent
+/// Easy Bevel Context Bar: Inset, Width and Softness; the Light direction (degrees; also a round point on the page); a preset; the Highlight and Shadow strength (a Shadow of 0 leaves the shadow crescent
 /// out); the two colors (hidden while Neutral, which makes them white and black); Neutral. The bevel shows on the page as the fields change (the tool re-targets
-/// one undo step). All the percentages are shares of the object's own height.
+/// one undo step), then Remove, Done and Cancel at the end. All the percentages are shares of the object's own height.
 /// </summary>
 public sealed class BevelContextBar : ContextBarBase, IRefreshable
 {
@@ -20,7 +20,8 @@ public sealed class BevelContextBar : ContextBarBase, IRefreshable
     private readonly EffectBarParts.Field _inset, _width, _softness, _highlight, _shadow, _light;
     private readonly ComboBox _preset, _highlightColor, _shadowColor;
     private readonly CheckBox _neutral;
-    private readonly Button _remove, _done;
+    private readonly Button _remove;
+    private readonly DoneCancelButtons _buttons;
     private bool _refreshing;
 
     public BevelContextBar(EditorSession session, BevelTool tool)
@@ -47,8 +48,7 @@ public sealed class BevelContextBar : ContextBarBase, IRefreshable
         _shadowColor = ColorList("The shadow's color", c => tool.Update(s => s with { ShadowColor = c }));
         _neutral = PathBarParts.Check("Neutral", "The highlight is white and the shadow black, whatever colors are chosen", v => { if (!_refreshing) tool.Update(s => s with { Neutral = v }); });
         _remove = PathBarParts.Action("Remove", "Remove the bevel (undoable)", () => { tool.Remove(); ContextBars.FocusCanvas?.Invoke(); });
-        _done = PathBarParts.Action("✓ Done", "Keep the bevel (Enter)", () => { _ = tool.Done(); ContextBars.FocusCanvas?.Invoke(); });
-        var cancel = PathBarParts.Action("✕ Cancel", "Take back what this tool did (Esc)", () => { tool.Abandon(); ContextBars.FocusCanvas?.Invoke(); });
+        _buttons = new DoneCancelButtons(session, "Keep the bevel (Enter)", "Take back what this tool did (Esc)");
 
         // the bar is only so wide: narrower number boxes (three digits at most) leave room for the Light field, and Remove sits at the end of the second row
         foreach (var box in new[] { _inset.Box, _width.Box, _softness.Box, _light.Box, _highlight.Box, _shadow.Box }) box.Width = 54;
@@ -61,7 +61,6 @@ public sealed class BevelContextBar : ContextBarBase, IRefreshable
 
         foreach (var c in new Control[]
                  {
-                     _done, cancel, PathBarParts.Gap(),
                      ContextBars.Field("Inset", _inset.Box, "%"), ContextBars.Field("Width", _width.Box, "%"), ContextBars.Field("Softness", _softness.Box, "%"),
                      ContextBars.Field("Light", _light.Box, "°"),
                  })
@@ -72,6 +71,7 @@ public sealed class BevelContextBar : ContextBarBase, IRefreshable
                      _highlightColor, _shadowColor, _neutral, _remove,
                  })
             Row2.Children.Add(c);
+        _buttons.AddTo(Row2);
         EffectBarParts.Bind(this, session, Refresh, h => tool.Changed += h, h => tool.Changed -= h);
         Refresh();
     }
@@ -114,13 +114,14 @@ public sealed class BevelContextBar : ContextBarBase, IRefreshable
         ContextBars.Valid(_highlightColor, !s.Neutral);
         ContextBars.Valid(_shadowColor, !s.Neutral);
         ContextBars.Valid(_remove, _tool.CanRemove);
-        ContextBars.Valid(_done, _tool.IsActiveOnSource);
+        _buttons.Refresh();
         _refreshing = false;
     }
 
     // ---- For tests ----
 
-    internal Button Done => _done;
+    internal Button Done => _buttons.Done;
+    internal Button Cancel => _buttons.Cancel;
     internal Button Remove => _remove;
     internal TextBox WidthBox => _width.Box;
     internal TextBox ShadowBox => _shadow.Box;

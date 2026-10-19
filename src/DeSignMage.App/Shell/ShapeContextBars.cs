@@ -220,34 +220,38 @@ public sealed class ArrowContextBar : ContextBarBase, IRefreshable
     public void Refresh() => _fields.Refresh();
 }
 
-/// <summary>Convert to Rounded Rectangle: the radius (previewed live on the canvas) and Done, which shows only while there is a rectangle to round.</summary>
+/// <summary>
+/// Convert to Rounded Rectangle: the radius (previewed live on the canvas), then Done and Cancel. The radius and Done show only while there is a rectangle to
+/// round; Cancel leaves without changing anything.
+/// </summary>
 public sealed class RoundCornersContextBar : ContextBarBase, IRefreshable
 {
     private readonly RoundCornersTool _tool;
     private readonly ShapeNumberField _radius;
-    private readonly Button _done;
+    private readonly DoneCancelButtons _buttons;
     private readonly TextBlock _hint;
 
     public RoundCornersContextBar(EditorSession session, RoundCornersTool tool)
     {
         _tool = tool;
         _radius = new ShapeNumberField("Corner radius", "in", "0.####", () => Units.ToInches(tool.Radius), v => tool.Radius = Units.FromInches(Math.Max(0, v)));
-        _done = ContextBars.Action("Done", tool.Apply, "Round the corners of the selected rectangles (Enter)");
+        _buttons = new DoneCancelButtons(session, "Round the corners of the selected rectangles (Enter)", "Leave without changing anything");
         _hint = ContextBars.Hint("Select a rectangle to round its corners");
         Row1.Children.Add(_radius.Panel);
-        Row2.Children.Add(_done);
+        _buttons.AddTo(Row2);
         Row2.Children.Add(_hint);
         Refresh();
     }
 
     internal ShapeNumberField Radius => _radius;
-    internal Button Done => _done;
+    internal Button Done => _buttons.Done;
+    internal Button Cancel => _buttons.Cancel;
 
     public void Refresh()
     {
         bool can = _tool.CanApply;
         ContextBars.Valid(_radius.Panel, can);
-        ContextBars.Valid(_done, can);
+        _buttons.Refresh();
         ContextBars.Valid(_hint, !can);
         if (can) _radius.Refresh();
     }

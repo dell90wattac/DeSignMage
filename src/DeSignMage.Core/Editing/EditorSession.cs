@@ -143,8 +143,12 @@ public sealed partial class EditorSession
     /// <summary>Opens <paramref name="o"/> in the Vector Edit tool ("vector") or the Loop Edit tool ("loop").</summary>
     public void OpenPathEdit(DocObject o, string toolId)
     {
-        if (o is TextObject text) o = ConvertTextForVectorEditing(text);   // text turns into curves the moment its vectors are edited
-        if (!OutlineView.IsEditable(o)) return;
+        if (o is TextObject text)
+        {
+            MarkNextMode();   // Cancel in the node tool also takes the conversion back
+            o = ConvertTextForVectorEditing(text);   // text turns into curves the moment its vectors are edited
+        }
+        if (!OutlineView.IsEditable(o)) { _pendingModeMark = null; return; }
         SetTool(toolId);
         ((PathEditToolBase)_tools.First(t => t.Id == toolId)).SetTarget(o);
     }
@@ -181,9 +185,10 @@ public sealed partial class EditorSession
     public void SetTool(string id)
     {
         var tool = _tools.FirstOrDefault(t => t.Id == id) ?? throw new ArgumentException($"Unknown tool '{id}'.");
-        if (tool == _activeTool) return;
+        if (tool == _activeTool) { _pendingModeMark = null; return; }
         _activeTool.Deactivate();
         _activeTool = tool;
+        _modeMark = ModeMarkFor(tool);
         tool.Activate();
         ToolChanged?.Invoke(this, EventArgs.Empty);
         RequestRedraw();

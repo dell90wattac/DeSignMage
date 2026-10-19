@@ -40,6 +40,7 @@ public sealed partial class EditorSession
     {
         if (TextPathParts() is not { } parts) return false;
         var (text, source) = parts;
+        MarkNextMode();   // Cancel in the tool also takes the first "Text on Path" step back
         if (!text.IsOnPath || source is not null)
         {
             var settings = source is null ? TextOnPath.DefaultFor(text) : (text.OnPath ?? new TextOnPath(PathGeometry.EmptyPath)) with { Path = PathFollowing(text, source) };

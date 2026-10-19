@@ -53,19 +53,19 @@ public partial class MainWindow
 
             // Padding, margins and gaps grow at a third of the text's rate (UiScale.SpaceScale); text and icons keep their own scales.
             double sp = UiScale.SpaceScale;
-            TopRowBorder.Height = Math.Max(28 * UiScale.IconScale, 28 * UiScale.Scale) + UiScale.Sp(8);   // one fixed height for menus + toolbar
+            TopRowBorder.Height = Math.Max(28 * UiScale.IconScale, 28 * UiScale.Scale) + UiScale.Sp(4);   // one fixed height for menus + toolbar
             MainToolbar.Margin = UiScale.Space(8, 0);
             MainToolbar.Spacing = 0;
             FeedbackButton.Margin = UiScale.Space(4, 0, 8, 0);
-            FeedbackButton.Padding = UiScale.Space(12, 3);
             ContextBarBorder.Padding = UiScale.Space(8, ContextBars.BarPaddingY);
-            MenuStrip.Margin = UiScale.Space(4, 0, 10, 0);
-            ProjectColorBarHost.Margin = UiScale.Space(8, 3);
+            ProjectColorBarHost.Margin = UiScale.Space(8, 2);
             ProjectColorBarHost.Spacing = UiScale.Sp(8);
             ProjectColorBarHost.LineSpacing = UiScale.Sp(4);
+            InfoBar.Spacing = UiScale.Sp(12);
+            InfoBar.Margin = new Thickness(0, 0, UiScale.Sp(8), 0);
+            MeasureHost.Margin = new Thickness(0);
             ToolboxHost.Margin = UiScale.Space(4, 8);
             ToolboxHost.Spacing = UiScale.Sp(2);
-            InfoLine.Margin = UiScale.Space(8, 0);
             ColorMixerPanel.Padding = LayersPanel.Padding = HistoryPanel.Padding = UiScale.Space(8, 8, 8, 4);
             ColorMixerHost.Spacing = UiScale.Sp(6);
             ColorMixerHost.Margin = new Thickness(0, 0, 0, UiScale.Sp(4));        }

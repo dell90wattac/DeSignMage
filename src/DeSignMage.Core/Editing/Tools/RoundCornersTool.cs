@@ -9,7 +9,7 @@ namespace DeSignMage.Core.Editing.Tools;
 /// radius; the rounded outline of every rectangle is previewed live over the canvas; Done (or Enter) applies it as one undo step,
 /// Esc leaves without changing anything. Clicks on the canvas do nothing here (right-button zoom still works).
 /// </summary>
-public sealed class RoundCornersTool : Tool
+public sealed class RoundCornersTool : Tool, IModeTool
 {
     private double _radius = RoundedRectangleTool.DefaultRadius;
 
@@ -63,6 +63,13 @@ public sealed class RoundCornersTool : Tool
         Session.SetTool("select");
         Session.Selection.Set(Session.Selection.Items.Concat(cmd.Results.Where(r => r.Parent is Layer)).Where(Session.Document.Contains).Distinct());
     }
+
+    // ---- Done and Cancel (the rounded outline is only a preview until Done, so Cancel has nothing in the history to take back) ----
+
+    bool IModeTool.IsInMode => true;
+    bool IModeTool.CanFinish => CanApply;
+    Task IModeTool.FinishMode() { Apply(); return Task.CompletedTask; }
+    void IModeTool.DiscardPending() { }
 
     public override bool KeyDown(EditorKey key, ModifierKeys modifiers)
     {

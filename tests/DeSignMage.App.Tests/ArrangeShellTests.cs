@@ -156,8 +156,7 @@ public class ArrangeShellTests
         var s = w.Session;
 
         // in a focused number field
-        var bar = Bar(w);
-        bar.X.Focus();
+        w.MeasureFields.X.Focus();                                   // the X field of the Info Line
         Dispatcher.UIThread.RunJobs();
         Assert.IsType<TextBox>(w.FocusManager!.GetFocusedElement());
         foreach (var key in new[] { Key.L, Key.R, Key.N }) Press(w, key);
@@ -254,29 +253,31 @@ public class ArrangeShellTests
     // ---- the Context Bar (R26: only valid choices) ----
 
     [AvaloniaFact]
-    public void The_Context_Bar_shows_only_the_Arrange_buttons_that_would_work()
+    public void The_Context_Bar_shows_only_the_Arrange_buttons_that_would_work_and_Align_is_one_drop_down()
     {
         var (w, _) = Open();
         var a = AddRect(w, 200, 200, 100); var b = AddRect(w, 500, 320, 60);
         var s = w.Session;
         var bar = Bar(w);
-        foreach (var mode in Enum.GetValues<AlignMode>()) Assert.False(bar.AlignButton(mode).IsVisible);   // nothing selected
-        Assert.False(bar.MirrorH.IsVisible || bar.MirrorV.IsVisible || bar.CenterLayout.IsVisible || bar.Lock.IsVisible);
+        Assert.False(bar.AlignDropDownButton.IsVisible);                                                  // nothing selected: no Align button at all
+        Assert.False(bar.MirrorH.IsVisible || bar.MirrorV.IsVisible || bar.Lock.IsVisible);
 
-        s.Selection.Set(a);                                          // one object: Mirror, Lock and "In Layout", and Align lines it up with the page edge
+        s.Selection.Set(a);                                          // one object: Mirror, Lock and "Center of Layout", and Align lines it up with the page edge
         bar.Refresh();
-        foreach (var mode in Enum.GetValues<AlignMode>()) Assert.True(bar.AlignButton(mode).IsVisible);
-        Assert.True(bar.MirrorH.IsVisible && bar.MirrorV.IsVisible && bar.CenterLayout.IsVisible && bar.Lock.IsVisible);
+        Assert.True(bar.AlignDropDownButton.IsVisible);
+        foreach (var mode in Enum.GetValues<AlignMode>()) Assert.True(bar.AlignItem(mode).IsVisible);
+        Assert.True(bar.CenterLayoutItem.IsVisible);
+        Assert.True(bar.MirrorH.IsVisible && bar.MirrorV.IsVisible && bar.Lock.IsVisible);
 
         s.Selection.Set([a, b]);                                     // two objects: Align too
         bar.Refresh();
-        foreach (var mode in Enum.GetValues<AlignMode>()) Assert.True(bar.AlignButton(mode).IsVisible);
+        foreach (var mode in Enum.GetValues<AlignMode>()) Assert.True(bar.AlignItem(mode).IsVisible);
 
-        bar.AlignButton(AlignMode.Left).RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
+        bar.AlignItem(AlignMode.Left).RaiseEvent(new RoutedEventArgs(MenuItem.ClickEvent));
         Assert.Equal(200, b.GetWorldBounds().Left, 6);
         bar.MirrorV.RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
         Assert.Equal("Mirror Vertical", s.History.UndoDescription);
-        bar.CenterLayout.RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
+        bar.CenterLayoutItem.RaiseEvent(new RoutedEventArgs(MenuItem.ClickEvent));
         Assert.Equal(s.Document.Page.Bounds.Center.X, s.Selection.GetBounds().Center.X, 6);
 
         Assert.DoesNotContain("on", bar.Lock.Classes);          // not pressed: nothing locked
@@ -285,11 +286,49 @@ public class ArrangeShellTests
         bar.Refresh();
         Assert.Contains("on", bar.Lock.Classes);            // pressed: a click unlocks
         Assert.True(bar.Lock.IsVisible);
-        Assert.False(bar.MirrorH.IsVisible || bar.CenterLayout.IsVisible);   // a locked selection can't be changed: those buttons are gone
-        foreach (var mode in Enum.GetValues<AlignMode>()) Assert.False(bar.AlignButton(mode).IsVisible);
-        Assert.False(bar.X.IsEffectivelyVisible || bar.W.IsEffectivelyVisible);                 // and so are the position and size fields
+        Assert.False(bar.MirrorH.IsVisible || bar.CenterLayoutItem.IsVisible);   // a locked selection can't be changed: those buttons are gone
+        Assert.False(bar.AlignDropDownButton.IsVisible);                         // and so is the whole Align drop-down
+        Assert.False(w.MeasureFields.SelectionFields.IsEffectivelyVisible);      // and the position and size fields of the Info Line
         bar.Lock.RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
         Assert.False(a.Locked || b.Locked);
+        w.Close();
+    }
+
+    [AvaloniaFact]
+    public void The_Align_drop_down_opens_the_seven_commands_with_icons_and_names_and_each_runs_its_command()
+    {
+        var (w, _, a, b) = OpenWithTwo();
+        var s = w.Session;
+        var bar = Bar(w);
+        Assert.True(bar.AlignDropDownButton.IsVisible);
+        var content = Assert.IsType<StackPanel>(bar.AlignDropDownButton.Content);                         // the icon, the word Align, a chevron
+        Assert.Equal("Align", content.Children.OfType<TextBlock>().Single().Text);
+        Assert.NotEmpty(content.Children[0].GetVisualDescendants().OfType<Avalonia.Controls.Shapes.Path>());
+        Assert.IsType<Avalonia.Controls.Shapes.Path>(content.Children[^1]);
+
+        bar.AlignDropDownButton.RaiseEvent(new RoutedEventArgs(Button.ClickEvent));                        // opens the list
+        Dispatcher.UIThread.RunJobs();
+        Assert.True(bar.AlignMenu.IsOpen);
+        var items = bar.AlignMenu.Items.OfType<MenuItem>().ToList();
+        Assert.Equal(["Align Left", "Align Center", "Align Right", "Align Top Edge", "Align Vertical Center", "Align Bottom Edge", "Center of Layout"], items.Select(i => i.Header?.ToString()));
+        Assert.All(items, i => Assert.NotNull(i.Icon));
+        Assert.Equal("L", items[0].InputGesture?.ToString());                                              // the keys that already exist, shown
+        Assert.Equal("N", items[1].InputGesture?.ToString());
+        Assert.Equal("R", items[2].InputGesture?.ToString());
+        bar.AlignMenu.Close();
+
+        // each item does what the Arrange menu's item does, as one undo step
+        int steps = s.History.UndoList.Count;
+        items[3].RaiseEvent(new RoutedEventArgs(MenuItem.ClickEvent));                                     // Top Edge
+        Assert.Equal(200, b.GetWorldBounds().Top, 6);
+        Assert.Equal(steps + 1, s.History.UndoList.Count);
+        items[0].RaiseEvent(new RoutedEventArgs(MenuItem.ClickEvent));                                     // Left
+        Assert.Equal(200, b.GetWorldBounds().Left, 6);
+        items[2].RaiseEvent(new RoutedEventArgs(MenuItem.ClickEvent));                                     // Right
+        Assert.Equal(a.GetWorldBounds().Right, b.GetWorldBounds().Right, 6);
+        items[6].RaiseEvent(new RoutedEventArgs(MenuItem.ClickEvent));                                     // Center of Layout
+        Assert.Equal(s.Document.Page.Bounds.Center.X, s.Selection.GetBounds().Center.X, 6);
+        Assert.Equal(steps + 4, s.History.UndoList.Count);
         w.Close();
     }
 
@@ -301,10 +340,10 @@ public class ArrangeShellTests
         w.Session.History.Execute(new AddObjectCommand(w.Session.Document.ActiveLayer, t));
         w.Session.Selection.Set(t);
         var bar = Bar(w);
-        Assert.False(bar.AlignButton(AlignMode.Left).IsVisible);     // already left aligned
-        Assert.True(bar.AlignButton(AlignMode.Center).IsVisible);
-        Assert.True(bar.AlignButton(AlignMode.Right).IsVisible);
-        Assert.True(bar.AlignButton(AlignMode.Top).IsVisible);       // Top, Middle, Bottom line the text up with the page
+        Assert.False(bar.AlignItem(AlignMode.Left).IsVisible);       // already left aligned
+        Assert.True(bar.AlignItem(AlignMode.Center).IsVisible);
+        Assert.True(bar.AlignItem(AlignMode.Right).IsVisible);
+        Assert.True(bar.AlignItem(AlignMode.Top).IsVisible);         // Top, Middle, Bottom line the text up with the page
         Press(w, Key.R);
         Assert.Equal(TextAlignment.Right, t.Alignment);
         w.Close();

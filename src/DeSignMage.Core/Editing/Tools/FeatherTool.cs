@@ -10,7 +10,7 @@ namespace DeSignMage.Core.Editing.Tools;
 /// selection at once (4 % feather, 38 % inset, as the legacy program does) so the change is seen as it is made; the session is one undo step. Drag on the
 /// object to set the feather from how far the pointer moved. Done keeps it, Esc takes it back, Remove removes the feather.
 /// </summary>
-public sealed class FeatherTool : Tool
+public sealed class FeatherTool : Tool, IModeTool
 {
     public const double DefaultAmount = 0.04, DefaultInset = 0.38;
 
@@ -25,7 +25,7 @@ public sealed class FeatherTool : Tool
     public override string DisplayName => "Feather";
     public override CursorKind Cursor => CursorKind.Cross;
 
-    public override string Hint => "FEATHER: Drag on the object to set the feather. Enter or the check mark keeps it, Esc takes it back   To ZOOM: Press right button";
+    public override string Hint => "FEATHER: Drag on the object to set the feather. Enter or Done keeps it, Esc or Cancel takes it back   To ZOOM: Press right button";
 
     /// <summary>The fields (0 amount = no feather yet).</summary>
     public FeatherStyle Settings { get; private set; } = new(DefaultAmount, DefaultInset);
@@ -177,6 +177,18 @@ public sealed class FeatherTool : Tool
         finally { _busy = false; }
         _command = null;
         Session.SetTool("select");
+    }
+
+    // ---- Done and Cancel in the Context Bar (the session rolls the history back to how it was when the tool opened) ----
+
+    bool IModeTool.IsInMode => true;
+    bool IModeTool.CanFinish => IsActiveOnTarget;
+    Task IModeTool.FinishMode() { Done(); return Task.CompletedTask; }
+
+    void IModeTool.DiscardPending()
+    {
+        _dragging = false;
+        _command = null;   // what was set is not remembered for the next feather
     }
 
     // ---- Pointer ----

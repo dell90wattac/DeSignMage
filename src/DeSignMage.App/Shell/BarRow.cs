@@ -139,7 +139,7 @@ public class BarRow : Panel
 public sealed class BarSeparator : Control
 {
     private static readonly Avalonia.Media.IPen LinePen = new Avalonia.Media.Pen(AppTheme.Brush("Ui.Separator"), 1);
-    private static double FullWidth => 1 + 2 * UiScale.Sp(4);   // the air on either side grows with the spacing scale, not the text
+    private static double FullWidth => 1 + 2 * UiScale.Sp(3);   // the air on either side grows with the spacing scale, not the text
 
     public BarSeparator()
     {

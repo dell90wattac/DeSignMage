@@ -34,15 +34,21 @@ public sealed class TextFormatPanel : TwoLinePanel, IRefreshable
     private readonly ToggleButton _left, _center, _right;
     private readonly Button _convert;
     private readonly TextBlock _note = new() { VerticalAlignment = VerticalAlignment.Center, Foreground = AppTheme.Brush("Ui.Error"), Margin = new(6, 0) };
+    private readonly DoneCancelButtons? _buttons;   // the Text tool's bar only: Done and Cancel while a text is being typed
     private bool _refreshing, _edited;
 
     internal FontPicker FamilyBox => _family;
     internal ComboBox StyleBox => _style;
     internal TextBox SizeBox => _size;
+    internal Button? Done => _buttons?.Done;
+    internal Button? Cancel => _buttons?.Cancel;
 
-    public TextFormatPanel(EditorSession session, bool twoRows = true)
+    public TextFormatPanel(EditorSession session, bool twoRows = true, bool doneCancel = false)
     {
         _session = session;
+        if (doneCancel)
+            _buttons = new DoneCancelButtons(session, "Finish the text and go back to the Layout tool, as clicking away does",
+                "Throw away the new text, or put the old text back as it was, and go back to the Layout tool");
 
         // The list shows each font in its own font; with text selected, that text in each font (R12).
         _family.SampleProvider = () => _session.SelectedTexts().FirstOrDefault()?.Text;
@@ -81,6 +87,7 @@ public sealed class TextFormatPanel : TwoLinePanel, IRefreshable
         bottom.Children.Add(ContextBars.Separator());
         bottom.Children.Add(_convert);
         bottom.Children.Add(_note);
+        _buttons?.AddTo(bottom);
         SetRows(top, twoRows ? bottom : null);
     }
     private ToggleButton AlignButton(string glyph, string tip, TextAlignment alignment)
@@ -152,19 +159,20 @@ public sealed class TextFormatPanel : TwoLinePanel, IRefreshable
         ContextBars.Valid(_convert, _session.CanConvertToCurves);   // only when there is text to convert (R26)
         _note.Text = cur.Missing ? $"Font not installed: showing {cur.Resolved}" : "";
         _note.IsVisible = _note.Text.Length > 0;
+        _buttons?.Refresh();
         _edited = false;
         _refreshing = false;
     }
 }
 
-/// <summary>The text tool's Context Bar: the font controls, on one line when they fit (the status line explains how to type).</summary>
+/// <summary>The text tool's Context Bar: the font controls, on one line when they fit.</summary>
 public sealed class TextToolContextBar : StackPanel, IRefreshable
 {
     private readonly TextFormatPanel _panel;
 
     public TextToolContextBar(EditorSession session)
     {
-        _panel = new TextFormatPanel(session);
+        _panel = new TextFormatPanel(session, doneCancel: true);
         Children.Add(_panel);
         _panel.Refresh();
     }

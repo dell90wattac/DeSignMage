@@ -188,16 +188,18 @@ public class ImageShellTests : IDisposable
     }
 
     [AvaloniaFact]
-    public async Task The_info_line_counts_the_bitmaps_in_the_document()
+    public async Task The_info_line_counts_the_bitmaps_in_the_document_and_only_while_it_has_pictures()
     {
         var (w, _) = Open();
-        Assert.Contains("Bitmaps: 0.00 MB total", Info(w).Text);
+        var bitmaps = w.FindControl<TextBlock>("BitmapsText")!;
+        Assert.False(bitmaps.IsVisible);                                   // no pictures: nothing about bitmaps (R38)
         await ImportOne(w, WriteFlat("a.png", 1024, 512));                 // 1024 x 512 x 4 bytes = 2 MB
-        Pump(() => Info(w).Text!.Contains("2.00 MB"));
-        Assert.Contains("Bitmaps: 2.00 MB total", Info(w).Text);
+        Pump(() => bitmaps.Text!.Contains("2.00 MB"));
+        Assert.True(bitmaps.IsVisible);
+        Assert.Equal("Bitmaps: 2.00 MB", bitmaps.Text);
         w.Session.Undo();
-        Pump(() => Info(w).Text!.Contains("0.00 MB"));
-        Assert.Contains("Bitmaps: 0.00 MB total", Info(w).Text);
+        Pump(() => !bitmaps.IsVisible);
+        Assert.False(bitmaps.IsVisible);
         w.Close();
     }
 
@@ -436,11 +438,41 @@ public class ImageShellTests : IDisposable
         Run(w, "Image", "Crop Tool");
         DragBox();
         var bar = Assert.IsType<CropContextBar>(w.FindControl<ContentControl>("ContextBarHost")!.Content);
-        var apply = bar.GetLogicalDescendants().OfType<Button>().Single(x => ((string)x.Content!).Contains("Crop"));
+        var apply = bar.GetLogicalDescendants().OfType<Button>().Single(x => (string?)x.Content == "Done");   // Done crops
         Assert.True(apply.IsEnabled);
         apply.RaiseEvent(new Avalonia.Interactivity.RoutedEventArgs(Button.ClickEvent));
         Assert.True(img.PixelWidth < 400);
         Assert.IsType<SelectTool>(w.Session.ActiveTool);
+        w.Close();
+    }
+
+    [AvaloniaFact]
+    public async Task Crop_bar_shows_Cancel_always_and_Done_only_with_a_box_and_Cancel_leaves_the_picture_as_it_was()
+    {
+        var (w, c) = Open();
+        var img = await ImportOne(w, WriteQuadrants("q2.png", 400, 200));
+        w.Session.ZoomToSelection();
+        Run(w, "Image", "Crop Tool");
+        var bar = Assert.IsType<CropContextBar>(w.FindControl<ContentControl>("ContextBarHost")!.Content);
+        int steps = w.Session.History.UndoList.Count;
+        Assert.True(bar.Cancel.IsVisible);
+        Assert.False(bar.Done.IsVisible);                                   // nothing to crop to yet
+
+        var b = img.GetWorldBounds();
+        var tl = w.Session.Viewport.ToScreen(new Vec2(b.Left + 10, b.Top + 10));
+        var br = w.Session.Viewport.ToScreen(new Vec2(b.Left + b.Width / 2, b.Top + b.Height / 2));
+        w.MouseDown(P(c, tl), MouseButton.Left);
+        w.MouseMove(P(c, (tl + br) / 2));
+        w.MouseMove(P(c, br));
+        w.MouseUp(P(c, br), MouseButton.Left);
+        Dispatcher.UIThread.RunJobs();
+        Assert.True(bar.Done.IsVisible);                                    // a box: Done crops to it
+
+        bar.Cancel.RaiseEvent(new Avalonia.Interactivity.RoutedEventArgs(Button.ClickEvent));
+        Assert.IsType<SelectTool>(w.Session.ActiveTool);
+        Assert.Equal((400, 200), (img.PixelWidth, img.PixelHeight));
+        Assert.Equal(steps, w.Session.History.UndoList.Count);
+        Assert.Equal([img], w.Session.Selection.Items);
         w.Close();
     }
 

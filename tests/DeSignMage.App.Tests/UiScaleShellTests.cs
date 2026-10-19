@@ -124,7 +124,7 @@ public class UiScaleShellTests
             var w = Open();
             var file = TopMenu(w, "_File");
             double menuBar100 = file.FontSize;
-            var status = w.FindControl<TextBlock>("HintText")!;
+            var status = w.FindControl<TextBlock>("CursorText")!;   // the Info Line's pointer position
             double status100 = status.FontSize, tooltip100 = ThemeSize("ToolTipContentThemeFontSize");
             Assert.Equal(12, status100);
 

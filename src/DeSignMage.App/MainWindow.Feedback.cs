@@ -9,7 +9,7 @@ using DeSignMage.Formats.Native;
 
 namespace DeSignMage.App;
 
-/// <summary>Feedback / Bug button and Help ▸ Send Feedback, automatic diagnostics, and the crash notice.</summary>
+/// <summary>The Feedback button and Help ▸ Send Feedback, automatic diagnostics, and the crash notice.</summary>
 public partial class MainWindow
 {
     private IReadOnlyList<string> _displayLines = [];

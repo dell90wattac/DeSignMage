@@ -10,7 +10,7 @@ namespace DeSignMage.Core.Editing.Tools;
 /// combined object) whose vectors are shown in <see cref="VectorPiece"/>s, hit testing against them, writing an edit back
 /// as one undo step, following the object when undo/redo swaps it, and the info line statistics.
 /// </summary>
-public abstract class PathEditToolBase : Tool
+public abstract class PathEditToolBase : Tool, IModeTool
 {
     protected readonly record struct NodeRef(int Piece, int Loop, int Node);
     protected readonly record struct SegRef(int Piece, int Loop, int Seg, double T);
@@ -35,6 +35,14 @@ public abstract class PathEditToolBase : Tool
     public override void PointerExited() => ClearHover();
 
     protected abstract void ClearHover();
+
+    // ---- Done and Cancel (every edit is an undo step; Cancel rolls them all back) ----
+
+    /// <summary>The mode is on while an object is open, and also after its last node was deleted (Cancel can bring it back).</summary>
+    bool IModeTool.IsInMode => HasTarget || Session.ModeHasChanges;
+    bool IModeTool.CanFinish => true;
+    Task IModeTool.FinishMode() { Session.SetTool("select"); return Task.CompletedTask; }
+    void IModeTool.DiscardPending() => Cancel();   // a drag in progress goes back where it was
 
     /// <summary>Another object was opened: forget which nodes, vectors or loops were selected on the old one.</summary>
     protected abstract void ResetSelection();

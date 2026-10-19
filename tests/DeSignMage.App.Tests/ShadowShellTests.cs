@@ -18,7 +18,7 @@ using Xunit;
 
 namespace DeSignMage.App.Tests;
 
-/// <summary>Effects ▸ Shadow, Extruded Shadow, Perspective Shadow and Cast Shadow in the real window: the menu, the strip and the Context Bar.</summary>
+/// <summary>Effects ▸ Shadow, Extruded Shadow, Perspective Shadow and Cast Shadow in the real window: the menu and the Context Bar.</summary>
 public class ShadowShellTests
 {
     private static MainWindow Open()
@@ -161,13 +161,11 @@ public class ShadowShellTests
     private static void Press(Button b) => b.RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
 
     [AvaloniaFact]
-    public void The_Effects_strip_has_a_button_for_each_shadow_and_the_forms_open_the_tool()
+    public void The_Effects_menu_has_an_item_for_each_shadow_and_the_forms_open_the_tool()
     {
         var w = Open();
         var a = AddRect(w, 200, 200, 100);
         w.Session.Selection.Set(a);
-        var strip = w.GetVisualDescendants().OfType<MenuStrip>().First();
-        Assert.True(new[] { "Drop", "Extruded", "Persp.", "Cast" }.All(l => strip.LabelsOf("Effects").Contains(l)));
         Click(EffectsItem(w, "Cast Shadow..."));
         Assert.Equal(ShadowForm.Cast, w.Session.GetTool<ShadowTool>().Settings.Form);
         Click(EffectsItem(w, "Extruded Shadow..."));

@@ -49,6 +49,7 @@ public sealed class VectorEditContextBar : ContextBarBase, IRefreshable
     private readonly Button _insert, _line, _arc, _bezier, _sharp, _corner, _smooth, _symmetric, _break, _setStart, _join, _delete;
     private readonly Control _position;   // the X / Y fields: only while a node is selected to move
     private readonly TextBlock _idle;     // the tool's hint, shown while no command applies
+    private readonly DoneCancelButtons _buttons;
     private bool _refreshing;
     private string _shownX = "", _shownY = "";   // what the fields were last set to: anything else was typed by the user
 
@@ -75,10 +76,13 @@ public sealed class VectorEditContextBar : ContextBarBase, IRefreshable
         // Row 1: the selected node's position and the readouts; row 2: a button per command.
         _position = ContextBars.Group(ContextBars.Field("X", _x, "in"), ContextBars.Field("Y", _y, "in"));
         _idle = ContextBars.Hint(tool.Hint);
+        _buttons = new DoneCancelButtons(session, "Keep the changes and go back to the Layout tool", "Take back every change made in this tool and go back to the Layout tool");
         foreach (var c in new Control[] { _position, PathBarParts.Gap(), _node, _length, _radius, _angle, _tangency })
             Row1.Children.Add(c);
-        foreach (var c in new Control[] { _insert, _line, _arc, _bezier, _sharp, PathBarParts.Gap(), _corner, _smooth, _symmetric, PathBarParts.Gap(), _break, _setStart, _join, _delete, _idle })
+        foreach (var c in new Control[] { _insert, _line, _arc, _bezier, _sharp, PathBarParts.Gap(), _corner, _smooth, _symmetric, PathBarParts.Gap(), _break, _setStart, _join, _delete })
             Row2.Children.Add(c);
+        _buttons.AddTo(Row2);
+        Row2.Children.Add(_idle);
         PathBarParts.RefreshWhileVisible(this, session, Refresh);
         Refresh();
     }
@@ -120,8 +124,14 @@ public sealed class VectorEditContextBar : ContextBarBase, IRefreshable
         ContextBars.Valid(_delete, _tool.CanDelete);
         _idle.Text = _tool.Hint;
         _idle.IsVisible = !new[] { _insert, _line, _arc, _bezier, _sharp, _corner, _smooth, _symmetric, _break, _setStart, _join, _delete }.Any(b => b.IsVisible);
+        _buttons.Refresh();
         _refreshing = false;
     }
+
+    // ---- For tests ----
+
+    internal Button Done => _buttons.Done;
+    internal Button Cancel => _buttons.Cancel;
 
     private static string Inches(double points) => $"{Units.ToInches(points).ToString("0.####", CultureInfo.InvariantCulture)} in";
 
@@ -138,6 +148,32 @@ public sealed class VectorEditContextBar : ContextBarBase, IRefreshable
     }
 }
 
+/// <summary>
+/// Vector Draw Context Bar: the tool's name and hint, and while a path is being drawn Done (finishes it where it is, left open, and goes to the Layout tool with
+/// it selected) and Cancel (throws the unfinished path away and goes to the Layout tool).
+/// </summary>
+public sealed class VectorDrawContextBar : ContextBarBase, IRefreshable
+{
+    private readonly DoneCancelButtons _buttons;
+
+    public VectorDrawContextBar(EditorSession session, VectorDrawTool tool)
+    {
+        _buttons = new DoneCancelButtons(session, "Finish the path where it is (left open) and go to the Layout tool", "Throw the unfinished path away and go to the Layout tool");
+        Row1.Children.Add(ContextBars.Label(tool.DisplayName));
+        _buttons.AddTo(Row1);
+        Row2.Children.Add(ContextBars.Hint(tool.Hint));
+        PathBarParts.RefreshWhileVisible(this, session, Refresh);   // a node placed is a redraw
+        Refresh();
+    }
+
+    public void Refresh() => _buttons.Refresh();
+
+    // ---- For tests ----
+
+    internal Button Done => _buttons.Done;
+    internal Button Cancel => _buttons.Cancel;
+}
+
 /// <summary>Loop Edit Context Bar: width, height and length of the selected loop and a button per loop command.</summary>
 public sealed class LoopEditContextBar : ContextBarBase, IRefreshable
 {
@@ -146,12 +182,14 @@ public sealed class LoopEditContextBar : ContextBarBase, IRefreshable
     private readonly TextBlock _size = PathBarParts.Value(), _length = PathBarParts.Value(), _which = PathBarParts.Value();
     private readonly Button _reverse, _open, _close, _circle, _delete, _breakOut, _reorder;
     private readonly CheckBox _numbers, _direction;
+    private readonly DoneCancelButtons _buttons;
     private bool _refreshing;
 
     public LoopEditContextBar(EditorSession session, LoopEditTool tool)
     {
         _session = session;
         _tool = tool;
+        _buttons = new DoneCancelButtons(session, "Keep the changes and go back to the Layout tool", "Take back every change made in this tool and go back to the Layout tool");
 
         _reverse = PathBarParts.Action("Reverse", "Reverse the loop's direction", tool.ReverseDirection);
         _open = PathBarParts.Action("Open Loop", "Open the loop at its start/end point", tool.OpenLoop);
@@ -167,6 +205,7 @@ public sealed class LoopEditContextBar : ContextBarBase, IRefreshable
             Row1.Children.Add(c);
         foreach (var c in new Control[] { _reverse, _open, _close, _circle, _delete, _breakOut, PathBarParts.Gap(), _reorder, _numbers, _direction })
             Row2.Children.Add(c);
+        _buttons.AddTo(Row2);
         PathBarParts.RefreshWhileVisible(this, session, Refresh);
         Refresh();
     }
@@ -197,8 +236,14 @@ public sealed class LoopEditContextBar : ContextBarBase, IRefreshable
         ContextBars.Valid(_reorder, _tool.CanReorder);
         _numbers.IsChecked = _tool.ShowNumbers;
         _direction.IsChecked = _tool.ShowDirection;
+        _buttons.Refresh();
         _refreshing = false;
     }
+
+    // ---- For tests ----
+
+    internal Button Done => _buttons.Done;
+    internal Button Cancel => _buttons.Cancel;
 
     private static string Inches(double points) => $"{Units.ToInches(points).ToString("0.####", CultureInfo.InvariantCulture)} in";
 }

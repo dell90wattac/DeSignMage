@@ -16,7 +16,7 @@ namespace DeSignMage.Core.Editing.Tools;
 /// </list>
 /// Every drag is one undo step. The gradient is stored relative to the object's bounds (<see cref="GradientPaint"/>), so it follows the object.
 /// </summary>
-public sealed class GradientTool : Tool
+public sealed class GradientTool : Tool, IModeTool
 {
     private const double MinGap = 0.002;   // closest two colors may get, as a fraction of the control line
 
@@ -80,6 +80,13 @@ public sealed class GradientTool : Tool
         base.Deactivate();
         Session.EndStyleGesture();
     }
+
+    // ---- Done and Cancel in the Context Bar (every change is an undo step; Cancel rolls them all back) ----
+
+    bool IModeTool.IsInMode => true;
+    bool IModeTool.CanFinish => true;
+    Task IModeTool.FinishMode() { Session.SetTool("select"); return Task.CompletedTask; }
+    void IModeTool.DiscardPending() { }
 
     // ---- Changing the gradient (the Context Bar and the Color Mixer call these) ----
 

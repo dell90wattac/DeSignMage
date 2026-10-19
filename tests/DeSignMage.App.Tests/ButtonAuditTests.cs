@@ -84,11 +84,11 @@ public class ButtonAuditTests
     private static List<Button> ToolbarButtons(MainWindow w) => w.FindControl<BarRow>("MainToolbar")!.Children.OfType<Button>().ToList();
 
     [AvaloniaFact]
-    public void The_Main_Toolbar_has_thirteen_buttons_and_no_vector_mode_button()
+    public void The_Main_Toolbar_has_seven_buttons_and_the_zoom_box_and_no_vector_mode_button()
     {
         var (w, _) = Open();
         var tips = ToolbarButtons(w).Select(b => ToolTip.GetTip(b)?.ToString() ?? "").ToList();
-        Assert.Equal(13, tips.Count);
+        Assert.Equal(7, tips.Count);                                               // Open, Save, Undo, Redo, Zoom Out, Zoom In, Zoom Layout (R38)
         Assert.DoesNotContain(tips, t => t.Contains("Vector Mode", StringComparison.OrdinalIgnoreCase));
         // the Toolbox button and View > Show Fill Colors are what is left for that setting
         Assert.NotNull(w.GetVisualDescendants().OfType<ToggleButton>().SingleOrDefault(b => b.Name == "ToolboxColorMode"));
@@ -110,49 +110,25 @@ public class ButtonAuditTests
         Press(w, B("Zoom Out"));
         Assert.True(w.Session.Viewport.ZoomPercent < zIn);
 
-        // Zoom Layout (the page), Zoom All
+        // Zoom Layout (the page)
         Press(w, B("Zoom In")); Press(w, B("Zoom In"));
         double zoomed = w.Session.Viewport.ZoomPercent;
         Press(w, B("Zoom Layout"));
         Assert.True(w.Session.Viewport.ZoomPercent < zoomed);
-        Press(w, B("Zoom In")); Press(w, B("Zoom In"));
-        zoomed = w.Session.Viewport.ZoomPercent;
-        Press(w, B("Zoom All"));
-        Assert.True(w.Session.Viewport.ZoomPercent < zoomed);
 
-        // Zoom Object: off without a selection, then fits the selection
-        Assert.False(B("Zoom Object").IsEnabled);
+        // Undo, Redo
         var r = AddRect(w, 100, 100, 60, 40);
-        w.Session.Selection.Set(r);
-        Flush();
-        Assert.True(B("Zoom Object").IsEnabled);
-        double before = w.Session.Viewport.ZoomPercent;
-        Press(w, B("Zoom Object"));
-        Assert.True(w.Session.Viewport.ZoomPercent > before);
-
-        // Delete, Undo, Redo
-        Assert.True(B("Delete").IsEnabled);
-        Press(w, B("Delete"));
-        Assert.DoesNotContain(r, w.Session.Document.ActiveLayer.Children);
+        Assert.True(B("Undo").IsEnabled);
         Press(w, B("Undo"));
-        Assert.Contains(r, w.Session.Document.ActiveLayer.Children);
-        Press(w, B("Redo"));
         Assert.DoesNotContain(r, w.Session.Document.ActiveLayer.Children);
+        Press(w, B("Redo"));
+        Assert.Contains(r, w.Session.Document.ActiveLayer.Children);
         Assert.False(B("Redo").IsEnabled);
-
-        // Show Guidelines, Snap to Guidelines
-        bool show = w.Session.ShowGuides, snap = w.Session.SnapToGuides;
-        Press(w, B("Show Guidelines"));
-        Assert.Equal(!show, w.Session.ShowGuides);
-        Press(w, B("Snap to Guidelines"));
-        Assert.Equal(!snap, w.Session.SnapToGuides);
-        Press(w, B("Show Guidelines"));
-        Assert.Equal(show, w.Session.ShowGuides);
         w.Close();
     }
 
     [AvaloniaFact]
-    public void Main_Toolbar_New_Open_and_Save_buttons_do_their_job()
+    public void Main_Toolbar_Open_and_Save_buttons_do_their_job_and_New_is_in_the_File_menu()
     {
         var (w, _) = Open();
         var tb = ToolbarButtons(w);
@@ -162,7 +138,7 @@ public class ButtonAuditTests
             AddRect(w, 50, 50);
             var path = Path.Combine(dir, "audit.dsm");
             w.SavePathOverride = _ => path;
-            Press(w, tb[2]);                                              // Save
+            Press(w, tb[1]);                                              // Save
             Pump(() => File.Exists(path) && !w.Session.History.IsModified);
             Assert.True(File.Exists(path));
             Assert.Equal(1, DsmReader.Load(path).Document.ObjectCount);
@@ -170,13 +146,14 @@ public class ButtonAuditTests
             AddRect(w, 300, 50);                                          // now two objects, unsaved
             w.SaveChangesOverride = (_, _) => Task.FromResult(MainWindow.SaveChoice.Discard);
             var old = w.Session;
-            Press(w, tb[0]);                                              // New
+            var file = w.FindControl<Menu>("MainMenu")!.Items.OfType<MenuItem>().Single(m => m.Header?.ToString() == "_File");
+            file.Items.OfType<MenuItem>().Single(m => m.Header?.ToString() == "_New").RaiseEvent(new Avalonia.Interactivity.RoutedEventArgs(MenuItem.ClickEvent));   // New
             Pump(() => !ReferenceEquals(w.Session, old));
             Assert.NotSame(old, w.Session);
             Assert.Equal(0, w.Session.Document.ObjectCount);
 
             w.OpenPathOverride = () => Task.FromResult<string?>(path);
-            Press(w, tb[1]);                                              // Open
+            Press(w, tb[0]);                                              // Open
             Pump(() => w.Session.Document.ObjectCount == 1);
             Assert.Equal(1, w.Session.Document.ObjectCount);
         }
@@ -251,10 +228,10 @@ public class ButtonAuditTests
     }
 
     [AvaloniaFact]
-    public void Select_bar_X_Y_W_H_fields_move_and_size_the_selection()
+    public void Info_Line_X_Y_W_H_fields_move_and_size_the_selection()
     {
         var (w, _) = Open();
-        var bar = Bar<SelectionContextBar>(w);
+        var bar = w.MeasureFields;
         var r = AddRect(w, 100, 100, 72, 36);                       // 1 x 0.5 in
         w.Session.Selection.Set(r);
         Flush();
@@ -275,7 +252,7 @@ public class ButtonAuditTests
     [AvaloniaFact]
     public async Task Select_bar_picture_buttons_rotate_flip_invert_crop_and_one_to_one()
     {
-        var (w, _) = Open(1800);   // the picture row is long, and the Context Bar's right end holds the menu tabs (R25): the buttons must be on screen to be pressed
+        var (w, _) = Open(1800);   // the picture row is long: the buttons must be on screen to be pressed
         var dir = Directory.CreateTempSubdirectory("dsm-audit-").FullName;
         try
         {
@@ -310,7 +287,7 @@ public class ButtonAuditTests
             Press(w, TextButton(bar, "Crop"));
             Assert.IsType<CropTool>(w.Session.ActiveTool);
             // the Crop bar's Cancel leaves the tool
-            Press(w, TextButton(Bar<CropContextBar>(w), "✕ Cancel"));
+            Press(w, TextButton(Bar<CropContextBar>(w), "Cancel"));
             Assert.IsType<SelectTool>(w.Session.ActiveTool);
         }
         finally { Directory.Delete(dir, true); }
@@ -544,7 +521,7 @@ public class ButtonAuditTests
         bool l0 = tool.Settings.LeaveOriginal;
         Press(w, leave);
         Assert.Equal(!l0, tool.Settings.LeaveOriginal);
-        Press(w, TextButton(outline, "✕ Cancel"));
+        Press(w, TextButton(outline, "Cancel"));
         Assert.IsType<SelectTool>(w.Session.ActiveTool);
 
         // Knife: Done, and a mode switch

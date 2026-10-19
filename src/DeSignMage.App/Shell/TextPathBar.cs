@@ -10,10 +10,10 @@ using TextAlignment = DeSignMage.Core.Model.TextAlignment;
 namespace DeSignMage.App.Shell;
 
 /// <summary>
-/// Text on Path Context Bar (R26: only choices that apply are shown). Row 1: Done and Remove, how the letters are spread (Fit the whole path or keep their natural
+/// Text on Path Context Bar (R26: only choices that apply are shown). Row 1: Remove, how the letters are spread (Fit the whole path or keep their natural
 /// spacing), where natural spacing starts (the text's alignment, shown only for natural spacing), the start offset and raise. Row 2: the side, flip, the curve
 /// compensation (hidden for a path that is a single arc, where it is forced to 0), then the path's own commands: Add Curve, Delete Curve, Bezier and Arc (each only
-/// when it can act on the selected vector). Every change is one undo step and the text re-flows at once.
+/// when it can act on the selected vector), and Done and Cancel at the end. Every change is one undo step and the text re-flows at once.
 /// </summary>
 public sealed class TextPathContextBar : ContextBarBase, IRefreshable
 {
@@ -26,7 +26,8 @@ public sealed class TextPathContextBar : ContextBarBase, IRefreshable
     private readonly EffectBarParts.Field _offset, _raise, _compensation;
     private readonly ComboBox _spacing, _side, _start;
     private readonly CheckBox _flip;
-    private readonly Button _done, _remove, _addCurve, _deleteCurve, _bezier, _arc;
+    private readonly Button _remove, _addCurve, _deleteCurve, _bezier, _arc;
+    private readonly DoneCancelButtons _buttons;
     private readonly Control _startGroup, _compensationGroup;
     private bool _refreshing;
 
@@ -53,7 +54,7 @@ public sealed class TextPathContextBar : ContextBarBase, IRefreshable
         ToolTip.SetTip(_raise.Box, "Raise: lifts the text off the path, toward the tops of the letters (inches; negative sinks it)");
         ToolTip.SetTip(_compensation.Box, "Curve compensation: evens out the gaps around bends. 0 is off; 0.5 is the usual setting");
 
-        _done = PathBarParts.Action("✓ Done", "Leave the tool; the text stays on its path (Enter)", () => { tool.Done(); ContextBars.FocusCanvas?.Invoke(); });
+        _buttons = new DoneCancelButtons(session, "Leave the tool; the text stays on its path (Enter)", "Take back everything done here, the path too, and leave the tool");
         _remove = PathBarParts.Action("Remove", "Take the path off: the text goes straight again (undoable)", () => { tool.Remove(); ContextBars.FocusCanvas?.Invoke(); });
         _addCurve = PathBarParts.Action("Add Curve", "Add a Bezier at the end of the path", () => { tool.AddCurve(); ContextBars.FocusCanvas?.Invoke(); });
         _deleteCurve = PathBarParts.Action("Delete Curve", "Delete the last vector of the path", () => { tool.DeleteCurve(); ContextBars.FocusCanvas?.Invoke(); });
@@ -63,10 +64,10 @@ public sealed class TextPathContextBar : ContextBarBase, IRefreshable
         _startGroup = ContextBars.Group(ContextBars.Label("From"), _start);
         _compensationGroup = ContextBars.Field("Compensation", _compensation.Box);
 
-        // The left half of the Context Bar is narrow (the menu strip has the right half), so the two rows share the load.
+        // The two rows share the load, so the bar stays as short as it can.
         foreach (var c in new Control[]
                  {
-                     _done, _remove, PathBarParts.Gap(),
+                     _remove, PathBarParts.Gap(),
                      _spacing, _startGroup, ContextBars.Field("Offset", _offset.Box, "in"), ContextBars.Field("Raise", _raise.Box, "in"),
                  })
             Row1.Children.Add(c);
@@ -76,6 +77,7 @@ public sealed class TextPathContextBar : ContextBarBase, IRefreshable
                      _addCurve, _deleteCurve, _bezier, _arc,
                  })
             Row2.Children.Add(c);
+        _buttons.AddTo(Row2);
 
         EffectBarParts.Bind(this, session, Refresh, h => tool.Changed += h, h => tool.Changed -= h);
         Refresh();
@@ -114,6 +116,7 @@ public sealed class TextPathContextBar : ContextBarBase, IRefreshable
         ContextBars.Valid(_deleteCurve, _tool.CanDeleteCurve);
         ContextBars.Valid(_bezier, _tool.CanToBezier);
         ContextBars.Valid(_arc, _tool.CanToArc);
+        _buttons.Refresh();
         _refreshing = false;
     }
 
@@ -128,7 +131,8 @@ public sealed class TextPathContextBar : ContextBarBase, IRefreshable
     internal TextBox CompensationBox => _compensation.Box;
     internal Control StartGroup => _startGroup;
     internal Control CompensationGroup => _compensationGroup;
-    internal Button Done => _done;
+    internal Button Done => _buttons.Done;
+    internal Button Cancel => _buttons.Cancel;
     internal Button Remove => _remove;
     internal Button AddCurve => _addCurve;
     internal Button DeleteCurve => _deleteCurve;

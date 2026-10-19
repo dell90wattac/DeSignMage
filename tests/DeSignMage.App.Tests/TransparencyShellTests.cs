@@ -143,47 +143,6 @@ public class TransparencyShellTests
         });
     }
 
-    [AvaloniaFact]
-    public async Task The_Tools_strip_has_a_Transparency_button_in_the_same_place_that_shows_pressed_and_unpressed()
-    {
-        await WithTheme(store =>
-        {
-            var w = Open();
-            var strip = w.FindControl<MenuStrip>("MenuStrip")!;
-            var commands = strip.CommandsOf("Tools").Select(c => c.Id).ToList();
-            Assert.Equal(commands.IndexOf("tool.loop") + 1, commands.IndexOf("tools.showTransparency"));
-            Assert.True(commands.IndexOf("tools.showTransparency") < commands.IndexOf("tools.options"));
-            Assert.Contains("Transparency", strip.LabelsOf("Tools"));
-
-            Press(w, strip.Tab("Tools"));
-            w.CaptureRenderedFrame();
-            var button = strip.ButtonsOf("Tools")[commands.IndexOf("tools.showTransparency")];
-            Assert.Equal("Show Transparency", ToolTip.GetTip(button));
-            Assert.NotNull(button.GetVisualDescendants().OfType<Avalonia.Controls.Shapes.Path>().FirstOrDefault());   // the little checkerboard icon
-            Assert.DoesNotContain("on", button.Classes);
-
-            Press(w, button);                                                    // pressed: on, and the pressed look
-            Assert.True(AppTheme.ShowTransparency);
-            Assert.Null(w.OpenMenuStrip);                                        // (the strip closes once a command ran, like a menu)
-            Press(w, strip.Tab("Tools"));
-            w.CaptureRenderedFrame();
-            Assert.Contains("on", button.Classes);
-            Press(w, button);
-            Assert.False(AppTheme.ShowTransparency);
-            Press(w, strip.Tab("Tools"));
-            w.CaptureRenderedFrame();
-            Assert.DoesNotContain("on", button.Classes);
-
-            // switched from the menu, the strip button follows
-            var item = ToolsMenu(w).Items.OfType<MenuItem>().Single(m => m.Header?.ToString() == "Show _Transparency");
-            item.RaiseEvent(new Avalonia.Interactivity.RoutedEventArgs(MenuItem.ClickEvent));
-            Flush();
-            Assert.Contains("on", button.Classes);
-            w.Close();
-            return Task.CompletedTask;
-        });
-    }
-
     // ---------------------------------------------------------------- on screen
 
     [AvaloniaFact]

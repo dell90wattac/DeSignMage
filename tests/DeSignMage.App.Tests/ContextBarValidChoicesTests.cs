@@ -159,15 +159,17 @@ public class ContextBarValidChoicesTests
     }
 
     [AvaloniaFact]
-    public void The_selection_fields_show_only_while_something_is_selected()
+    public void The_selection_fields_of_the_Info_Line_show_only_while_something_is_selected_and_never_on_the_Context_Bar()
     {
         var (w, _) = Open();
         var bar = SelectionBar(w);
-        var boxes = new[] { bar.X, bar.Y, bar.W, bar.H };
+        var m = w.MeasureFields;
+        var boxes = new[] { m.X, m.Y, m.W, m.H };
         Select(w);
         Assert.All(boxes, t => Assert.False(t.IsEffectivelyVisible));
         Select(w, AddRect(w, 100, 100));
         Assert.All(boxes, t => Assert.True(t.IsEffectivelyVisible && t.IsEnabled));
+        Assert.DoesNotContain(bar.GetVisualDescendants().OfType<TextBox>(), t => t.IsEffectivelyVisible);   // the Context Bar is only actions now
         w.Close();
     }
 
@@ -204,7 +206,7 @@ public class ContextBarValidChoicesTests
     {
         var (w, _) = Open();
         var s = w.Session;
-        var bar = SelectionBar(w);
+        var bar = w.MeasureFields;
 
         Select(w);                                                    // nothing selected: Layout W and H, the object fields gone
         Assert.True(bar.PageFields.IsVisible);

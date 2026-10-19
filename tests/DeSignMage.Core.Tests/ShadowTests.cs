@@ -505,16 +505,10 @@ public class ShadowTests
         Assert.Equal(new Vec2(210, 210), tool.Settings.Pivot);
         Assert.True(await tool.Apply());
 
-        var b = AddRect(500, 200, 100, 100);
-        _s.Selection.Set(b);
+        _s.Selection.Set(a);
         _s.BeginShadow(ShadowForm.Perspective);
         Assert.Equal(DocColor.FromHex("#808080"), tool.Settings.Color);                // the last color stays
         Assert.Null(tool.Settings.Pivot);                                              // a vanishing point belongs to the objects it was set on
-        _s.SetTool("select");
-
-        _s.Selection.Set(a.TopLevel);                                                  // reopened on the live shadow: its own settings, vanishing point too
-        _s.BeginShadow(ShadowForm.Perspective);
-        Assert.Equal(new Vec2(210, 210), tool.Settings.Pivot);
     }
 
     [Fact]

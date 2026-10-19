@@ -116,8 +116,7 @@ public class PlainUndoRedoKeysTests
         var (w, _, r) = Open();
         w.Session.NudgeSelection(new DeSignMage.Core.Geometry.Vec2(10, 0));              // something to undo that keeps r selected
         var moved = r.GetWorldBounds();
-        var bar = Assert.IsType<SelectionContextBar>(w.FindControl<ContentControl>("ContextBarHost")!.Content);
-        bar.X.Focus();
+        w.MeasureFields.X.Focus();                                                       // the X field of the Info Line
         Dispatcher.UIThread.RunJobs();
         Assert.IsType<TextBox>(w.FocusManager!.GetFocusedElement());
         foreach (var key in new[] { Key.Z, Key.Y }) Press(w, key);

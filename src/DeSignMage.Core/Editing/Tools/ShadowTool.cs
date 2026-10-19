@@ -11,7 +11,7 @@ namespace DeSignMage.Core.Editing.Tools;
 /// (it sets how far the top is pushed sideways and how tall the shadow is). The live preview of the shadow's outline follows every move on a worker
 /// thread (the newest request wins). Apply (or Enter) makes the shadow object, grouped with its source.
 /// </summary>
-public sealed class ShadowTool : Tool
+public sealed class ShadowTool : Tool, IModeTool
 {
     private ShadowSettings _remembered = new();
     private ShadowSnapshot? _snapshot;
@@ -34,9 +34,9 @@ public sealed class ShadowTool : Tool
 
     public override string Hint => Settings.Form switch
     {
-        ShadowForm.Cast => "CAST SHADOW: Drag the round point to set slant and height, or drag to move. Enter applies, Esc cancels   To ZOOM: Press right button",
-        ShadowForm.Perspective => "PERSPECTIVE SHADOW: Drag the round point to move the vanishing point, or drag to move. Enter applies, Esc cancels   To ZOOM: Press right button",
-        _ => "SHADOW: Drag to move the shadow, Shift+drag from an edge to set the outline. Enter or the check mark applies, Esc cancels   To ZOOM: Press right button",
+        ShadowForm.Cast => "CAST SHADOW: Drag the round point to set slant and height, or drag to move. Enter or Done applies, Esc or Cancel leaves   To ZOOM: Press right button",
+        ShadowForm.Perspective => "PERSPECTIVE SHADOW: Drag the round point to move the vanishing point, or drag to move. Enter or Done applies, Esc or Cancel leaves   To ZOOM: Press right button",
+        _ => "SHADOW: Drag to move the shadow, Shift+drag from an edge to set the outline. Enter or Done applies, Esc or Cancel leaves   To ZOOM: Press right button",
     };
 
     /// <summary>The fields. Change them with <see cref="Update"/>.</summary>
@@ -94,8 +94,7 @@ public sealed class ShadowTool : Tool
     public void Begin(ShadowForm form)
     {
         if (_snapshot is not null) Remember();
-        // reopened on objects with a live shadow: the settings it was made with (the menu item still picks the form)
-        Settings = ShadowEffect.ExistingSettings(Session) is { } live ? live with { Form = form } : _remembered with { Form = form, Pivot = null };
+        Settings = _remembered with { Form = form, Pivot = null };
         Retarget();
         // First start (or a shift that was cleared): 3 % of the height to the lower right.
         if (!Settings.HasShift && HasPercent) Settings = Settings with { ShiftX = 0.03 * Height, ShiftY = 0.03 * Height };
@@ -225,6 +224,18 @@ public sealed class ShadowTool : Tool
         {
             _applying = false;
         }
+    }
+
+    // ---- Done and Cancel (the shadow is only a preview until Done, so Cancel has nothing in the history to take back) ----
+
+    bool IModeTool.IsInMode => true;
+    bool IModeTool.CanFinish => CanApply;
+    Task IModeTool.FinishMode() => Apply();
+
+    void IModeTool.DiscardPending()
+    {
+        _live?.Cancel();
+        _drag = Drag.None;
     }
 
     // ---- Pointer ----

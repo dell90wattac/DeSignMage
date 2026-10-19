@@ -31,7 +31,7 @@ public class LiveEffectPerfTests(ITestOutputHelper output)
         return s;
     }
 
-    /// <summary>300 letters as separate shapes, each with a live drop shadow, and 700 plain shapes beside them.</summary>
+    /// <summary>300 letters as separate shapes, each with a live soft shadow, and 700 plain shapes beside them.</summary>
     private static (EditorSession S, List<DocObject> Letters, List<RectangleObject> Plain) Sign()
     {
         var s = NewSession();
@@ -52,7 +52,7 @@ public class LiveEffectPerfTests(ITestOutputHelper output)
             plain.Add(r);
         }
         s.Selection.Set(letters);
-        Assert.True(s.Shadow(new Core.Effects.ShadowSettings { ShiftX = 4, ShiftY = 4 }).Applied);
+        s.ApplySoftEffect(SoftEffect.Defaults(SoftKind.SoftShadow, 52));   // live soft shadows (hard shadows are plain objects)
         Assert.Equal(300, LiveEffects.All(s.Document).Count());
         return (s, letters, plain);
     }
@@ -116,25 +116,25 @@ public class LiveEffectPerfTests(ITestOutputHelper output)
     }
 
     [Fact]
-    public void Retyping_a_line_of_big_lettering_rebuilds_its_shadow_and_outline_quickly()
+    public void Retyping_a_line_of_big_lettering_rebuilds_its_soft_shadow_and_bevel_quickly()
     {
         var s = NewSession();
         var t = new TextObject("SALE TODAY ONLY", "Arial", 300) { Transform = Affine2.Translation(100, 400), Style = ObjectStyle.FillOnly(DocColor.Black) };
         s.History.Execute(new AddObjectCommand(s.Document.ActiveLayer, t));
         s.Selection.Set(t);
-        Assert.True(s.RunEffect(OutlineEffect.Plan(s, OutlineKind.Outline, new OutlineSettings { First = 9 })!).Applied);
+        s.ApplySoftEffect(SoftEffect.Defaults(SoftKind.SoftShadow, 216));
         s.Selection.Set(t);
-        Assert.True(s.Shadow(new Core.Effects.ShadowSettings { ShiftX = 12, ShiftY = 12, Outline = 4 }).Applied);
-        Assert.Equal(2, LiveEffects.EffectsOf(s.Document, t).Count);
+        s.ApplyBevel(new BevelSettings());
+        Assert.Equal(3, LiveEffects.EffectsOf(s.Document, t).Count);                         // soft shadow and two crescents
 
         string[] words = ["SALE TODAY ONLY!", "SALE TODAY ONLY"];
         int k = 0;
         double retype = Best(4, () => { }, () => s.History.Execute(new SetTextCommand(t, words[k++ % 2])));
-        output.WriteLine($"retype a 300 pt line with a live outline and shadow: {retype:0.0} ms");
+        output.WriteLine($"retype a 300 pt line with a live soft shadow and bevel: {retype:0.0} ms");
         Assert.True(retype < 600, $"{retype:0.0} ms");
 
         double move = Best(4, () => { }, () => s.History.Execute(TransformObjectsCommand.ApplyWorld("Move", [t.TopLevel], Affine2.Translation(3, 0))));
-        output.WriteLine($"move it with its group (outline shifted, shadow along): {move:0.00} ms");
+        output.WriteLine($"move it with its group (effects along, nothing rebuilt): {move:0.00} ms");
         Assert.True(move < 10, $"{move:0.00} ms");
     }
 }

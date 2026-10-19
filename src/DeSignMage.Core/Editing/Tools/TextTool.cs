@@ -21,7 +21,7 @@ namespace DeSignMage.Core.Editing.Tools;
 /// </list>
 /// Per-gap kerning follows the letters through insertions and deletions. Not yet: IME composition, copy/paste of text, multi-line entry.
 /// </summary>
-public sealed class TextTool : Tool
+public sealed class TextTool : Tool, IModeTool
 {
     private TextObject? _target;
     private bool _isNew, _dragging, _enterMakesNewLine;
@@ -118,6 +118,7 @@ public sealed class TextTool : Tool
 
     private void Enter(TextObject t, bool isNew, int caret, bool newLines)
     {
+        Session.MarkMode();   // each text being typed is its own mode: Cancel takes back this one, not the lines finished before it
         _target = t;
         _isNew = isNew;
         _enterMakesNewLine = newLines;
@@ -165,6 +166,38 @@ public sealed class TextTool : Tool
     }
 
     public override void Activate() { }
+
+    // ---- Done and Cancel (the mode is the text being typed) ----
+
+    bool IModeTool.IsInMode => IsEditing;
+    bool IModeTool.CanFinish => true;
+
+    /// <summary>Done: finishes the text as clicking away does (the net change becomes one undo step, empty new text is dropped), then goes to the Layout tool with the text selected.</summary>
+    Task IModeTool.FinishMode()
+    {
+        Finish();
+        return Task.CompletedTask;
+    }
+
+    /// <summary>Cancel, first part: new text is thrown away; the typing in existing text is undone. (Font changes made meanwhile are undo steps, rolled back by the session.)</summary>
+    void IModeTool.DiscardPending()
+    {
+        _boxStart = null;
+        _dragging = false;
+        if (_target is not { } t) return;
+        _target = null;
+        var doc = Session.Document;
+        if (_isNew)
+        {
+            if (doc.Contains(t)) doc.Remove(t);
+        }
+        else if (doc.Contains(t))
+        {
+            t.Text = _origText;
+            t.Kerning = _origKerning;
+        }
+        doc.NotifyChanged();
+    }
 
     /// <summary>Switching tools, undo and redo all end edit mode first, keeping what was typed.</summary>
     public override void Cancel()

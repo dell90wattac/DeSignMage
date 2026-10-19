@@ -144,8 +144,7 @@ public class PlainClipboardKeysTests
     public void The_plain_letters_are_ignored_in_a_focused_text_field_and_drop_down()
     {
         var (w, _, r) = Open();
-        var bar = Assert.IsType<SelectionContextBar>(w.FindControl<ContentControl>("ContextBarHost")!.Content);
-        bar.X.Focus();
+        w.MeasureFields.X.Focus();                                                       // the X field of the Info Line
         Dispatcher.UIThread.RunJobs();
         Assert.IsType<TextBox>(w.FocusManager!.GetFocusedElement());
         foreach (var key in new[] { Key.X, Key.C, Key.V }) Press(w, key);

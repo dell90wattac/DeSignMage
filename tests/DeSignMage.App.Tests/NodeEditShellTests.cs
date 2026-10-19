@@ -184,7 +184,7 @@ public class NodeEditShellTests
         Assert.Contains("0 lines  0 arcs  3 beziers", info);
         w.Session.SetTool("select");
         Dispatcher.UIThread.RunJobs();
-        Assert.Contains("Objects", w.FindControl<TextBlock>("InfoLine")!.Text!);
+        Assert.Contains("1 object · 0 groups", w.FindControl<TextBlock>("InfoLine")!.Text!);
         w.Close();
     }
 

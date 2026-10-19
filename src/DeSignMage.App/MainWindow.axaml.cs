@@ -51,12 +51,14 @@ public partial class MainWindow : Window
         MenuNode.Menu("_Help", "help.feedback", "-", "help.about"),
     ];
 
-    /// <summary>Main toolbar layout ("-" = gap).</summary>
+    /// <summary>
+    /// Main toolbar layout ("-" = gap, "@zoom" = the zoom box). Only what is needed all the time (R38); New, Delete, Zoom All, Zoom Object,
+    /// the guide switches and the dark-mode switches are in the menus (with their keys).
+    /// </summary>
     private static readonly string[] ToolbarLayout =
     [
-        "file.new", "file.open", "file.save", "-", "edit.undo", "edit.redo", "edit.delete", "-",
-        "view.zoomIn", "view.zoomOut", "view.zoomPage", "view.zoomAll", "view.zoomSelection", "-",
-        "view.guides", "view.snapGuides",
+        "file.open", "file.save", "-", "edit.undo", "edit.redo", "-",
+        "view.zoomOut", "@zoom", "view.zoomIn", "view.zoomPage",
     ];
 
     private readonly StartupOptions _options;
@@ -78,9 +80,15 @@ public partial class MainWindow : Window
     private Shell.ColorUiState? _colorState;
     private Shell.ProjectColorBar _projectColorBar = null!;
     private Shell.ColorMixer _colorMixer = null!;
+    private Shell.MeasureFields _measureFields = null!;
+    private readonly Shell.ZoomBox _zoomBox = new();
     internal Shell.ColorUiState ColorState => _colorState!;
     internal Shell.ProjectColorBar ProjectColorBar => _projectColorBar;
     internal Shell.ColorMixer ColorMixer => _colorMixer;
+    /// <summary>The X, Y, W, H fields of the Info Line (and the layout's size while nothing is selected).</summary>
+    internal Shell.MeasureFields MeasureFields => _measureFields;
+    /// <summary>The zoom box of the Main Toolbar.</summary>
+    internal Shell.ZoomBox ZoomControl => _zoomBox;
 
     public MainWindow() : this(new StartupOptions()) { }
 
@@ -97,8 +105,7 @@ public partial class MainWindow : Window
 
         foreach (var node in MenuLayout) MainMenu.Items.Add(MenuNode.Build(node, _commands));
         BuildToolbar();
-        InitThemeButtons();
-        InitMenuStrip();
+        InfoBar.Flash = FlashText;
         InitFileOpening();
         VectorFiles.Importer ??= new FormatsVectorImporter(() => _session?.BooleanService);   // PDF, AI, EPS and SVG (File > Open, drag and drop)
         InitRecentMenu();
@@ -130,7 +137,7 @@ public partial class MainWindow : Window
         {
             if (e.PreviousSize.Height > 0) Surface.TopEdgeMoving(e.NewSize.Height - e.PreviousSize.Height);
         };
-        // The frame times are for the developer: on a narrow window their room goes to the tool hint.
+        // The frame times are for the developer: they only show on a wide window.
         BottomBar.SizeChanged += (_, e) => PerfText.IsVisible = e.NewSize.Width >= PerfTextMinWindow;
 
         var perfTimer = new DispatcherTimer { Interval = TimeSpan.FromMilliseconds(500) };
@@ -173,11 +180,14 @@ public partial class MainWindow : Window
         _colorState = new Shell.ColorUiState(_colorState);
         Shell.PaletteStrip.Populate(PaletteStripHost, session);
         ProjectColorBarHost.Children.Clear();
+        MeasureHost.Children.Clear();
         ColorMixerHost.Children.Clear();
         _refreshables.Clear();
         _projectColorBar = new Shell.ProjectColorBar(ProjectColorBarHost, session, _colorState);
+        _measureFields = new Shell.MeasureFields(MeasureHost, session);
         _colorMixer = new Shell.ColorMixer(ColorMixerHost, session, _colorState);
         _refreshables.Add(_projectColorBar);
+        _refreshables.Add(_measureFields);
         _refreshables.Add(_colorMixer);
         session.DefaultStyleChanged += (_, _) => QueueRefresh();
         session.GetTool<Core.Editing.Tools.GradientTool>().Changed += (_, _) => QueueRefresh();   // the Color Mixer follows the picked gradient color
@@ -186,18 +196,14 @@ public partial class MainWindow : Window
         session.Document.Changed += (_, _) => QueueRefresh();
         session.Selection.Changed += (_, _) => QueueRefresh();
         session.History.Changed += (_, _) => QueueRefresh();
-        session.Viewport.Changed += (_, _) => ZoomText.Text = $"{session.Viewport.ZoomPercent:0.#}%";
+        _zoomBox.Session = session;   // the zoom box in the Main Toolbar follows this design's view
         session.ToolChanged += (_, _) => OnToolChanged();
         session.GuideStateChanged += (_, _) => ShowContextBar();
         session.ContextMenuRequested += (_, req) => ShowObjectMenu(req);
         session.Beep = Shell.SystemBeep.Play;   // a refused Vector Edit box
         session.DisplayChanged += (_, _) => QueueRefresh();   // toolbar toggle state
         Surface.PointerDocChanged += (_, _) => OnPointerDocChanged();
-        Surface.Redrawn += (_, _) =>
-        {
-            HintText.Text = _flash ?? _session.Hint;
-            ShowPagePreviewSize();
-        };
+        Surface.Redrawn += (_, _) => ShowPagePreviewSize();
 
         OnToolChanged();
         RefreshPanels();
@@ -332,6 +338,11 @@ public partial class MainWindow : Window
                 MainToolbar.Children.Add(ContextBars.Separator());
                 continue;
             }
+            if (id == "@zoom")
+            {
+                MainToolbar.Children.Add(_zoomBox);
+                continue;
+            }
             var c = _commands.Get(id);
             var glyph = new TextBlock { Text = c.Glyph ?? "?" };
             glyph.Classes.Add("glyph");
@@ -415,9 +426,14 @@ public partial class MainWindow : Window
             _session.ModifiersChanged(DeSignMage.App.Canvas.DesignCanvas.ToModifiers(e.KeyModifiers) | ModifierKeys.Control);
 
         // Let text fields keep their keys (except Escape, which returns focus to the canvas).
-        if (FocusManager?.GetFocusedElement() is TextBox)
+        if (FocusManager?.GetFocusedElement() is TextBox focusedBox)
         {
-            if (e.Key == Key.Escape) { Surface.Focus(); e.Handled = true; }
+            if (e.Key == Key.Escape)
+            {
+                if (ReferenceEquals(focusedBox, _zoomBox.Box)) _zoomBox.CancelTyping();   // the zoom box drops what was typed
+                Surface.Focus();
+                e.Handled = true;
+            }
             return;
         }
 
@@ -495,7 +511,6 @@ public partial class MainWindow : Window
         AppLog.Info("tool", $"active tool: {_session.ActiveTool.Id}");
         ContextBarHost.Content = null;
         ShowContextBar();
-        MenuStrip.Refresh();   // the Tools strip shows the active tool pressed, like the Toolbox
     }
 
     /// <summary>The Context Bar is the active tool's, or the guide bar while a ruler guide is selected.</summary>
@@ -509,7 +524,6 @@ public partial class MainWindow : Window
         {
             ContextBarHost.Content = ContextBars.Create(_session.ActiveTool, _session);
         }
-        HintText.Text = _session.Hint;
         QueueRefresh();
     }
 
@@ -559,7 +573,6 @@ public partial class MainWindow : Window
     {
         var doc = _session.Document;
         foreach (var r in _refreshables) r.Refresh();
-        MenuStrip.Refresh();
         if (ContextBarHost.Content is IRefreshable bar) bar.Refresh();
         foreach (var tb in _toolbarButtons)
         {
@@ -567,23 +580,29 @@ public partial class MainWindow : Window
             if (tb.Command.IsChecked is { } isOn) tb.Button.Classes.Set("on", isOn());
         }
 
-        var b = _session.Selection.GetBounds();
-        int groups = doc.GroupCount;
+        int groups = doc.GroupCount, objects = doc.ObjectCount - groups;
         long bitmapBytes = BitmapStats.TotalBytes(doc);
+        // The Info Line (R38): what is selected, then what the design holds. The size of the selection is in the measurement fields.
+        var selected = _session.Selection.Items;
+        string selection = selected.Count switch
+        {
+            0 => "",
+            1 => selected[0].KindName + " selected",
+            int n => $"{n} selected",
+        } + (selected.Count > 0 && _session.SelectionLocked ? " (locked)" : "");
         // A single selected picture: its pixels and resolution, as plain information.
-        string pictureInfo = _session.Selection.Items is [ImageObject picture] && ImageSizing.InfoText(picture) is { } text ? "    " + text : "";
+        string pictureInfo = selected is [ImageObject picture] && ImageSizing.InfoText(picture) is { } text ? " · " + text : "";
         // A live effect selected: what it follows; a selection holding (or having) live effects: how many.
         int liveCount = _session.SelectedLiveEffectCount;
-        string liveInfo = _session.SelectedLiveEffect is { } liveEffect ? "    " + Core.Effects.LiveEffects.Describe(liveEffect)
-            : liveCount > 0 ? $"    {liveCount} live effect{(liveCount == 1 ? "" : "s")}" : "";
-        pictureInfo += liveInfo;
+        string liveInfo = _session.SelectedLiveEffect is { } liveEffect ? " · " + Core.Effects.LiveEffects.Describe(liveEffect)
+            : liveCount > 0 ? $" · {liveCount} live effect{(liveCount == 1 ? "" : "s")}" : "";
         // While a path tool has an object open, the info line describes that graphic (R8 item 7).
         InfoLine.Text = _session.ActiveTool is PathEditToolBase { HasTarget: true } pathTool
             ? pathTool.InfoLine()
-            : string.Create(CultureInfo.InvariantCulture,
-            $"{(b.IsEmpty ? "" : $"{Units.ToInches(b.Width):0.0000} x {Units.ToInches(b.Height):0.0000}    ")}" +
-            $"{doc.ObjectCount - groups} Objects    {groups} Groups    Bitmaps: {bitmapBytes / 1048576.0:0.00} MB total{pictureInfo}");
-        ZoomText.Text = $"{_session.Viewport.ZoomPercent:0.#}%";
+            : (selection.Length > 0 ? selection + " · " : "") + $"{objects} object{(objects == 1 ? "" : "s")} · {groups} group{(groups == 1 ? "" : "s")}" + pictureInfo + liveInfo;
+        // Bitmaps only while the design has pictures.
+        BitmapsText.IsVisible = bitmapBytes > 0;
+        BitmapsText.Text = string.Create(CultureInfo.InvariantCulture, $"Bitmaps: {bitmapBytes / 1048576.0:0.00} MB");
         Title = $"{_documentTitle}{(_session.History.IsModified ? " *" : "")} - DeSign Mage";
 
         RefreshLayers();

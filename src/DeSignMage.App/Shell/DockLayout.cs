@@ -3,15 +3,14 @@ namespace DeSignMage.App.Shell;
 /// <summary>
 /// Which Dock panel is open (R17). One panel at a time: clicking a closed Dock Tab opens that panel across the Dock's whole height
 /// (the one that was open closes), and clicking the open tab closes it, which leaves only the tab strip. Nothing is remembered: the program
-/// always starts with every panel closed. Pure logic, no controls: the window just shows what this says. The Context Bar's menu tabs
-/// (R25) follow the same rule, so they use the same class with their own list of tabs.
+/// always starts with every panel closed. Pure logic, no controls: the window just shows what this says.
 /// </summary>
 public sealed class DockLayout
 {
     /// <summary>Every Dock panel, in the order of their Dock Tabs.</summary>
     public static readonly IReadOnlyList<string> AllPanels = ["colorMixer", "layers", "history"];
 
-    /// <summary>The tabs this instance knows (the Dock's three, or a menu strip's).</summary>
+    /// <summary>The tabs this instance knows (the Dock's three, or the list a test gives it).</summary>
     public IReadOnlyList<string> Panels { get; }
 
     public DockLayout(IReadOnlyList<string>? panels = null) => Panels = panels ?? AllPanels;

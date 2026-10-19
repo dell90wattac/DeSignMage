@@ -27,11 +27,10 @@ The parts of the main window have fixed names, used in tooltips, menus, code and
 
 | Name | Where / what |
 |---|---|
-| **Main Toolbar** | the icons on the top row with the menus, Feedback / Bug at the far right |
-| **Context Bar** | the band under it that changes with the tool and the selection: one line, or two when its controls do not fit side by side |
-| **Menu Tabs** | Image, Effects and Tools tabs on the top row; each drops a strip of buttons down over the canvas |
+| **Main Toolbar** | the few icons on the top row after the menus (Open, Save, Undo, Redo, the zoom box); the Feedback button is at the far right |
+| **Context Bar** | the band under it that changes with the tool and the selection: only actions and the tool's own settings; one line, or two when its controls do not fit side by side |
 | **Toolbox** | the column of tool buttons on the left |
-| **Info Line** | the counts and sizes in the bottom bar, after the Project Color Bar |
+| **Info Line** | the bottom bar after the Project Color Bar: the X, Y, W, H fields (or the layout's size), what is selected, the object and group counts, the pointer position, and short messages |
 | **Dock** / **Dock Tabs** | the right column (Color Mixer, Layers, History), one panel at a time |
 | **Color Mixer** | wheel, sliders, Fill / Stroke target, eyedropper |
 | **Palette Strip** | the far-right column of swatches, with the red X (remove all color) on top |

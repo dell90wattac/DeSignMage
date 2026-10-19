@@ -336,24 +336,25 @@ public class DockAndSpacingTests
             w.CaptureRenderedFrame();
 
             // gaps: one third of the text's growth
-            Assert.Equal(new Thickness(8 * sp, 3 * sp), w.FindControl<Border>("ContextBarBorder")!.Padding);
+            Assert.Equal(new Thickness(8 * sp, 2 * sp), w.FindControl<Border>("ContextBarBorder")!.Padding);
             Assert.Equal(8 * sp, w.FindControl<BarRow>("ProjectColorBarHost")!.Spacing, 6);
             Assert.Equal(6 * sp, w.FindControl<StackPanel>("ColorMixerHost")!.Spacing, 6);
             Assert.Equal(2 * sp, w.FindControl<StackPanel>("ToolboxHost")!.Spacing, 6);
             var bar = Assert.IsType<SelectionContextBar>(w.FindControl<ContentControl>("ContextBarHost")!.Content);
             var row = bar.GetVisualDescendants().OfType<BarRow>().First();
-            Assert.Equal(8 * sp, row.Spacing, 6);
+            Assert.Equal(6 * sp, row.Spacing, 6);
 
             // text and controls: the full text scale
-            Assert.Equal(12 * text, bar.X.FontSize, 3);
-            Assert.Equal(70 * text, bar.X.Bounds.Width, 1);
+            var x = w.MeasureFields.X;                                       // the Info Line's X field
+            Assert.Equal(12 * text, x.FontSize, 3);
+            Assert.Equal(70 * text, x.Bounds.Width, 1);
             Assert.Equal(30 * text, row.Bounds.Height, 1);
 
             // the heights hold: on a wide window the Context Bar is one row plus the (slowly growing) padding, whatever the tool
             double top = w.FindControl<Border>("TopRowBorder")!.Bounds.Height;
             Assert.InRange(w.FindControl<Border>("ContextBarBorder")!.Bounds.Height, ContextBars.OneLineHeight - 1, ContextBars.OneLineHeight + 1);   // layout rounds to whole pixels
-            Assert.Equal(30 * text + 6 * sp + 1, ContextBars.OneLineHeight, 3);
-            Assert.Equal(2 * 30 * text + 10 * sp + 1, ContextBars.TwoLineHeight, 3);
+            Assert.Equal(30 * text + 4 * sp + 1, ContextBars.OneLineHeight, 3);
+            Assert.Equal(2 * 30 * text + 8 * sp + 1, ContextBars.TwoLineHeight, 3);
             foreach (var tool in new[] { "vector", "text", "outline", "select" })
             {
                 w.Session.SetTool(tool);

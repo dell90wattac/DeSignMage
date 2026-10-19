@@ -5,11 +5,11 @@ namespace DeSignMage.Core.Editing.Tools;
 
 /// <summary>
 /// Image ▸ Crop Tool. Modal: drag a box over the picture (it cannot leave the picture), adjust it by dragging inside it (move)
-/// or its handles (resize), then Enter, a double-click or the Context Bar's check mark crops; Esc cancels.
+/// or its handles (resize), then Enter, a double-click or the Context Bar's Done crops; Esc or Cancel leaves without cropping.
 /// Dragging outside the box starts a new one. The box lives in the picture's own frame (points), so a rotated or scaled
 /// picture crops correctly. Cropping removes pixels and is one undo step.
 /// </summary>
-public sealed class CropTool : Tool
+public sealed class CropTool : Tool, IModeTool
 {
     private enum Mode { None, Drawing, Moving, Resizing }
 
@@ -77,6 +77,13 @@ public sealed class CropTool : Tool
         Session.SetTool("select");
         return done;
     }
+
+    // ---- Done and Cancel (the box is only a preview until Done, so Cancel has nothing in the history to take back) ----
+
+    bool IModeTool.IsInMode => true;
+    bool IModeTool.CanFinish => BoxPixels is not null;
+    Task IModeTool.FinishMode() { Apply(); return Task.CompletedTask; }
+    void IModeTool.DiscardPending() { _mode = Mode.None; _box = null; }
 
     public override void Deactivate()
     {

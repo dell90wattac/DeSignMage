@@ -149,15 +149,6 @@ public class GuideButtonsShellTests
         w.Close();
     }
 
-    [AvaloniaFact]
-    public void The_Tools_strip_is_unchanged_it_lists_tools_not_these_buttons()
-    {
-        var w = Open();
-        var strip = w.FindControl<MenuStrip>("MenuStrip")!;
-        Assert.DoesNotContain(strip.CommandsOf("Tools"), c => c.Id is not null && c.Id.StartsWith("layout.guide"));
-        w.Close();
-    }
-
     /// <summary>Pictures of the Toolbox with a selected object and the three guides, light and dark, when DSM_SCREENSHOTS names a folder (docs only).</summary>
     [AvaloniaFact]
     public void Screenshots_of_the_guide_buttons_for_notes()

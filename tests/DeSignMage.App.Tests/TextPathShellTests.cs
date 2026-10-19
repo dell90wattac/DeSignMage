@@ -18,7 +18,7 @@ using Xunit;
 
 namespace DeSignMage.App.Tests;
 
-/// <summary>Effects ▸ Text on Path through the real window: the menu entry, the tool, its Context Bar, the canvas drag, the strip button.</summary>
+/// <summary>Effects ▸ Text on Path through the real window: the menu entry, the tool, its Context Bar, the canvas drag.</summary>
 public class TextPathShellTests
 {
     private static (MainWindow Window, DesignCanvas Canvas) Open(int width = 1600)
@@ -241,44 +241,14 @@ public class TextPathShellTests
         var bar = Bar(w);
         var rows = bar.GetVisualDescendants().OfType<BarRow>().Take(2).ToList();
         Assert.Equal(2, rows.Count);
-        double half = w.Bounds.Width / 2;
+        double edge = w.FindControl<Border>("ContextBarBorder")!.Bounds.Right;   // the Context Bar ends at the Dock's edge
         foreach (var row in rows)
         {
             var visible = row.Children.Where(c => c.IsVisible && c.Bounds.Width > 0.5).ToList();
             Assert.NotEmpty(visible);
             Assert.Single(visible.Select(c => Math.Round((c.Bounds.Y + c.Bounds.Height / 2) / 8)).Distinct());        // one line
-            Assert.All(visible, c => Assert.True(c.TranslatePoint(new Point(c.Bounds.Width, 0), w)!.Value.X <= half + 0.5, $"{c.GetType().Name} reaches into the menu strip's half"));
+            Assert.All(visible, c => Assert.True(c.TranslatePoint(new Point(c.Bounds.Width, 0), w)!.Value.X <= edge + 0.5, $"{c.GetType().Name} reaches past the Context Bar"));
         }
-        w.Close();
-    }
-
-    // ---- The Effects strip ----
-
-    [AvaloniaFact]
-    public void The_Effects_strip_has_a_Text_on_Path_button_that_runs_the_command_and_everything_still_fits_on_two_lines()
-    {
-        var (w, _) = Open(1600);
-        var strip = w.FindControl<MenuStrip>("MenuStrip")!;
-        Assert.Contains("effects.textOnPath", strip.CommandsOf("Effects").Select(c => c.Id));
-        Assert.Contains("Path", strip.LabelsOf("Effects"));
-        Assert.Contains("effects.textOnPath", MenuStripIcons.Ids);                 // it has its own drawn icon
-
-        var s = w.Session;
-        var t = AddText(w);
-        s.Selection.Set(t);
-        Press(w, strip.Tab("Effects"));
-        w.CaptureRenderedFrame();
-        var buttons = strip.ButtonsOf("Effects");
-        var panel = strip.Panel;
-        Point At(Control ctl) => ctl.TranslatePoint(default, w)!.Value;
-        Assert.All(buttons, b => Assert.InRange(At(b).Y, At(panel).Y, At(panel).Y + panel.Bounds.Height));
-        Assert.InRange(buttons.Select(b => Math.Round(At(b).Y)).Distinct().Count(), 1, 2);   // at most two lines at 1600 px
-
-        var button = buttons[strip.CommandsOf("Effects").ToList().FindIndex(c => c.Id == "effects.textOnPath")];
-        Assert.True(button.IsEnabled);
-        Press(w, button);
-        Assert.IsType<TextPathTool>(s.ActiveTool);
-        Assert.True(t.IsOnPath);
         w.Close();
     }
 }

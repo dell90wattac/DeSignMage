@@ -32,7 +32,7 @@
     <Setter Property="HorizontalContentAlignment" Value="Center" />
     <Setter Property="VerticalContentAlignment" Value="Center" />
   </Style>
-  <!-- On/off toolbar buttons (Show Guidelines, Snap to Guidelines, lock ...) look pressed while on. -->
+  <!-- On/off toolbar buttons (lock, ...) look pressed while on. -->
   <Style Selector="Button.tb.on">
     <Setter Property="Background" Value="{DynamicResource Ui.OnBack}" />
     <Setter Property="BorderBrush" Value="{DynamicResource Ui.OnBorder}" />
@@ -89,34 +89,6 @@
     <Setter Property="BorderBrush" Value="{DynamicResource Ui.TabBorder}" />
     <Setter Property="Foreground" Value="{DynamicResource Ui.TabTextOpen}" />
   </Style>
-  <!-- Menu tabs (Image, Effects, Tools) in the top row: small rounded buttons with a down arrow; pressed while their strip is down. -->
-  <Style Selector="ToggleButton.mtab">
-    <Setter Property="Height" Value="{DynamicResource Ui.DockTabHeight}" />
-    <Setter Property="MinHeight" Value="0" />
-    <Setter Property="MinWidth" Value="0" />
-    <Setter Property="Padding" Value="9,0,7,0" />
-    <Setter Property="FontSize" Value="{DynamicResource Ui.FontSize}" />
-    <Setter Property="CornerRadius" Value="4" />
-    <Setter Property="VerticalAlignment" Value="Center" />
-    <Setter Property="VerticalContentAlignment" Value="Center" />
-    <Setter Property="Background" Value="{DynamicResource Ui.TabBack}" />
-    <Setter Property="BorderBrush" Value="{DynamicResource Ui.TabBorder}" />
-    <Setter Property="BorderThickness" Value="1" />
-    <Setter Property="Foreground" Value="{DynamicResource Ui.TabText}" />
-  </Style>
-  <Style Selector="ToggleButton.mtab /template/ ContentPresenter#PART_ContentPresenter">
-    <Setter Property="Background" Value="{DynamicResource Ui.TabBack}" />
-    <Setter Property="BorderBrush" Value="{DynamicResource Ui.TabBorder}" />
-  </Style>
-  <Style Selector="ToggleButton.mtab:pointerover /template/ ContentPresenter#PART_ContentPresenter">
-    <Setter Property="Background" Value="{DynamicResource Ui.TabHoverBack}" />
-    <Setter Property="BorderBrush" Value="{DynamicResource Ui.TabHoverBorder}" />
-  </Style>
-  <Style Selector="ToggleButton.mtab:checked /template/ ContentPresenter#PART_ContentPresenter">
-    <Setter Property="Background" Value="{DynamicResource Ui.OnBack}" />
-    <Setter Property="BorderBrush" Value="{DynamicResource Ui.OnBorder}" />
-    <Setter Property="Foreground" Value="{DynamicResource Ui.TabTextOpen}" />
-  </Style>
   <Style Selector="Button.act">
     <Setter Property="Padding" Value="{DynamicResource Ui.ActPadding}" />
     <Setter Property="MinHeight" Value="{DynamicResource Ui.NumMinHeight}" />
@@ -162,18 +134,6 @@
   </Style>
   <Style Selector="TabItem:pointerover">
     <Setter Property="Foreground" Value="{DynamicResource Ui.TabItemTextHover}" />
-  </Style>
-  <!-- Buttons of a menu strip (R25): dimmed while their command is not available (the drawn icons do not follow Foreground). -->
-  <Style Selector="Button.tb.strip">
-    <Setter Property="MinWidth" Value="0" />
-    <Setter Property="MinHeight" Value="0" />
-    <Setter Property="Padding" Value="5,0" />
-    <Setter Property="Margin" Value="1,0" />
-    <Setter Property="BorderThickness" Value="0" />
-    <Setter Property="VerticalContentAlignment" Value="Center" />
-  </Style>
-  <Style Selector="Button.strip:disabled">
-    <Setter Property="Opacity" Value="0.4" />
   </Style>
   <!-- A hint or a quiet note: muted in either mode. -->
   <Style Selector="TextBlock.muted">

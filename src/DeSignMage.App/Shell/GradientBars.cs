@@ -9,9 +9,9 @@ namespace DeSignMage.App.Shell;
 
 /// <summary>
 /// Gradient Blend Context Bar. First row: the gradient type (Flat, Linear, Vertical, Horizontal, Circle, Ellipse), Alternate Colors and Reflect, and
-/// which color is picked. Second row: the saved gradients with Add, Update and Delete, Remove (back to a plain fill) and Done. Only what works now
+/// which color is picked. Second row: the saved gradients with Add, Update and Delete, Remove (back to a plain fill), Done and Cancel. Only what works now
 /// is shown (R26): without a gradient there are no flags and no Remove; Update and Delete need a saved gradient picked; with nothing suitable
-/// selected only the hint and Done are left.
+/// selected only the hint, Done and Cancel are left.
 /// </summary>
 public sealed class GradientContextBar : ContextBarBase, IRefreshable
 {
@@ -22,7 +22,8 @@ public sealed class GradientContextBar : ContextBarBase, IRefreshable
     private readonly CheckBox _alternate, _reflect;
     private readonly TextBlock _node = PathBarParts.Value(), _hint;
     private readonly Control _typeGroup, _presetGroup;
-    private readonly Button _add, _update, _delete, _remove, _done;
+    private readonly Button _add, _update, _delete, _remove;
+    private readonly DoneCancelButtons _buttons;
     private bool _refreshing, _presetsDirty = true;
 
     public GradientContextBar(EditorSession session, GradientTool tool, GradientPresets? presets = null)
@@ -69,7 +70,7 @@ public sealed class GradientContextBar : ContextBarBase, IRefreshable
             if (_presetBox.SelectedIndex >= 0) _presets.Delete(_presetBox.SelectedIndex);
         });
         _remove = PathBarParts.Action("Remove", "Take the gradient off: the fill becomes its first color", () => { tool.Remove(); ContextBars.FocusCanvas?.Invoke(); });
-        _done = PathBarParts.Action("✓ Done", "Leave the Gradient Blend tool (Esc)", () => { session.SetTool("select"); ContextBars.FocusCanvas?.Invoke(); });
+        _buttons = new DoneCancelButtons(session, "Keep the gradient and leave the Gradient Blend tool", "Take back every change made in the Gradient Blend tool");
 
         _hint = ContextBars.Hint("Select one shape or text, then pick a type to blend its fill.");
         _typeGroup = ContextBars.Group(ContextBars.Label("Gradient"), _type);
@@ -77,8 +78,9 @@ public sealed class GradientContextBar : ContextBarBase, IRefreshable
 
         foreach (var c in new Control[] { _typeGroup, _alternate, _reflect, ContextBars.Separator(), _node, _hint })
             Row1.Children.Add(c);
-        foreach (var c in new Control[] { _presetGroup, _add, _update, _delete, ContextBars.Separator(), _remove, _done })
+        foreach (var c in new Control[] { _presetGroup, _add, _update, _delete, ContextBars.Separator(), _remove })
             Row2.Children.Add(c);
+        _buttons.AddTo(Row2);
 
         _presets.Changed += OnPresetsChanged;
         DetachedFromVisualTree += (_, _) => _presets.Changed -= OnPresetsChanged;
@@ -122,6 +124,7 @@ public sealed class GradientContextBar : ContextBarBase, IRefreshable
         ContextBars.Valid(_update, g is not null && _presetBox.SelectedIndex >= 0);
         ContextBars.Valid(_delete, _presetBox.SelectedIndex >= 0 && target);
         ContextBars.Valid(_remove, g is not null);
+        _buttons.Refresh();
         _refreshing = false;
     }
 
@@ -135,6 +138,7 @@ public sealed class GradientContextBar : ContextBarBase, IRefreshable
     internal Button UpdatePreset => _update;
     internal Button DeletePreset => _delete;
     internal Button RemoveButton => _remove;
-    internal Button DoneButton => _done;
+    internal Button DoneButton => _buttons.Done;
+    internal Button CancelButton => _buttons.Cancel;
     internal TextBlock NodeText => _node;
 }

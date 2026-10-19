@@ -13,7 +13,7 @@ namespace DeSignMage.Core.Editing.Tools;
 /// other objects. Right-button zoom works anywhere (the session handles it) and nodes snap to ruler guides.
 /// Each finished drawing is one new object, with the default style (no color unless one was chosen), and one undo step.
 /// </summary>
-public sealed class VectorDrawTool : Tool
+public sealed class VectorDrawTool : Tool, IModeTool
 {
     /// <summary>A node being drawn: its place, and the handle pulled out of it by dragging (null = none, the vector is straight).</summary>
     private sealed class DrawNode(Vec2 position)
@@ -67,6 +67,7 @@ public sealed class VectorDrawTool : Tool
             _ignoreUp = true;   // the same spot again: not a new node
             return;
         }
+        if (_nodes.Count == 0) Session.MarkMode();   // a new drawing is a new mode: Cancel takes back only this one, not the paths finished before it
         _nodes.Add(new DrawNode(p));
         _pressing = true;
         _dragged = false;
@@ -153,6 +154,21 @@ public sealed class VectorDrawTool : Tool
         _pressing = _dragged = false;
         Redraw();
     }
+
+    // ---- Done and Cancel (the mode is the path being drawn; nothing is in the history until it is finished) ----
+
+    bool IModeTool.IsInMode => IsDrawing;
+    bool IModeTool.CanFinish => true;
+
+    /// <summary>Done: finishes the path where it is (left open, as Enter does), then goes to the Layout tool with the new object selected.</summary>
+    Task IModeTool.FinishMode()
+    {
+        Finish(close: false);
+        Session.SetTool("select");
+        return Task.CompletedTask;
+    }
+
+    void IModeTool.DiscardPending() => Cancel();   // the unfinished path is thrown away
 
     // ---- Making the object ----
 

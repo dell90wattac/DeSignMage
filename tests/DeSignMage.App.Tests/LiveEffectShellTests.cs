@@ -63,17 +63,23 @@ public class LiveEffectShellTests
         var item = EffectsItem(w, "Make Plain");
         Assert.False(item.IsEnabled);                                                  // nothing live yet
 
-        Assert.True(s.Shadow(new ShadowSettings { ShiftX = 8, ShiftY = 8 }).Applied);
-        var shadow = LiveEffects.Find<LiveShadow>(s.Document, t)!;
+        Assert.True(s.Shadow(new ShadowSettings { ShiftX = 8, ShiftY = 8 }).Applied);  // a hard shadow is a plain object
         Dispatcher.UIThread.RunJobs();
-        w.CaptureRenderedFrame();
-        Assert.Contains("1 live effect", Info(w));                                     // the group of the text and its shadow is selected
-        Assert.Contains(LayerRows(w), r => r.Contains("Live Shadow of “SALE”"));
+        Assert.False(EffectsItem(w, "Make Plain").IsEnabled);
+        Assert.DoesNotContain(LayerRows(w), r => r.Contains("Live"));
 
-        s.Selection.Set(shadow);                                                       // the shadow by itself (as the Layers Panel can pick it)
+        s.Selection.Set(t);
+        s.ApplySoftEffect(SoftEffect.Defaults(SoftKind.SoftShadow, 120));
+        var shadow = LiveEffects.Find<LiveSoft>(s.Document, t)!;
         Dispatcher.UIThread.RunJobs();
         w.CaptureRenderedFrame();
-        Assert.Contains("Live Shadow of “SALE”", Info(w));
+        Assert.Contains("1 live effect", Info(w));                                     // the group of the text and its shadows is selected
+        Assert.Contains(LayerRows(w), r => r.Contains("Live Soft Shadow of “SALE”"));
+
+        s.Selection.Set(shadow);                                                       // the soft shadow by itself (as the Layers Panel can pick it)
+        Dispatcher.UIThread.RunJobs();
+        w.CaptureRenderedFrame();
+        Assert.Contains("Live Soft Shadow of “SALE”", Info(w));
 
         s.Selection.Set(t.TopLevel);
         Dispatcher.UIThread.RunJobs();
@@ -84,15 +90,6 @@ public class LiveEffectShellTests
         Assert.Null(shadow.Live);
         Assert.Equal("Make Plain", s.History.UndoDescription);
         Assert.DoesNotContain(LayerRows(w), r => r.Contains("Live"));
-        w.Close();
-    }
-
-    [AvaloniaFact]
-    public void The_Effects_strip_has_a_Plain_button()
-    {
-        var w = Open();
-        var strip = w.FindControl<MenuStrip>("MenuStrip")!;
-        Assert.Contains(strip.CommandsOf("Effects"), c => c.Id == "effects.makePlain");
         w.Close();
     }
 
@@ -109,7 +106,7 @@ public class LiveEffectShellTests
         s.Selection.Set(t);
         Assert.True(s.RunEffect(OutlineEffect.Plan(s, OutlineKind.Outline, new OutlineSettings { First = 6 })!).Applied);
         s.Selection.Set(t);
-        Assert.True(s.Shadow(new ShadowSettings { ShiftX = 10, ShiftY = 10, Outline = 6 }).Applied);
+        s.ApplySoftEffect(SoftEffect.Defaults(SoftKind.SoftShadow, 115) with { Opacity = 0.7 });
         s.Selection.Set(t);
         s.ApplyBevel(new BevelSettings { Width = 0.03 });
         s.Viewport.ZoomToFit(new Rect2(100, 150, 1300, 300));
@@ -119,18 +116,14 @@ public class LiveEffectShellTests
 #pragma warning disable CS0618 // the replacement overload's options type is not needed for a plain PNG
         w.CaptureRenderedFrame()!.Save(Path.Combine(dir, "live-effects-before.png"));
 
-        s.History.Execute(new SetTextCommand(t, "SALE TODAY"));                         // retyped: outline, shadow and bevel follow, one undo step
+        s.History.Execute(new SetTextCommand(t, "SALE TODAY"));                         // retyped: soft shadow and bevel follow (one undo step), the outline stays
         Dispatcher.UIThread.RunJobs();
         w.CaptureRenderedFrame()!.Save(Path.Combine(dir, "live-effects-after-retype.png"));
 
-        var shadow = LiveEffects.Find<LiveShadow>(s.Document, t)!;
+        var shadow = LiveEffects.Find<LiveSoft>(s.Document, t)!;
         s.Selection.Set(shadow);
         Dispatcher.UIThread.RunJobs();
         w.CaptureRenderedFrame()!.Save(Path.Combine(dir, "live-effects-info-line.png"));
-
-        var strip = w.FindControl<MenuStrip>("MenuStrip")!;
-        if (w.OpenMenuStrip != "Effects") Press(w, strip.Tab("Effects"));
-        w.CaptureRenderedFrame()!.Save(Path.Combine(dir, "live-effects-strip.png"));
 #pragma warning restore CS0618
         w.Close();
     }

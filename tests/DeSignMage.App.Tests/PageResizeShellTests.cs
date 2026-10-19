@@ -47,7 +47,6 @@ public class PageResizeShellTests
         w.MouseMove(P(c, edge + new Vec2(-120, 0)));
         Assert.NotNull(s.PagePreview);
         Assert.StartsWith("Page: ", Info(w));                           // the Info Line shows the live page size
-        Assert.Contains("RESIZE", w.FindControl<TextBlock>("HintText")!.Text);
         Assert.Equal(before, s.Document.Page);                          // nothing changed in the document yet
         w.MouseUp(P(c, edge + new Vec2(-120, 0)), MouseButton.Left);
         Dispatcher.UIThread.RunJobs();

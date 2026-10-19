@@ -103,7 +103,7 @@ public static class Toolbox
         host.Children.Add(colorMode);
 
         // One-click guides (user, 2026-10-18): three command buttons in a group of their own, apart from the tools. They are commands, not
-        // tools, so they are plain buttons that never stay pressed and the Tools strip (which mirrors the tools) does not list them.
+        // tools, so they are plain buttons that never stay pressed.
         var guideButtons = new List<(Button Button, GuidePlace Place)>();
         foreach (var (name, place, tip, edge) in GuideButtonSpecs)
         {

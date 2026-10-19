@@ -105,24 +105,16 @@ internal static class SampleDocuments
         doc.Insert(l3, -1, new PolygonObject(6, 20) { Style = ObjectStyle.None, Transform = Affine2.Rotation(0.2) * Affine2.Translation(300, 90) });
         doc.Insert(l3, -1, new ArrowObject(150.5, 45.25, 0.35, 0.55) { Name = "arrow", Transform = Affine2.Rotation(0.5) * Affine2.Translation(10, 10), Style = ObjectStyle.FillOnly(GlassBlue) });
 
-        // live effects of every kind, following the star and the headline (format 4); their outlines are stand-ins, the file keeps them as they are
+        // live effects of every kind, following the star and the headline (format 4); their outlines are stand-ins, the file keeps them as they are.
+        // (Outlines, inlines and shadows are plain objects: their links are dropped when a file is read, see LiveEffectFileTests.)
         var star = (PolygonObject)l3.Children.First(o => o.Name == "star");
         var headline = l3.Children.First(o => o.Name == "headline");
         var box = PathGeometry.Rectangle(new Rect2(0, 0, 40, 30));
         doc.Insert(l3, -1, new PathObject(box)
         {
-            Name = "Inline", Style = ObjectStyle.FillOnly(WarmGrey),
-            Live = new LiveLink(star, new LiveOutline(Core.Effects.OutlineKind.Inline, new Core.Effects.OutlineSettings
-                { First = 3.5, Second = -1.25, Corners = CornerStyle.Round, Oat = 45, ContourOnly = true })),
-        });
-        doc.Insert(l3, -1, new PathObject(box)
-        {
-            Name = "Perspective Shadow",
-            Live = new LiveLink(headline, new LiveShadow(new Core.Effects.ShadowSettings
-            {
-                Type = Core.Effects.ShadowType.Relief, Form = Core.Effects.ShadowForm.Perspective, Outline = 2.25, ShiftX = 7.5, ShiftY = -3, DepthPercent = 60,
-                Corners = CornerStyle.Miter, Oat = 30, Color = null, Pivot = new Vec2(410.5, 320.25),
-            }), Affine2.Rotation(-0.1), Affine2.Translation(30, 0) * Affine2.Rotation(-0.1)),
+            Name = "Soft Shadow",
+            Style = new ObjectStyle(new SolidPaint(WarmGrey), null, new BlurStyle(SoftKind.SoftShadow, 0.4, 0.6, 36, Hs: 3, Vs: -2.5, Slant: 12, HeightScale: 0.8, Inset: 0.1)),
+            Live = new LiveLink(headline, new LiveSoft(SoftKind.SoftShadow), Affine2.Rotation(-0.1), Affine2.Translation(30, 0) * Affine2.Rotation(-0.1)),
         });
         doc.Insert(l3, -1, new PathObject(box)
         {

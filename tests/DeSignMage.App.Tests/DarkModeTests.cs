@@ -248,38 +248,23 @@ public class DarkModeTests
     // ---------------------------------------------------------------- the window
 
     [AvaloniaFact]
-    public async Task The_top_row_has_the_two_switches_and_the_View_menu_the_two_checkable_items_without_shortcuts()
+    public async Task The_View_menu_has_the_two_checkable_switches_without_shortcuts_and_the_top_row_has_no_buttons_for_them()
     {
         await WithTheme(store =>
         {
             var w = Open();
-            var menus = w.FindControl<ToggleButton>("DarkMenusButton")!;
-            var canvas = w.FindControl<ToggleButton>("DarkCanvasButton")!;
-            var feedback = w.FindControl<Button>("FeedbackButton")!;
-            Assert.Equal("Dark Menus", ToolTip.GetTip(menus));
-            Assert.Equal("Dark Canvas", ToolTip.GetTip(canvas));
-            Assert.NotNull(menus.Content);
-            Assert.NotNull(canvas.Content);
-            // at the right end of the top row, next to Feedback / Bug
+            // the one-click buttons of the top row are gone (R38): the switches are only in the View menu
+            Assert.Null(w.FindControl<ToggleButton>("DarkMenusButton"));
+            Assert.Null(w.FindControl<ToggleButton>("DarkCanvasButton"));
             var top = w.FindControl<Border>("TopRowBorder")!;
-            Assert.Contains(top, menus.GetVisualAncestors());
-            Assert.True(menus.TranslatePoint(default, w)!.Value.X < canvas.TranslatePoint(default, w)!.Value.X);
-            Assert.True(canvas.TranslatePoint(default, w)!.Value.X < feedback.TranslatePoint(default, w)!.Value.X);
-            Assert.False(menus.IsChecked);
-            Assert.False(canvas.IsChecked);
-
-            Press(w, menus);
-            Assert.True(AppTheme.DarkMenus);
-            Assert.False(AppTheme.DarkCanvas);
-            Assert.True(menus.IsChecked);
-            Assert.False(canvas.IsChecked);
-            Press(w, canvas);
-            Assert.True(AppTheme.DarkCanvas);
-            Assert.True(canvas.IsChecked);
-            Press(w, menus);                                                     // each one turns off by itself
+            Assert.Empty(top.GetVisualDescendants().OfType<ToggleButton>());
             Assert.False(AppTheme.DarkMenus);
-            Assert.False(menus.IsChecked);
-            Assert.True(canvas.IsChecked);
+            Assert.False(AppTheme.DarkCanvas);
+            AppTheme.SetDarkMenus(true); AppTheme.SetDarkCanvas(true);           // set directly: each one is independent
+            Assert.True(AppTheme.DarkMenus && AppTheme.DarkCanvas);
+            AppTheme.SetDarkMenus(false);
+            Assert.False(AppTheme.DarkMenus);
+            Assert.True(AppTheme.DarkCanvas);
 
             // View menu: two checkable items that agree with the switches, and no shortcut on either
             var view = w.FindControl<Menu>("MainMenu")!.Items.OfType<MenuItem>().Single(m => m.Header?.ToString() == "_View");
@@ -298,10 +283,8 @@ public class DarkModeTests
             Assert.True(((AppCommand)darkCanvas.Tag!).IsChecked!());
             darkMenus.RaiseEvent(new RoutedEventArgs(MenuItem.ClickEvent));
             Assert.True(AppTheme.DarkMenus);
-            Assert.True(menus.IsChecked);                                        // the button follows the menu
             darkCanvas.RaiseEvent(new RoutedEventArgs(MenuItem.ClickEvent));
             Assert.False(AppTheme.DarkCanvas);
-            Assert.False(canvas.IsChecked);
             Assert.True(store.Get("ui.darkMenus", false));
             Assert.False(store.Get("ui.darkCanvas", true));
             w.Close();

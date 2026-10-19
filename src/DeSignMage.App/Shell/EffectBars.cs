@@ -77,7 +77,7 @@ public sealed class OutlineContextBar : ContextBarBase, IRefreshable
     private readonly EffectBarParts.Field _first, _firstPct, _second, _secondPct, _oat;
     private readonly ComboBox _corners;
     private readonly CheckBox _contour, _leave, _preview;
-    private readonly Button _done;
+    private readonly DoneCancelButtons _buttons;
     private readonly Control _firstPctGroup, _secondPctGroup, _oatGroup;   // shown only while they apply
     private readonly TextBlock _title = PathBarParts.Value();
     private bool _refreshing;
@@ -105,8 +105,7 @@ public sealed class OutlineContextBar : ContextBarBase, IRefreshable
         _contour = PathBarParts.Check("Contour", "Outer loops only: holes are left out", v => { if (!_refreshing) tool.Update(s => s with { ContourOnly = v }); });
         _leave = PathBarParts.Check("Leave Original", "Keep the original. Off: the result takes its place.", v => { if (!_refreshing) tool.Update(s => s with { LeaveOriginal = v }); });
         _preview = PathBarParts.Check("Preview", "Show the result while you change the fields", v => { if (!_refreshing) tool.SetPreviewEnabled(v); });
-        _done = PathBarParts.Action("✓ Done", "Make the new object (Enter)", () => { _ = tool.Apply(); ContextBars.FocusCanvas?.Invoke(); });
-        var cancel = PathBarParts.Action("✕ Cancel", "Leave without changing anything (Esc)", () => { session.SetTool("select"); ContextBars.FocusCanvas?.Invoke(); });
+        _buttons = new DoneCancelButtons(session, "Make the new object (Enter)", "Leave without changing anything");
 
         _firstPctGroup = ContextBars.Field("%", _firstPct.Box);
         _secondPctGroup = ContextBars.Field("%", _secondPct.Box);
@@ -123,12 +122,15 @@ public sealed class OutlineContextBar : ContextBarBase, IRefreshable
                  {
                      ContextBars.Group(ContextBars.Label("Corners"), _corners), _oatGroup,
                      PathBarParts.Gap(), _contour, _leave, _preview,
-                     PathBarParts.Gap(), _done, cancel,
                  })
             Row2.Children.Add(c);
+        _buttons.AddTo(Row2);
         EffectBarParts.Bind(this, session, Refresh, h => tool.Changed += h, h => tool.Changed -= h);
         Refresh();
     }
+
+    internal Button Done => _buttons.Done;
+    internal Button Cancel => _buttons.Cancel;
 
     public void Refresh()
     {
@@ -146,10 +148,8 @@ public sealed class OutlineContextBar : ContextBarBase, IRefreshable
         _corners.SelectedIndex = s.Corners switch { CornerStyle.Miter => 1, CornerStyle.Round => 2, _ => 0 };
         _contour.IsChecked = s.ContourOnly;
         _leave.IsChecked = s.LeaveOriginal;
-        _leave.IsVisible = !_tool.IsEditingLive;   // editing a live outline keeps its source (R26: not shown when it does not apply)
-        _title.Text += _tool.IsEditingLive ? " (live)" : "";
         _preview.IsChecked = _tool.PreviewEnabled;
-        ContextBars.Valid(_done, _tool.CanApply && !_session.EffectBusy);
+        _buttons.Refresh(!_session.EffectBusy);
         _refreshing = false;
     }
 }
@@ -277,7 +277,8 @@ public sealed class ShadowContextBar : ContextBarBase, IRefreshable
     private readonly ShadowTool _tool;
     private readonly EffectBarParts.Field _hs, _vs, _outline, _outlinePct, _depth, _vpX, _vpY;
     private readonly ComboBox _type, _form, _corners, _color;
-    private readonly Button _apply, _vpCenter;
+    private readonly Button _vpCenter;
+    private readonly DoneCancelButtons _buttons;
     private readonly Control _outlinePctGroup, _depthGroup, _vpGroup;
     private bool _refreshing;
 
@@ -327,8 +328,7 @@ public sealed class ShadowContextBar : ContextBarBase, IRefreshable
             tool.Update(s => s with { Color = color });
             ContextBars.FocusCanvas?.Invoke();
         };
-        _apply = PathBarParts.Action("✓ Apply", "Make the shadow (Enter)", () => { _ = tool.Apply(); ContextBars.FocusCanvas?.Invoke(); });
-        var cancel = PathBarParts.Action("✕ Cancel", "Leave without making a shadow (Esc)", () => { session.SetTool("select"); ContextBars.FocusCanvas?.Invoke(); });
+        _buttons = new DoneCancelButtons(session, "Make the shadow (Enter)", "Leave without making a shadow");
 
         _outlinePctGroup = ContextBars.Field("%", _outlinePct.Box);
         _depthGroup = ContextBars.Field("3D %", _depth.Box);
@@ -342,10 +342,9 @@ public sealed class ShadowContextBar : ContextBarBase, IRefreshable
         ToolTip.SetTip(_vpY.Box, "Vanishing point, inches from the top of the page");
         ToolTip.SetTip(_hs.Box, "Hs: how far the shadow moves to the right (Cast: how far the top edge is pushed sideways)");
         ToolTip.SetTip(_vs.Box, "Vs: how far the shadow moves up (negative: down). Cast: the change of the shadow's height; a negative value larger than the height flips it under the object");
-        // The first row is what you do (Apply, the shift, the outline); the second what kind of shadow. The two lists carry no captions to stay narrow.
+        // The first row is the shift and the outline; the second what kind of shadow, then Done and Cancel at the end. The two lists carry no captions to stay narrow.
         foreach (var c in new Control[]
                  {
-                     _apply, cancel, PathBarParts.Gap(),
                      ContextBars.Field("Hs", _hs.Box, "in"), ContextBars.Field("Vs", _vs.Box, "in"),
                      PathBarParts.Gap(),
                      ContextBars.Field("Outline", _outline.Box, "in"), _outlinePctGroup,
@@ -353,6 +352,7 @@ public sealed class ShadowContextBar : ContextBarBase, IRefreshable
             Row1.Children.Add(c);
         foreach (var c in new Control[] { _form, _type, _color, _corners, _depthGroup, _vpGroup })
             Row2.Children.Add(c);
+        _buttons.AddTo(Row2);
         EffectBarParts.Bind(this, session, Refresh, h => tool.Changed += h, h => tool.Changed -= h);
         Refresh();
     }
@@ -379,13 +379,14 @@ public sealed class ShadowContextBar : ContextBarBase, IRefreshable
         _corners.SelectedIndex = s.Corners switch { CornerStyle.Miter => 1, CornerStyle.Round => 2, _ => 0 };
         int colorAt = Array.FindIndex(Colors, c => c.Color == s.Color);
         _color.SelectedIndex = colorAt >= 0 ? colorAt : Colors.Length;
-        ContextBars.Valid(_apply, _tool.CanApply && !_session.EffectBusy);
+        _buttons.Refresh(!_session.EffectBusy);
         _refreshing = false;
     }
 
     // ---- For tests ----
 
-    internal Button Apply => _apply;
+    internal Button Apply => _buttons.Done;   // Done makes the shadow
+    internal Button Cancel => _buttons.Cancel;
     internal ComboBox Form => _form;
     internal ComboBox Type => _type;
     internal ComboBox Color => _color;

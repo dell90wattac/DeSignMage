@@ -138,10 +138,10 @@ public class ContextBarLayoutTests
         var feedback = wide.FindControl<Button>("FeedbackButton")!;
         Assert.Same(wide.FindControl<Border>("TopRowBorder"), menu.GetVisualAncestors().OfType<Border>().First(b => b.Name == "TopRowBorder"));
         Assert.True(toolbar.TranslatePoint(new Point(0, 0), wide)!.Value.X > menu.Bounds.Right - 1);                 // menus, then the toolbar ...
-        Assert.True(feedback.TranslatePoint(new Point(0, 0), wide)!.Value.X > toolbar.TranslatePoint(new Point(toolbar.Bounds.Width, 0), wide)!.Value.X - 1);   // ... then Feedback / Bug
+        Assert.True(feedback.TranslatePoint(new Point(0, 0), wide)!.Value.X > toolbar.TranslatePoint(new Point(toolbar.Bounds.Width, 0), wide)!.Value.X - 1);   // ... then Feedback
         wide.Close();
 
-        var narrow = Open(520);
+        var narrow = Open(420);
         Assert.Equal(1, Lines(narrow.FindControl<BarRow>("MainToolbar")!));          // no second line
         Assert.Equal(height, narrow.FindControl<Border>("TopRowBorder")!.Bounds.Height, 1);
         var scroll = narrow.FindControl<ScrollViewer>("MainToolbarScroll")!;
@@ -241,7 +241,7 @@ public class ContextBarLayoutTests
     [AvaloniaFact]
     public void A_Context_Bar_row_that_is_too_long_scrolls_sideways_instead_of_wrapping_and_the_height_stays()
     {
-        // selected text: the position fields on one line, the font and arrange controls on a second that is long on its own
+        // selected text: the font controls on one line, the arrange controls on a second (at 1280 wide they do not fit side by side)
         static void SelectText(MainWindow w)
         {
             var text = new TextObject("Hello", "Arial", 40) { Transform = Affine2.Translation(100, 300) };
@@ -249,7 +249,7 @@ public class ContextBarLayoutTests
             w.Session.Selection.Set(text);
             Flush();
         }
-        var wide = Open(1400);
+        var wide = Open(1280);
         SelectText(wide);
         var (barWide, canvasWide) = Metrics(wide);
         Assert.All(ContextRows(wide), row => Assert.InRange(Lines(row), 0, 1));   // an empty row has no line at all (R26)
@@ -346,13 +346,14 @@ public class ContextBarLayoutTests
             w.CaptureRenderedFrame();
             var border = w.FindControl<Border>("ContextBarBorder")!;
             var bar = Assert.IsType<SelectionContextBar>(w.FindControl<ContentControl>("ContextBarHost")!.Content);
-            double h100 = border.Bounds.Height, box100 = bar.X.Bounds.Width, font100 = bar.X.FontSize;
+            var x = w.MeasureFields.X;                       // the Info Line's field
+            double h100 = border.Bounds.Height, box100 = x.Bounds.Width, font100 = x.FontSize;
 
             UiScale.SetScale(1.5);
             Flush();
             w.CaptureRenderedFrame();
-            Assert.Equal(box100 * 1.5, bar.X.Bounds.Width, 1);
-            Assert.Equal(font100 * 1.5, bar.X.FontSize, 3);
+            Assert.Equal(box100 * 1.5, x.Bounds.Width, 1);
+            Assert.Equal(font100 * 1.5, x.FontSize, 3);
             Assert.True(border.Bounds.Height > h100 * 1.3, $"{border.Bounds.Height} vs {h100}");
             Assert.True(border.Bounds.Height < h100 * 1.9);
             w.Close();
@@ -409,7 +410,7 @@ public class ContextBarLayoutTests
         row.Measure(new Size(1000, double.PositiveInfinity));
         row.Arrange(new Rect(0, 0, 1000, row.DesiredSize.Height));
         Assert.Equal(1, new[] { s1, s2 }.Count(s => s.Bounds.Width > 0.5));
-        Assert.Equal(50 + 10 + 9 + 10 + 50, row.DesiredSize.Width, 3);
+        Assert.Equal(50 + 10 + 7 + 10 + 50, row.DesiredSize.Width, 3);   // a separator is 1 px and 3 px of air on either side
     }
 
     /// <summary>Saves pictures of the bars when DSM_SCREENSHOTS names a folder (docs only).</summary>

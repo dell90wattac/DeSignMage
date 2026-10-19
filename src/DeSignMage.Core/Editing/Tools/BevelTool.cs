@@ -12,7 +12,7 @@ namespace DeSignMage.Core.Editing.Tools;
 /// selection never freezes the window. Done keeps the bevel, Esc or Cancel takes it back, Remove removes it (a bevel that was there before too). The light is
 /// a round point on a dial around the selection: drag it to turn the light (upper left to begin with); the Light field in the bar is the same angle.
 /// </summary>
-public sealed class BevelTool : Tool
+public sealed class BevelTool : Tool, IModeTool
 {
     private BevelSettings _remembered = new();
     private List<BevelSource> _sources = [];
@@ -23,7 +23,7 @@ public sealed class BevelTool : Tool
 
     public override string Id => "bevel";
     public override string DisplayName => "Easy Bevel";
-    public override string Hint => "EASY BEVEL: Drag the round point to turn the light. Enter keeps the bevel, Esc takes it back   To ZOOM: Press right button";
+    public override string Hint => "EASY BEVEL: Drag the round point to turn the light. Enter or Done keeps the bevel, Esc or Cancel takes it back   To ZOOM: Press right button";
 
     /// <summary>The fields. Change them with <see cref="Update"/>.</summary>
     public BevelSettings Settings { get; private set; } = new();
@@ -220,6 +220,19 @@ public sealed class BevelTool : Tool
         finally { _busy = false; }
         _command = null;
         Session.SetTool("select");
+    }
+
+    // ---- Done and Cancel in the Context Bar (the session rolls the history back to how it was when the tool opened) ----
+
+    bool IModeTool.IsInMode => true;
+    bool IModeTool.CanFinish => IsActiveOnSource;
+    Task IModeTool.FinishMode() => Done();
+
+    void IModeTool.DiscardPending()
+    {
+        _live?.Cancel();   // a bevel still being worked out never arrives
+        _dragging = false;
+        _command = null;
     }
 
     // ---- Pointer: the light ----

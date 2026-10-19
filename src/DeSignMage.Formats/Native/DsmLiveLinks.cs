@@ -69,39 +69,16 @@ internal static class DsmLiveLinks
         json.WriteEndObject();
     }
 
-    /// <summary>The link an effect object had, or null (with a warning) when its kind is unknown to this version.</summary>
+    /// <summary>The link an effect object had; null for an outline, inline or shadow (they are plain now), and null with a warning for a kind unknown to this version.</summary>
     public static LiveLink? Read(JsonElement e, DocObject source, DsmReadContext ctx)
     {
         LiveEffectSpec? spec;
         switch (e.Str("effect"))
         {
-            case "outline" or "inline":
-                spec = new LiveOutline(e.Str("effect") == "inline" ? OutlineKind.Inline : OutlineKind.Outline, new OutlineSettings
-                {
-                    First = e.Num("first"),
-                    Second = e.Num("second"),
-                    Corners = e.EnumOf("corners", CornerStyle.Auto, ctx),
-                    Oat = e.Num("oat", 70),
-                    ContourOnly = e.Bool("contour"),
-                });
-                break;
-
-            case "shadow":
-                var pivot = e.Has("pivot") ? e.Doubles("pivot") : [];
-                spec = new LiveShadow(new ShadowSettings
-                {
-                    Form = e.EnumOf("form", ShadowForm.Flat, ctx),
-                    Type = e.EnumOf("type", ShadowType.Drop, ctx),
-                    Outline = e.Num("outline"),
-                    ShiftX = e.Num("shiftX"),
-                    ShiftY = e.Num("shiftY"),
-                    DepthPercent = e.Num("depth", 75),
-                    Corners = e.EnumOf("corners", CornerStyle.Auto, ctx),
-                    Oat = e.Num("oat", 70),
-                    Color = e.Bool("sameAsObject") ? null : e.TryGet("color", out var c) ? DsmJson.ReadColor(c) : DocColor.Black,
-                    Pivot = pivot.Length == 2 ? new Vec2(pivot[0], pivot[1]) : null,
-                });
-                break;
+            // Outlines, inlines and shadows are plain objects again (user, 2026-10-18: "vector based objects stay, effects don't"). Files saved while they
+            // were live carry a link for them: it is dropped quietly, the object itself stays as it was saved.
+            case "outline" or "inline" or "shadow":
+                return null;
 
             case "softShadow": spec = new LiveSoft(SoftKind.SoftShadow); break;
             case "glow": spec = new LiveSoft(SoftKind.Glow); break;

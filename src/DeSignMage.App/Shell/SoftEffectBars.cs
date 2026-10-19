@@ -27,7 +27,8 @@ public sealed class SoftEffectContextBar : ContextBarBase, IRefreshable
     private readonly SoftEffectTool _tool;
     private readonly EffectBarParts.Field _hs, _vs, _opacity, _softness, _inset, _thickness, _slant, _height;
     private readonly ComboBox _color;
-    private readonly Button _remove, _done;
+    private readonly Button _remove;
+    private readonly DoneCancelButtons _buttons;
     private readonly Control _hsGroup, _vsGroup, _insetGroup, _thicknessGroup, _slantGroup, _heightGroup;
     private readonly TextBlock _title = PathBarParts.Value();
     private bool _refreshing;
@@ -55,8 +56,7 @@ public sealed class SoftEffectContextBar : ContextBarBase, IRefreshable
             ContextBars.FocusCanvas?.Invoke();
         };
         _remove = PathBarParts.Action("Remove", "Remove the effect (undoable)", () => { tool.Remove(); ContextBars.FocusCanvas?.Invoke(); });
-        _done = PathBarParts.Action("✓ Done", "Keep the effect (Enter)", () => { tool.Done(); ContextBars.FocusCanvas?.Invoke(); });
-        var cancel = PathBarParts.Action("✕ Cancel", "Take back what this tool did (Esc)", () => { tool.Abandon(); ContextBars.FocusCanvas?.Invoke(); });
+        _buttons = new DoneCancelButtons(session, "Keep the effect (Enter)", "Take back what this tool did (Esc)");
 
         ToolTip.SetTip(_hs.Box, "Hs: how far the shadow moves to the right");
         ToolTip.SetTip(_vs.Box, "Vs: how far the shadow moves up (negative: down)");
@@ -82,9 +82,10 @@ public sealed class SoftEffectContextBar : ContextBarBase, IRefreshable
         foreach (var c in new Control[]
                  {
                      _slantGroup, _heightGroup, ContextBars.Group(ContextBars.Label("Color"), _color),
-                     PathBarParts.Gap(), _remove, PathBarParts.Gap(), _done, cancel,
+                     PathBarParts.Gap(), _remove,
                  })
             Row2.Children.Add(c);
+        _buttons.AddTo(Row2);
         EffectBarParts.Bind(this, session, Refresh, h => tool.Changed += h, h => tool.Changed -= h);
         Refresh();
     }
@@ -112,7 +113,7 @@ public sealed class SoftEffectContextBar : ContextBarBase, IRefreshable
             box.IsEnabled = group.IsVisible = on;
         _color.SelectedIndex = Array.FindIndex(Colors, c => c.Color.R == s.Color.R && c.Color.G == s.Color.G && c.Color.B == s.Color.B);
         ContextBars.Valid(_remove, _tool.Effects.Count > 0);
-        ContextBars.Valid(_done, _tool.IsActiveOnSource);
+        _buttons.Refresh();
         _refreshing = false;
     }
 
@@ -127,7 +128,8 @@ public sealed class SoftEffectContextBar : ContextBarBase, IRefreshable
     internal Control HsGroup => _hsGroup;
     internal ComboBox Color => _color;
     internal Button Remove => _remove;
-    internal Button Done => _done;
+    internal Button Done => _buttons.Done;
+    internal Button Cancel => _buttons.Cancel;
 }
 
 /// <summary>Feather Context Bar: Feather and Inset (percent), Remove, Done. The edge fades on the page as the fields change.</summary>
@@ -135,25 +137,23 @@ public sealed class FeatherContextBar : ContextBarBase, IRefreshable
 {
     private readonly FeatherTool _tool;
     private readonly EffectBarParts.Field _amount, _inset;
-    private readonly Button _remove, _done;
+    private readonly Button _remove;
+    private readonly DoneCancelButtons _buttons;
 
     public FeatherContextBar(EditorSession session, FeatherTool tool)
     {
         _tool = tool;
+        _buttons = new DoneCancelButtons(session, "Keep the feather (Enter)", "Take back what this tool did (Esc)");
         _amount = new EffectBarParts.Field(v => tool.Update(f => f with { Amount = Math.Clamp(v, 0, 100) / 100 }));
         _inset = new EffectBarParts.Field(v => tool.Update(f => f with { Inset = Math.Clamp(v, 0, 200) / 100 }));
         ToolTip.SetTip(_amount.Box, "Feather: how wide the soft edge is, as a share of the object's smaller side (a text's height). 0 removes the feather; more than 20 % is slow");
         ToolTip.SetTip(_inset.Box, "Inset: moves the fade in from the edge, so a hard-edged picture loses its edge");
         _remove = PathBarParts.Action("Remove", "Remove the feather (undoable)", () => { tool.Remove(); ContextBars.FocusCanvas?.Invoke(); });
-        _done = PathBarParts.Action("✓ Done", "Keep the feather (Enter)", () => { tool.Done(); ContextBars.FocusCanvas?.Invoke(); });
-        var cancel = PathBarParts.Action("✕ Cancel", "Take back what this tool did (Esc)", () => { tool.Abandon(); ContextBars.FocusCanvas?.Invoke(); });
         foreach (var c in new Control[] { ContextBars.Label("Feather"), ContextBars.Field("Feather", _amount.Box, "%"), ContextBars.Field("Inset", _inset.Box, "%") })
             Row1.Children.Add(c);
-        foreach (var c in new Control[]
-                 {
-                     _remove, PathBarParts.Gap(), _done, cancel, PathBarParts.Gap(),
-                     ContextBars.Hint("Drag on the object to set the feather from how far you move."),
-                 })
+        Row2.Children.Add(_remove);
+        _buttons.AddTo(Row2);
+        foreach (var c in new Control[] { PathBarParts.Gap(), ContextBars.Hint("Drag on the object to set the feather from how far you move.") })
             Row2.Children.Add(c);
         EffectBarParts.Bind(this, session, Refresh, h => tool.Changed += h, h => tool.Changed -= h);
         Refresh();
@@ -164,7 +164,7 @@ public sealed class FeatherContextBar : ContextBarBase, IRefreshable
         _amount.Show(ContextBars.Fmt(_tool.Settings.Amount * 100));
         _inset.Show(ContextBars.Fmt(_tool.Settings.Inset * 100));
         ContextBars.Valid(_remove, _tool.IsActiveOnTarget);
-        ContextBars.Valid(_done, _tool.IsActiveOnTarget);
+        _buttons.Refresh();
     }
 
     // ---- For tests ----
@@ -172,5 +172,6 @@ public sealed class FeatherContextBar : ContextBarBase, IRefreshable
     internal TextBox Amount => _amount.Box;
     internal TextBox Inset => _inset.Box;
     internal Button Remove => _remove;
-    internal Button Done => _done;
+    internal Button Done => _buttons.Done;
+    internal Button Cancel => _buttons.Cancel;
 }
